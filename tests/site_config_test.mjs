@@ -6,8 +6,8 @@ import {SITE,canonicalGameUrl,controllerUrl,gameUrl,productFrontDoor} from "../s
 assert.equal(SITE.productName,"SpawnCity");
 assert.equal(SITE.productHost,"spawncity.de");
 assert.equal(SITE.productHost.includes("-"),false,"product domain has no hyphen");
-assert.equal(SITE.legacyHost,"kurzlernen.de");
-assert.equal(SITE.multiplayerAppId,"arondight45-kurzlernen-vs-v3","room id stays stable across the domain move");
+assert.equal(SITE.multiplayerAppId,"arondight45-spawncity-vs-v1");
+assert.equal(/kurzlernen/i.test(JSON.stringify(SITE)),false,"no kurzlernen in the site config");
 assert.equal(readFileSync("CNAME","utf8").trim(),SITE.pagesHost,"CNAME must be the Pages host");
 assert.equal(SITE.pagesHost,SITE.productHost);
 assert.equal(canonicalGameUrl(),`https://${SITE.pagesHost}${SITE.gamePath}`);
@@ -23,12 +23,21 @@ assert.equal(productFrontDoor("spawncity.de","/cardio.html"),"");
 
 const html=readFileSync("drone_simulator.html","utf8");
 const canon=canonicalGameUrl();
-assert.ok(html.includes("<title>SpawnCity</title>"));
+assert.ok(html.includes("<title>SpawnCity – Drohne, Auto &amp; Jet in deiner echten Stadt</title>"));
 assert.ok(html.includes(`<link rel="canonical" href="${canon}">`));
 assert.ok(html.includes(`<meta property="og:url" content="${canon}">`));
-assert.ok(html.includes('property="og:title" content="SpawnCity"'));
+assert.ok(html.includes('property="og:title" content="SpawnCity'));
+assert.ok(html.includes('<meta name="twitter:card" content="summary_large_image">'));
+assert.ok(html.includes(`<meta name="twitter:image" content="https://${SITE.pagesHost}/spawncity-card.png">`));
+assert.ok(html.includes('<meta property="og:image:width" content="1200">'));
+assert.ok(html.includes('"@type":"VideoGame"'));
+assert.equal((html.match(/rel="canonical"/g)||[]).length,1,"exactly one canonical");
+assert.equal((html.match(/name="description"/g)||[]).length,1,"exactly one description");
+assert.ok(readFileSync("spawncity-card.png").length>10000,"share card image published");
+assert.ok(readFileSync("robots.txt","utf8").includes(`Sitemap: https://${SITE.pagesHost}/sitemap.xml`));
+assert.ok(readFileSync("sitemap.xml","utf8").includes(`<loc>https://${SITE.pagesHost}/drone_simulator.html</loc>`));
 assert.ok(html.includes('name="description" content="SpawnCity'));
-assert.ok(html.includes(`property="og:image" content="${`https://${SITE.pagesHost}/sim/icons/spawncity-512.png`}"`));
+assert.ok(html.includes(`property="og:image" content="https://${SITE.pagesHost}/spawncity-card.png"`));
 assert.ok(html.includes('fetch("./build.json?t="+'));
 
 const index=readFileSync("index.html","utf8");
@@ -51,8 +60,9 @@ assert.ok(hil.includes("controllerUrl()"));
 assert.equal(hil.includes("https://kurzlernen.de"),false);
 
 const changelog=readFileSync("sim/changelog_menu.mjs","utf8");
-assert.ok(changelog.includes("spawncity.de wird die Adresse"));
-assert.ok(changelog.includes("Mitspieler finden sich weiter im selben Raum"));
+assert.ok(changelog.includes("Neuer Mehrspieler-Raum"));
+assert.equal(/kurzlernen/i.test(changelog),false,"changelog must not mention kurzlernen");
+assert.equal(/kurzlernen/i.test(lan),false,"room id must not mention kurzlernen");
 
 for(const name of readdirSync(".github/workflows")){
   if(!name.endsWith(".yml"))continue;
@@ -72,4 +82,4 @@ assert.equal(json.pagesHost,SITE.pagesHost);
 const origin=spawnSync(process.execPath,["tools/public_site.mjs","origin"],{encoding:"utf8"});
 assert.equal(origin.stdout.trim(),`https://${SITE.pagesHost}`);
 
-console.log("SpawnCity site config passed: product host spawncity.de, pages host still matches CNAME, multiplayer room unchanged.");
+console.log("SpawnCity site config passed: product host spawncity.de, pages host still matches CNAME, multiplayer room is SpawnCity's own.");
