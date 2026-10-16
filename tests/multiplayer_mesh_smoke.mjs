@@ -1,0 +1,59 @@
+import assert from "node:assert/strict";
+import {LanVsSession} from "../sim/lan_vs.mjs";
+import {findClearBuildingLaunchPoint,buildingLaunchPointClear} from "../sim/world_building_collision_physics.mjs";
+import {FPV_VIEW_EXTRA_UP_M,installFpvViewHeight} from "../sim/fpv_view_height.mjs";
+import {buildTrafficRoute,collectRenderedDrivableRoads,isDrivableTransportationFeature,makeBuildingsOpaque} from "../sim/world_traffic_routes.mjs";
+
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+{
+  const viewport={dataset:{cameraMode:"fpv",fpvCameraUpOffsetM:"0.028"}},camera={position:{x:0,y:0,z:0}},bridge={applyLookCamera(){return true;},airframeFor(){return{quaternion:{x:0,y:0,z:0,w:1}};}};
+  globalThis.document={getElementById:id=>id==="viewport"?viewport:null};globalThis.__arondightDiagnostics={presentationDraws:1};globalThis.__arondightRealWorld=bridge;
+  assert.equal(FPV_VIEW_EXTRA_UP_M,.045,"FPV view must move exactly 4.5 centimetres above the physical camera mount");installFpvViewHeight();bridge.applyLookCamera(null,camera);
+  assert.ok(Math.abs(camera.position.z-.045)<1e-12&&camera.position.x===0&&camera.position.y===0,"neutral FPV body-up offset must raise only the optical viewpoint");assert.equal(viewport.dataset.fpvViewUpOffsetM,"0.073","2.8 cm physical mount plus 4.5 cm optical lift must expose a 7.3 cm FPV view height");
+  delete globalThis.document;delete globalThis.__arondightDiagnostics;delete globalThis.__arondightRealWorld;
+}
+
+{
+  const primary={properties:{class:"primary"},layer:{id:"road-primary",type:"line","source-layer":"transportation"},sourceLayer:"transportation",geometry:{type:"LineString",coordinates:[[9,47],[9.001,47]]}},rail={properties:{class:"rail"},layer:{id:"rail",type:"line","source-layer":"transportation"},sourceLayer:"transportation",geometry:{type:"LineString",coordinates:[[9,47],[9.001,47.001]]}},path={properties:{class:"path"},layer:{id:"path",type:"line","source-layer":"transportation"},sourceLayer:"transportation",geometry:{type:"LineString",coordinates:[[9,47],[9,47.001]]}};
+  assert.equal(isDrivableTransportationFeature(primary),true,"primary road must be accepted for traffic");assert.equal(isDrivableTransportationFeature(rail),false,"rail geometry must never be treated as a road");assert.equal(isDrivableTransportationFeature(path),false,"foot/path geometry must never be treated as a drivable road");
+  const paintCalls=[],fakeMap={getStyle(){return{layers:[{id:"road-primary",type:"line","source-layer":"transportation"},{id:"rail",type:"line","source-layer":"transportation"},{id:"arondight45-buildings-3d",type:"fill-extrusion","source-layer":"building"}]};},queryRenderedFeatures(){return[primary,rail,path];},getLayer(id){return{id};},getPaintProperty(){return .78;},setPaintProperty(id,name,value){paintCalls.push([id,name,value]);}};
+  const roads=collectRenderedDrivableRoads(fakeMap);assert.equal(roads.length,1,"rendered traffic extraction must keep only drivable roads");const route=buildTrafficRoute(roads[0].path,{originLon:9,originLat:47,roadClass:roads[0].roadClass,lastSeen:1});assert.ok(route&&route.length>70&&route.length<90,"drivable road must produce a metric route bound to its actual centerline");assert.equal(makeBuildingsOpaque(fakeMap),1,"transparent 3D building layer must be forced opaque");assert.deepEqual(paintCalls,[["arondight45-buildings-3d","fill-extrusion-opacity",1]],"building opacity fix must set exact fill extrusion opacity to 1");
+}
+
+function meshHarness(){
+  const rooms=new Map();let serial=0;
+  function joinRoom(_config,roomId){
+    const group=rooms.get(roomId)||new Set();rooms.set(roomId,group);const id=`player-${++serial}`,actions=new Map();
+    const room={id,onPeerJoin:null,onPeerLeave:null,
+      makeAction(name){const action={onMessage:null,send(data,{target}={}){for(const peer of group){if(peer===room)continue;if(target&&peer.id!==target)continue;peer._deliver(name,data,id);}return Promise.resolve();}};actions.set(name,action);return action;},
+      _deliver(name,data,peerId){actions.get(name)?.onMessage?.(data,{peerId});},
+      getSelfId(){return id;},
+      getAuthorityId(){return [...group].map(peer=>peer.id).concat(id).sort()[0];},
+      getPeers(){return Object.fromEntries([...group].filter(peer=>peer!==room).map(peer=>[peer.id,{connectionState:"connected",iceConnectionState:"connected",iceGatheringState:"complete",signalingState:"stable",addEventListener(){},getStats:async()=>new Map()}]));},
+      ping:async()=>2,
+      leave(){if(!group.has(room))return;group.delete(room);for(const peer of group)peer.onPeerLeave?.(id);}
+    };
+    for(const peer of group)peer.onPeerJoin?.(id);group.add(room);queueMicrotask(()=>{for(const peer of group)if(peer!==room)room.onPeerJoin?.(peer.id);});return room;
+  }
+  return async()=>({joinRoom,getRelaySockets:()=>({})});
+}
+
+const loadTransport=meshHarness(),events={a:[],b:[],c:[],d:[]},fx={a:[],b:[],c:[],d:[]};
+const make=key=>new LanVsSession({loadTransport,transportName:"MeshTest",joinDiagnosticMs:0,onPeer:()=>{},onGame:(packet,peerId)=>events[key].push({packet,peerId}),onFx:(packet,peerId)=>fx[key].push({packet,peerId})});
+const a=make("a"),b=make("b"),c=make("c"),d=make("d");
+await a.start("net-four-player");await b.start("net-four-player");await c.start("net-four-player");await d.start("net-four-player");await sleep(25);
+for(const session of[a,b,c,d])assert.equal(session.peerCount,3,"four players must remain simultaneously connected in one room");
+assert.equal(new Set([a.getAuthorityId(),b.getAuthorityId(),c.getAuthorityId(),d.getAuthorityId()]).size,1,"every participant must elect the same deterministic match authority");
+assert.equal(new Set([a.getSelfId(),b.getSelfId(),c.getSelfId(),d.getSelfId()]).size,4,"every player needs a unique network identity");
+
+assert.equal(a.sendGame({type:"state",playerId:a.getSelfId(),hp:75,killed:false,by:"",id:"state-a"}),true);await sleep(5);for(const key of["b","c","d"])assert.equal(events[key].length,1,`broadcast game state must reach ${key}`);
+const target=d.getSelfId();assert.equal(b.sendFx({type:"shot",id:"shot-b",from:[1,2,3],dir:[1,0,0],speed:210},{target}),true);await sleep(5);assert.equal(fx.a.length,0);assert.equal(fx.c.length,0);assert.equal(fx.d.length,1,"targeted reliable FX must reach exactly the requested peer");
+assert.equal(c.sendFx({type:"explosion",id:"boom-c",p:[4,5,6],playerId:c.getSelfId()}),true);await sleep(5);assert.equal(fx.a.length,1);assert.equal(fx.b.length,1);assert.equal(fx.d.length,2,"explosions must broadcast to every other player");
+
+const oldAuthority=a.getAuthorityId();assert.equal(oldAuthority,a.getSelfId());a.stop();await sleep(8);for(const session of[b,c,d])assert.equal(session.peerCount,2,"authority leaving must not tear down the remaining mesh");const migrated=[b.getAuthorityId(),c.getAuthorityId(),d.getAuthorityId()];assert.equal(new Set(migrated).size,1,"remaining players must converge on the same replacement authority");assert.notEqual(migrated[0],oldAuthority,"authority must migrate away from the disconnected player");
+
+const huge={hash:"huge",prisms:[{buildingKey:"block",base:0,top:30,points:[[-500,-500],[500,-500],[500,500],[-500,500]]}]};const safe=findClearBuildingLaunchPoint(huge,{point:[0,0],clearanceM:1,maxSearchM:2});assert.equal(buildingLaunchPointClear(huge,safe,{clearanceM:1}),true,"guaranteed fallback launch point must be proven clear even when normal search radius cannot escape the building");assert.ok(Math.hypot(safe[0],safe[1])>500,"fallback must leave the full blocking footprint instead of returning the unsafe origin");
+
+b.stop();c.stop();d.stop();
+console.log("Four-player VS mesh smoke passed: raised 7.3 cm FPV viewpoint, stable drivable-road traffic, opaque 3D buildings, simultaneous mates, unique identities, FX, authority migration and collision-free WORLD spawn.");
