@@ -1,0 +1,60 @@
+export const XBOX_GAMEPAD_DEADZONE=.14;
+export const XBOX_CONTROL_SCHEMES=Object.freeze({CLASSIC:"classic",AIM:"aim"});
+const XBOX_CONTROL_SCHEME_KEY="arondight45XboxControlSchemeV1";
+
+export const XBOX_STANDARD_BUTTON=Object.freeze({
+  A:0,
+  B:1,
+  X:2,
+  Y:3,
+  LEFT_SHOULDER:4,
+  RIGHT_SHOULDER:5,
+  LEFT_TRIGGER:6,
+  RIGHT_TRIGGER:7,
+  VIEW:8,
+  MENU:9,
+});
+const RELEASE_LATCH_BUTTONS=Object.freeze([
+  XBOX_STANDARD_BUTTON.A,
+  XBOX_STANDARD_BUTTON.B,
+  XBOX_STANDARD_BUTTON.X,
+  XBOX_STANDARD_BUTTON.Y,
+  XBOX_STANDARD_BUTTON.RIGHT_SHOULDER,
+  XBOX_STANDARD_BUTTON.LEFT_TRIGGER,
+  XBOX_STANDARD_BUTTON.RIGHT_TRIGGER,
+  XBOX_STANDARD_BUTTON.VIEW,
+  XBOX_STANDARD_BUTTON.MENU,
+]);
+
+function clamp(value,min=-1,max=1){return Math.max(min,Math.min(max,Number(value)||0));}
+export function loadXboxControlScheme(){try{return localStorage.getItem(XBOX_CONTROL_SCHEME_KEY)===XBOX_CONTROL_SCHEMES.AIM?XBOX_CONTROL_SCHEMES.AIM:XBOX_CONTROL_SCHEMES.CLASSIC;}catch{return XBOX_CONTROL_SCHEMES.CLASSIC;}}
+export function saveXboxControlScheme(value){const scheme=value===XBOX_CONTROL_SCHEMES.AIM?XBOX_CONTROL_SCHEMES.AIM:XBOX_CONTROL_SCHEMES.CLASSIC;try{localStorage.setItem(XBOX_CONTROL_SCHEME_KEY,scheme);}catch{}return scheme;}
+
+export function gamepadAxis(value,deadzone=XBOX_GAMEPAD_DEADZONE){
+  const raw=clamp(value),magnitude=Math.abs(raw),zone=clamp(deadzone,0,.5);
+  if(magnitude<=zone)return 0;
+  return Math.sign(raw)*(magnitude-zone)/(1-zone);
+}
+
+function buttonValue(gamepad,index){
+  const button=gamepad?.buttons?.[index];
+  if(typeof button==="number")return clamp(button,0,1);
+  return clamp(button?.value??(button?.pressed?1:0),0,1);
+}
+function releaseLatchButtonActive(gamepad){return RELEASE_LATCH_BUTTONS.some(index=>buttonValue(gamepad,index)>.18);}
+function settingsModalOpen(){const flagged=globalThis.__arondightSettingsModalOpen===true;if(!flagged)return false;const dialog=globalThis.document?.querySelector?.(".phone-settings-dialog");if(dialog&&dialog.open!==true){globalThis.__arondightSettingsModalOpen=false;return false;}return true;}
+function neutralSample(gamepad){return Object.freeze({id:String(gamepad.id||"Xbox controller"),index:Number(gamepad.index)||0,left:Object.freeze({x:0,y:0}),right:Object.freeze({x:0,y:0}),leftTrigger:0,rightTrigger:0,heightAxis:0,aim:false,fire:false,arm:false,kill:false,camera:false,scheme:loadXboxControlScheme()});}
+
+export function standardGamepadFamily(gamepad){if(!gamepad?.connected)return"none";const id=String(gamepad.id||"");if(/xbox|xinput|045e/i.test(id))return"xbox-standard";return gamepad.mapping==="standard"?"standard-gamepad":"none";}
+export function isXboxCompatibleGamepad(gamepad){return standardGamepadFamily(gamepad)!=="none";}
+export function findXboxGamepad(gamepads){return Array.from(gamepads||[]).find(isXboxCompatibleGamepad)||null;}
+
+export function sampleXboxGamepad(gamepad){
+  if(!isXboxCompatibleGamepad(gamepad))return null;
+  const modalOpen=settingsModalOpen(),releaseBlock=globalThis.__arondightSettingsGamepadBlockUntilRelease===true,onFoot=globalThis.__arondightOnFootMode===true;
+  if(modalOpen||releaseBlock||onFoot){if(!modalOpen&&!onFoot&&releaseBlock&&!releaseLatchButtonActive(gamepad))globalThis.__arondightSettingsGamepadBlockUntilRelease=false;return neutralSample(gamepad);}
+  const left={x:gamepadAxis(gamepad.axes?.[0]),y:gamepadAxis(gamepad.axes?.[1])};
+  const right={x:gamepadAxis(gamepad.axes?.[2]),y:gamepadAxis(gamepad.axes?.[3])};
+  const leftTrigger=buttonValue(gamepad,XBOX_STANDARD_BUTTON.LEFT_TRIGGER),rightTrigger=buttonValue(gamepad,XBOX_STANDARD_BUTTON.RIGHT_TRIGGER),scheme=loadXboxControlScheme(),aim=scheme===XBOX_CONTROL_SCHEMES.AIM&&buttonValue(gamepad,XBOX_STANDARD_BUTTON.LEFT_SHOULDER)>.5,rightShoulder=buttonValue(gamepad,XBOX_STANDARD_BUTTON.RIGHT_SHOULDER)>.5;
+  return Object.freeze({id:String(gamepad.id||"Xbox controller"),index:Number(gamepad.index)||0,left,right,leftTrigger,rightTrigger,heightAxis:Math.abs(rightTrigger-leftTrigger)<.05?0:clamp(rightTrigger-leftTrigger),aim,fire:rightShoulder,arm:buttonValue(gamepad,XBOX_STANDARD_BUTTON.A)>.5,kill:buttonValue(gamepad,XBOX_STANDARD_BUTTON.B)>.5,camera:buttonValue(gamepad,XBOX_STANDARD_BUTTON.X)>.5,scheme});
+}

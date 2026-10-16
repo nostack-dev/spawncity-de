@@ -1,0 +1,125 @@
+// One action layer for the Xbox pad (standard mapping), the same in every mode and the same
+// actions as the keyboard. The mode modules keep their analog control (sticks, triggers, fire);
+// every discrete action lives here, so a button means one thing everywhere and nothing fires
+// twice. Where a keyboard key already does the job, the pad sends that key (marked as pad
+// input), so keyboard and pad can never drift apart.
+//
+//   MENU        pause menu / settings (settings_controller_nav.mjs)
+//   VIEW        camera (drone: FPV/chase cycle · car + jet: cockpit/chase)            key C
+//   A           jump (on foot; double jump = jetpack) · drone: arm · dead: respawn ·
+//               start screen: START · strike aiming: call the strike
+//   B           strike aiming: cancel · car: handbrake (car module)
+//   X           enter / exit car or jet, eject in the air                              key E / F
+//   Y           next weapon (on foot, drone)                                            key Q
+//   D-pad ←/→   previous / next weapon                                                  wheel
+//   D-pad ↓     on foot ⇄ drone                                                         key V
+//   D-pad ↑     air strike: aim with the crosshair, A / RT / ↑ calls it                 key 4 / J
+//   B           EMP pulse (on foot, drone)                                              key G
+//
+// The pad also switches the game to pad play on first use (the XBOX CONTROLLER setting, which
+// hides the touch sticks), and blocks gameplay input while a menu is open.
+import {VOICE_PAD_PTT,VOICE_PAD_MUTE,nextVoicePadInput} from "./voice_control_bindings.mjs";
+export const PAD_ACTIONS_VERSION="unified-pad-actions-voice-toggle-v4";
+const BTN={A:0,B:1,X:2,Y:3,LB:4,RB:5,LT:6,RT:7,VIEW:8,MENU:9,L3:10,R3:11,UP:12,DOWN:13,LEFT:14,RIGHT:15};
+let installed=false,prev=[],autoEnabled=false,viewDownAt=0,voicePadState={r3:false,y:false,latched:false};
+const walk=()=>globalThis.__arondightWalkMode||null;
+function padNow(){const pads=navigator.getGamepads?.()||[];for(const p of pads)if(p?.connected&&(p.mapping==="standard"||/xbox|xinput|045e/i.test(String(p.id||""))))return p;return null;}
+function pressed(p,i){const b=p?.buttons?.[i];return Boolean(typeof b==="number"?b>.5:b?.pressed||Number(b?.value)>.5);}
+function menuOpen(){return Boolean(document.querySelector("dialog.phone-settings-dialog[open],#flightLogbookDialog[open],#resetVoteDialog,#quitConfirmDialog"));}
+function voteDialog(){return document.getElementById("quitConfirmDialog")||document.getElementById("resetVoteDialog");}
+function startScreen(){const m=document.getElementById("gameMenu");return Boolean(m&&!m.hidden);}
+function dead(){return Boolean(globalThis.__arondightPlayerDamageModel?.dead||globalThis.__arondightRealWorld?.vsLocalDead||document.body.classList.contains("player-dead"));}
+function mode(){const b=document.body;if(b.classList.contains("jet-mode"))return"jet";if(b.classList.contains("player-driving"))return"car";return walk()?.mode==="foot"?"foot":"drone";}
+// gameplay modules ask this before reading the pad
+globalThis.__arondightPadBlocked=()=>menuOpen()||startScreen();
+export function sendKey(code,{hold=60}={}){const opts={code,key:code.replace(/^Key|^Digit/,"").toLowerCase(),bubbles:true,cancelable:true};const down=new KeyboardEvent("keydown",opts);down.__synthetic="pad";dispatchEvent(down);setTimeout(()=>{const up=new KeyboardEvent("keyup",opts);up.__synthetic="pad";dispatchEvent(up);},hold);}
+function cycleWeapon(dir){const m=mode();if(m!=="foot"&&m!=="drone")return;const api=m==="foot"?globalThis.__arondightFootWeapons:globalThis.__arondightDroneWeapons;if(!api)return;
+  if(m==="foot"&&typeof api.setMode==="function"){const order=["smg","glock","sniper","grenade","rocket","fists","knife"],i=Math.max(0,order.indexOf(String(api.mode)));api.setMode(order[(i+dir+order.length)%order.length]);}else api.toggle?.();}
+function switchFootDrone(){const b=document.getElementById("mobileGameplayMode");if(b&&!b.disabled&&b.classList.contains("hud-mode-switch")){b.click();return;}const m=mode();if(m!=="foot"&&m!=="drone")return;walk()?.setMode?.(m==="foot"?"drone":"foot",{reason:"pad-dpad-down"});}
+function camera(){const m=mode();if(m==="drone")document.getElementById("soloCamera")?.click();else if(m==="car"||m==="jet")sendKey("KeyC");}
+function strike(){const j=globalThis.__fighterJets;if(!j)return;if(j.targeting)j.confirm?.();else j.target?.(true);}
+function emp(){const w=globalThis.__arondightWantedSystem;if(w?.triggerEmp)w.triggerEmp();else document.getElementById("wantedEmpButton")?.click();}
+function respawn(){if(globalThis.__arondightRespawnReady&&!globalThis.__arondightRespawnReady())return;const hud=document.getElementById("vsRespawnHud");if(hud&&!hud.hidden){hud.querySelector("button")?.click();return;}globalThis.__arondightRequestReset?.();}
+function enablePadPlay(){if(autoEnabled)return;autoEnabled=true;const box=document.querySelector("[data-xbox-controller]");if(box&&!box.checked){box.click();}}
+// title screen: D-pad / stick moves between START, WORLD and the world switches, A presses, B backs out
+function titleNav(edge){const log=document.getElementById("changelogPanel");
+  if(log&&!log.hidden){if(edge(BTN.DOWN)||edge(BTN.UP))globalThis.__arondightChangelogMenu?.scroll?.(edge(BTN.DOWN)?140:-140);else if(edge(BTN.B)||edge(BTN.A))globalThis.__arondightChangelogMenu?.close?.();return;}
+  const panel=document.getElementById("worldOptionsPanel"),inPanel=panel&&!panel.hidden,scope=inPanel?panel:document.getElementById("gameMenu");
+  const items=[...(scope?.querySelectorAll("button:not([disabled])")||[])].filter(b=>b.offsetParent!==null&&(inPanel||b.id==="gameMenuStart"||b.id==="gameMenuWorld"||b.id==="gameMenuChangelog"||b.id==="gameMenuShare"));
+  const cur=items.indexOf(document.activeElement);
+  if(edge(BTN.DOWN)||edge(BTN.UP)){const n=items.length;if(!n)return;const i=cur<0?0:(cur+(edge(BTN.DOWN)?1:-1)+n)%n;items[i].focus({preventScroll:false});return;}
+  if(edge(BTN.B)&&inPanel){globalThis.__arondightWorldOptionsMenu?.close?.();return;}
+  if(edge(BTN.A)){if(cur>=0)items[cur].click();else if(!inPanel)document.getElementById("gameMenuStart")?.click();return;}
+  if(edge(BTN.MENU)&&!inPanel)document.getElementById("gameMenuStart")?.click();}
+function frame(){
+  requestAnimationFrame(frame);const p=padNow();document.body.classList.toggle("pad-connected",Boolean(p));if(!p){globalThis.__arondightVoiceControls?.setPadTalk?.(false);voicePadState={r3:false,y:false,latched:false};const v=document.getElementById("viewport");if(v){v.dataset.voicePadR3="0";v.dataset.voicePadY="0";v.dataset.voicePadChord="0";}prev.length=0;return;}
+  const now=[];for(let i=0;i<17;i++)now[i]=pressed(p,i);const edge=i=>now[i]&&!prev[i];
+  if(now.some(Boolean)){enablePadPlay();if(!document.body.classList.contains("pad-input"))document.body.classList.add("pad-input");}
+  const voiceAllowed=document.body.classList.contains("solo-flight")&&!menuOpen()&&!startScreen()&&!dead()&&!globalThis.__arondightWorldMap?.isOpen;
+  voicePadState=nextVoicePadInput(voicePadState,{r3:now[VOICE_PAD_PTT],y:now[VOICE_PAD_MUTE],allowed:voiceAllowed});
+  if(voicePadState.mute)globalThis.__arondightVoiceControls?.toggleMute?.();
+  if(voicePadState.micToggle)globalThis.__arondightVoiceControls?.toggleMic?.();
+  // State exposed for diagnostics and deterministic input tests. A *released*
+  // frame must be observed before the next R3+Y chord, exactly as on hardware.
+  const voiceView=document.getElementById("viewport");
+  if(voiceView){
+    voiceView.dataset.voicePadR3=now[VOICE_PAD_PTT]?"1":"0";
+    voiceView.dataset.voicePadY=now[VOICE_PAD_MUTE]?"1":"0";
+    voiceView.dataset.voicePadChord=voicePadState.latched?"1":"0";
+  }
+  try{
+    {const v=voteDialog();if(v){if(edge(BTN.A)){(document.activeElement&&v.contains(document.activeElement)?document.activeElement:v.querySelector("[data-yes]"))?.click();}else if(edge(BTN.B))v.querySelector("[data-no]")?.click();else if(edge(BTN.LEFT)||edge(BTN.RIGHT)){const b=[...v.querySelectorAll("button")],i=b.indexOf(document.activeElement);b[(i+1+b.length)%b.length]?.focus();}return;}}
+    if(globalThis.__arondightWorldMap?.isOpen)return; // the map reads the pad itself
+    if(menuOpen()){focusMenu();return;}           // the settings navigator owns the pad; make sure something is focused
+    if(startScreen()){titleNav(edge);return;}
+    if(dead()){if(edge(BTN.A)||edge(BTN.Y))respawn();return;}
+    const j=globalThis.__fighterJets;
+    if(j?.targeting){if(edge(BTN.A)||edge(BTN.RT)||edge(BTN.UP))j.confirm?.();else if(edge(BTN.B))j.target?.(false);return;}
+    const m=mode();
+    if(edge(BTN.UP))strike();
+    if(edge(BTN.DOWN))switchFootDrone();
+    // VIEW: tap = camera, hold = fullscreen map (world_map_full.mjs) — the tap acts on release
+    if(now[BTN.VIEW]&&!prev[BTN.VIEW])viewDownAt=performance.now();
+    if(!now[BTN.VIEW]&&prev[BTN.VIEW]&&performance.now()-viewDownAt<400&&!(performance.now()-(Number(globalThis.__arondightSuppressViewTap)||0)<1500))camera();
+    if(edge(BTN.X))sendKey("KeyE");
+    if(edge(BTN.RIGHT))globalThis.__arondightPing?.at?.(); /* D-pad right = PING at the crosshair (Y still cycles weapons) */
+    if(m==="foot"||m==="drone"){if(edge(BTN.Y)&&!voicePadState.suppressWeapon)cycleWeapon(1);else if(edge(BTN.LEFT))cycleWeapon(-1);}
+    if((m==="foot"||m==="drone")&&edge(BTN.B))emp();
+  }finally{prev=now;}
+}
+function onKey(e){
+  if(e.__synthetic||e.metaKey||e.ctrlKey||e.altKey||e.repeat)return;const t=e.target;if(t instanceof Element&&t.closest("input,textarea,select,[contenteditable]"))return;
+  // F = E (interact), as in most shooters
+  if(e.code==="KeyF"){
+    if(menuOpen()||startScreen()||dead())return;
+    // The repair button exists even when CSS hides it; only actionable repair owns F.
+    const repair=document.getElementById("zombieRepair");
+    if(walk()?.mode==="foot"&&repair?.dataset?.show==="1"&&!repair.disabled&&!repair.closest("[hidden]"))return;
+    e.preventDefault();
+    // A nearby car may capture E before the jet handler. F boards a jet first.
+    const jet=globalThis.__jetMode;
+    if(!globalThis.__arondightVehicleDrive?.active&&walk()?.mode==="foot"&&!jet?.active&&jet?.enter?.())return;
+    sendKey("KeyE");return;
+  }
+  // P = multiplayer on / off (find a mate), also in the menu right under RESUME
+  if(e.code==="KeyP"){if(menuOpen()||startScreen())return;e.preventDefault();document.getElementById("mobileGameplayMultiplayer")?.click();return;}
+  // G = EMP (the police-drone pulse), like a tactical in shooters
+  if(e.code==="KeyG"){if(menuOpen()||startScreen()||dead())return;e.preventDefault();emp();return;}
+  if(e.code==="Digit4"){if(menuOpen()||startScreen()||dead())return;e.preventDefault();strike();}
+}
+// Where am I? A pad user always sees the focused control, the start button says Ⓐ.
+const PAD_CSS=`
+html body.pad-input:not(:has(dialog[open])):not(:has(#resetVoteDialog)),html body.pad-input:not(:has(dialog[open])):not(:has(#resetVoteDialog)) #viewport,html body.pad-input:not(:has(dialog[open])):not(:has(#resetVoteDialog)) #viewport *{cursor:none!important}
+html body.pad-input dialog :is(button,input,select,summary,[tabindex]):focus{outline:3px solid #ffd76a!important;outline-offset:2px!important;box-shadow:0 0 0 6px #ffd76a33!important}
+html body.pad-input dialog input[type=range]:focus{outline-offset:6px!important}
+html body.pad-connected #gameMenuStart::after{content:"Ⓐ";display:inline-block;margin-left:10px;padding:0 7px;border-radius:50%;background:#3fbf5a;color:#fff;font-weight:900}
+html body.pad-connected #gameMenu::after{content:"Ⓐ START  ·  ☰ MENU";position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);padding:6px 14px;border-radius:16px;background:#000a;color:#eafff7;font:800 13px/1 system-ui,sans-serif;letter-spacing:.1em;pointer-events:none;animation:padHintPulse 1.6s ease-in-out infinite}
+@keyframes padHintPulse{50%{opacity:.55}}`;
+function focusMenu(){const d=document.querySelector("dialog.phone-settings-dialog[open]");const a=document.activeElement;if(!d||(d.contains(a)&&!a.matches?.("[data-close-top]")))return;(d.querySelector('[data-game-action="resume"]')||d.querySelector("button"))?.focus({preventScroll:true});}
+export function installPadActions(){
+  if(installed||typeof window==="undefined")return;installed=true;
+  addEventListener("keydown",onKey);requestAnimationFrame(frame);const st=document.createElement("style");st.dataset.padActions=PAD_ACTIONS_VERSION;st.textContent=PAD_CSS;document.head.appendChild(st);
+  addEventListener("gamepadconnected",()=>enablePadPlay());
+  const v=document.getElementById("viewport");if(v)v.dataset.padActions=PAD_ACTIONS_VERSION;
+}
+installPadActions();

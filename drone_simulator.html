@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="screen-orientation" content="landscape">
+<meta name="x5-orientation" content="landscape">
+<link rel="manifest" href="./drone_simulator.webmanifest">
+<link rel="icon" href="./sim/icons/spawncity-192.png">
+<link rel="apple-touch-icon" href="./sim/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="SpawnCity">
+<meta name="application-name" content="SpawnCity">
+<meta name="theme-color" content="#010806">
+<meta name="description" content="SpawnCity – das Spiel in deiner echten Stadt: Es startet genau dort, wo du stehst – flieg Drohne, lauf durch deine Straßen, fahr Auto, Bus oder Jet und spiel mit Freunden. Kostenlos im Browser, ohne Download.">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="https://spawncity.de/drone_simulator.html">
+<meta property="og:site_name" content="SpawnCity">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="de_DE">
+<meta property="og:url" content="https://spawncity.de/drone_simulator.html">
+<meta property="og:title" content="SpawnCity – deine echte Stadt ist das Spielfeld">
+<meta property="og:description" content="Drohne, zu Fuß, Auto, Bus und Jet – in deiner echten Stadt, per GPS genau da, wo du stehst. Mit Freunden im Multiplayer. Kostenlos im Browser.">
+<meta property="og:image" content="https://spawncity.de/spawncity-card.png">
+<meta property="og:image:secure_url" content="https://spawncity.de/spawncity-card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="SpawnCity – Titelbild mit Stadt-Skyline bei Nacht und einem Standort-Pin">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SpawnCity – deine echte Stadt ist das Spielfeld">
+<meta name="twitter:description" content="Drohne, zu Fuß, Auto, Bus und Jet – in deiner echten Stadt, per GPS genau da, wo du stehst. Kostenlos im Browser.">
+<meta name="twitter:image" content="https://spawncity.de/spawncity-card.png">
+<meta name="twitter:image:alt" content="SpawnCity – Titelbild mit Stadt-Skyline bei Nacht und einem Standort-Pin">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"VideoGame","name":"SpawnCity","url":"https://spawncity.de/drone_simulator.html","image":"https://spawncity.de/spawncity-card.png","description":"Open-World-Spiel in deiner echten Stadt: per GPS startest du genau dort, wo du stehst – Drohne, zu Fuß, Auto, Bus und Jet, allein oder mit Freunden.","inLanguage":"de","genre":["Open World","Action","Simulation"],"playMode":["SinglePlayer","MultiPlayer"],"gamePlatform":["Webbrowser","Android","iOS"],"applicationCategory":"GameApplication","operatingSystem":"Any","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"author":{"@type":"Person","name":"Christian Hohlfeld"}}
+</script>
+<title>SpawnCity – Drohne, Auto &amp; Jet in deiner echten Stadt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..900;1,14..32,700..900&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;background:#010806;color:#b6ffcf}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#010806}.viewport{position:fixed;inset:0}canvas{display:block;width:100%;height:100%}.panel{position:fixed;z-index:5;top:12px;left:12px;width:360px;max-height:calc(100vh - 24px);overflow:auto;background:#09101bea;border:1px solid #273044;border-radius:14px;padding:14px;backdrop-filter:blur(12px);box-shadow:0 12px 36px #0009}.telemetry{position:fixed;z-index:5;right:12px;top:12px;width:292px;background:#09101bdf;border:1px solid #273044;border-radius:12px;padding:12px;backdrop-filter:blur(10px)}h1{font-size:18px;margin:0 0 4px}.sub{font-size:12px;color:#96a6bd;line-height:1.45;margin:0 0 12px}.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}.tabs button.active{background:#175f49;border-color:#38a985}.row{display:flex;gap:8px;margin:8px 0}.row>*{flex:1}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.card{border:1px solid #263148;border-radius:9px;padding:10px;margin:10px 0}.card h2{font-size:12px;margin:0 0 8px;color:#cbd7e8}.help{font-size:11px;color:#8f9fb6;line-height:1.5}.kv{display:grid;grid-template-columns:1fr auto;gap:5px 10px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}.good{color:#5bd9aa!important;border-color:#2d8266!important}.warn{color:#ffd06d!important;border-color:#836b34!important}.bad{color:#ff7185!important;border-color:#8b3443!important}button,input,select,textarea{font:inherit}button,.linkbutton{border:1px solid #3a4964;border-radius:7px;background:#182235;color:#eef4ff;padding:8px;cursor:pointer;text-align:center;text-decoration:none}button:hover,.linkbutton:hover{background:#22304a}button:disabled{opacity:.42;cursor:not-allowed}.primary{background:#175f49;border-color:#2e9b77}label{font-size:11px;color:#aab6c8;display:block}input[type=number],input[type=text],input[type=range],select,textarea{width:100%;background:#0d1420;color:#fff;border:1px solid #303a4e;border-radius:6px;padding:6px}.modebox{padding:8px;border-radius:8px;background:#0c1522;border:1px solid #243149;font-size:12px;line-height:1.45}.mobile-controls{display:none!important}.statusline{font-size:11px;color:#9db0c9;margin-top:6px}.progress{height:7px;background:#111b29;border-radius:999px;overflow:hidden}.progress>div{height:100%;width:0;background:#4fbf92}.remote-card{border-color:#315d73}.remote-card .row{align-items:end}dialog{width:min(94vw,760px);max-height:94vh;overflow:auto;border:1px solid #35435d;border-radius:14px;background:#09101b;color:#eef4ff;padding:16px;box-shadow:0 24px 80px #000c}dialog::backdrop{background:#000c;backdrop-filter:blur(5px)}dialog h2{font-size:18px;margin:0 0 6px}dialog p{font-size:12px;color:#9bacbf;line-height:1.45}.signal{width:100%;min-height:70px;resize:vertical;font:9px ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}.pair-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.pair-step{border:1px solid #263148;border-radius:10px;padding:10px;background:#0d1522;min-width:0}.pair-step b{display:block;margin-bottom:6px}.scanner{position:relative;width:min(100%,340px);aspect-ratio:1;margin:8px auto;border-radius:10px;overflow:hidden;background:#030609;border:1px solid #30405a}.scanner video{width:100%;height:100%;object-fit:cover}.scanner:after{content:"SCAN CONTROLLER OFFER";position:absolute;left:9%;right:9%;top:44%;padding:7px;text-align:center;border:1px solid #fff8;border-radius:8px;background:#0008;font-size:11px;letter-spacing:.08em}.qr{display:block;width:min(100%,340px);aspect-ratio:1;margin:8px auto;background:#fff;border-radius:10px;padding:8px;image-rendering:pixelated}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}details{margin-top:12px;border-top:1px solid #263148;padding-top:10px}summary{cursor:pointer;color:#8294ad;font-size:11px}@media(max-width:900px){html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}.viewport{position:relative;height:48vh;min-height:320px;max-height:520px;inset:auto}.panel,.telemetry{position:relative;inset:auto;width:auto;max-height:none;margin:10px 12px}.telemetry{margin-bottom:max(18px,env(safe-area-inset-bottom))}.desktop-help{display:none}.grid{grid-template-columns:1fr 1fr}.panel{order:1}.telemetry{order:2}body{display:flex;flex-direction:column}.viewport{order:0}.tabs button{padding:10px 4px}.row{flex-wrap:wrap}.kv{font-size:11px}.pair-grid{grid-template-columns:1fr 1fr}}@media(max-height:500px){dialog{padding:10px}.qr,.scanner{width:min(28vh,250px)}}
+
+/* ---- Game start menu (shown instantly, before the game bundle loads) ---- */
+#gameMenu{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:#0b0d10;color:#eef0f2;font-family:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+#gameMenu[hidden]{display:none!important}
+#gameMenu{transition:opacity .6s ease}#gameMenu.gm-leaving{opacity:0;pointer-events:none}
+#gameMenuBg{position:absolute;inset:0;width:100%;height:100%;display:block}
+#gameMenu .gm-center{position:relative;display:flex;flex-direction:column;align-items:center;gap:clamp(10px,2.4vh,22px);padding:24px;text-align:center}
+#gameMenu .gm-title{position:relative;display:flex;flex-direction:column;align-items:center;font-family:"Inter",system-ui,-apple-system,sans-serif;font-weight:900;font-style:italic;font-size:clamp(34px,min(10vw,15vh),120px);letter-spacing:.02em;line-height:.9;color:#f4f5f6;text-transform:uppercase;text-shadow:0 3px 0 rgba(0,0,0,.55),0 10px 30px rgba(0,0,0,.6);padding:0 .08em .16em}
+#gameMenu .gm-title>span{display:block}
+#gameMenu .gm-title::after{content:"";position:absolute;left:4%;right:4%;bottom:.02em;height:.09em;background:linear-gradient(90deg,transparent,#ff7a1a 18%,#ffb02e 60%,transparent);transform:skewX(-24deg);box-shadow:0 0 18px rgba(255,122,26,.55)}
+#gameMenu .gm-sub{font-weight:700;font-size:clamp(11px,1.6vw,15px);letter-spacing:.42em;color:rgba(238,240,242,.78);text-shadow:0 2px 4px rgba(0,0,0,.7)}
+#gameMenuStart{margin-top:clamp(6px,2vh,18px);min-width:min(64vw,300px);padding:15px 28px;font:700 clamp(17px,2.4vw,22px) "Inter",system-ui,-apple-system,sans-serif;letter-spacing:.32em;text-transform:uppercase;color:#16120c;background:linear-gradient(180deg,#ffb02e,#ff7a1a);border:0;border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,.55),inset 0 -3px 0 rgba(0,0,0,.18);text-shadow:none;cursor:pointer;clip-path:polygon(4% 0,100% 0,96% 100%,0 100%)}
+#gameMenuStart:not([disabled]){animation:none}
+#gameMenuStart:active{filter:brightness(.92)}
+#gameMenuStart[disabled]{opacity:.7;cursor:default;animation:none;filter:saturate(.4)}
+#gameMenuStatus{min-height:1.2em;font-size:11px;font-weight:700;letter-spacing:.3em;color:rgba(238,240,242,.62);text-shadow:0 1px 3px rgba(0,0,0,.7)}
+@keyframes gmPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+#soundSwitch{position:fixed;z-index:100001;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));width:40px;height:32px;display:flex;align-items:center;justify-content:center;padding:0;background:rgba(10,13,18,.56);border:1px solid rgba(255,255,255,.16);border-radius:6px;color:#fff;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.45)}
+#soundSwitch svg{width:20px;height:20px;display:block}
+#soundSwitch[data-on="0"] .ss-wave{display:none}#soundSwitch[data-on="1"] .ss-x{display:none}
+#soundSwitch[hidden],#musicSwitch[hidden]{display:none!important}
+#musicSwitch{position:fixed;z-index:100001;top:max(10px,env(safe-area-inset-top));right:calc(max(10px,env(safe-area-inset-right)) + 46px);width:40px;height:32px;display:flex;align-items:center;justify-content:center;padding:0;background:rgba(10,13,18,.56);border:1px solid rgba(255,255,255,.16);border-radius:6px;color:#fff;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.45)}
+#musicSwitch svg{width:20px;height:20px;display:block}#musicSwitch[data-on="1"] .ms-x{display:none}#musicSwitch[data-on="0"]{color:rgba(255,255,255,.55)}
+#installApp{position:fixed;z-index:100001;top:max(10px,env(safe-area-inset-top));left:max(10px,env(safe-area-inset-left));height:32px;display:flex;align-items:center;gap:7px;padding:0 11px;background:rgba(10,13,18,.56);border:1px solid rgba(255,255,255,.16);border-radius:6px;color:#fff;font:600 11px Inter,system-ui,sans-serif;letter-spacing:.12em;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.45)}
+#installApp svg{width:14px;height:14px}
+#installApp[hidden],#installHint[hidden]{display:none!important}
+#installHint{position:fixed;z-index:100002;top:calc(max(10px,env(safe-area-inset-top)) + 40px);left:max(10px,env(safe-area-inset-left));max-width:min(80vw,320px);padding:12px 14px;background:#12161cf5;border:1px solid rgba(255,255,255,.16);border-radius:14px;color:#fff;font:600 13px/1.4 system-ui,sans-serif}
+#installHint b{color:#f5b301;font-weight:700}
+/* The engineering station panels are only shown with ?dev=1 */
+body:not(.dev-ui) .panel,body:not(.dev-ui) .telemetry{display:none!important}
+@media(max-width:900px){body:not(.dev-ui) .viewport{position:fixed;inset:0;height:auto;min-height:0;max-height:none}}
+</style>
+<style id="spawncityLayout">
+/* SpawnCity layout fixes. The deploy workflow inlines this file into drone_simulator.html
+   right before </head>, so it wins over the game's own menu rules. */
+
+/* Start menu: never crop. Flex `center` pushes overflow off the top edge where it can't be
+   scrolled to; `safe center` + auto margins keep the top reachable and scroll the rest. */
+#gameMenu{overflow-x:hidden;overflow-y:auto;align-items:safe center;justify-content:safe center;-webkit-overflow-scrolling:touch}
+#gameMenu>#gameMenuBg{position:fixed}
+#gameMenu .gm-center{margin:auto;box-sizing:border-box;max-width:100%;
+  padding:calc(max(12px,env(safe-area-inset-top)) + 44px) max(16px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+
+/* Phones held sideways: title on the left, buttons on the right, everything on one screen. */
+@media (orientation:landscape) and (max-height:560px){
+  #gameMenu .gm-center{display:grid;grid-template-columns:minmax(0,auto) minmax(240px,340px);grid-auto-rows:auto;
+    column-gap:clamp(24px,6vw,72px);row-gap:clamp(6px,1.8vh,10px);align-items:center;justify-items:center;
+    padding-top:calc(max(10px,env(safe-area-inset-top)) + 44px)}
+  #gameMenu .gm-title{grid-column:1;grid-row:1 / span 4;align-self:end;font-size:clamp(40px,min(22vh,10vw),104px)}
+  #gameMenu .gm-sub{grid-column:1;grid-row:5 / span 2;align-self:start;font-size:clamp(10px,1.5vw,13px);letter-spacing:.34em}
+  #gameMenu .gm-center>:not(.gm-title):not(.gm-sub){grid-column:2;width:100%;min-width:0;box-sizing:border-box}
+  #gameMenu #gameMenuStart{margin-top:0;min-width:0;padding-top:clamp(9px,2.6vh,15px);padding-bottom:clamp(9px,2.6vh,15px)}
+  #gameMenu #gameMenuWorld,#gameMenu #gameMenuChangelog{min-height:0;padding-top:clamp(7px,2vh,12px)!important;padding-bottom:clamp(7px,2vh,12px)!important}
+  #gameMenu #gameMenuStatus{min-height:1em;margin:0}
+  #gameMenu #startPlaceButton{margin-top:0}
+}
+@media (orientation:landscape) and (max-height:360px){
+  #gameMenu .gm-center{padding-top:calc(max(6px,env(safe-area-inset-top)) + 40px);row-gap:5px}
+  #gameMenu #gameMenuStatus{display:none}
+}
+
+/* Top-right toggles keep one size in the menu and in play (the in-game HUD sets 40x36),
+   so moving them into the game view never makes them grow or shrink. */
+#soundSwitch,#musicSwitch{height:36px;transition:none!important;animation:none!important}
+
+/* Fallback EXIT (sim/spawncity_exit_guard.js): only shown when the HUD's own EXIT is missing. */
+#scExit{position:fixed;z-index:2147483000;left:max(8px,env(safe-area-inset-left));top:max(8px,env(safe-area-inset-top));
+  height:36px;padding:0 12px;display:flex;align-items:center;gap:6px;border-radius:10px;border:1.5px solid #ff8a6a99;
+  background:#2a1410e6;color:#ffe2d8;font:900 11px/1 system-ui,-apple-system,sans-serif;letter-spacing:.12em;cursor:pointer;touch-action:manipulation}
+#scExit[hidden]{display:none!important}
+#scExitAsk{position:fixed;inset:0;z-index:2147483001;display:flex;align-items:center;justify-content:center;background:#000a}
+#scExitAsk[hidden]{display:none!important}
+#scExitAsk .box{background:#12161c;border:1px solid #ffffff2a;border-radius:14px;padding:18px 20px;color:#eef0f2;text-align:center;font:800 13px/1.3 system-ui,sans-serif;letter-spacing:.06em;min-width:240px}
+#scExitAsk .row{display:flex;gap:10px;justify-content:center;margin-top:14px}
+#scExitAsk button{min-width:96px;height:42px;border-radius:10px;border:1px solid #ffffff33;background:#1d232b;color:#fff;font:800 13px system-ui,sans-serif;letter-spacing:.1em}
+#scExitAsk button[data-yes]{background:linear-gradient(180deg,#ffb02e,#ff7a1a);color:#16120c;border:0}
+</style>
+</head>
+<body>
+<div id="gameMenu" role="dialog" aria-label="Start game">
+  <canvas id="gameMenuBg" aria-hidden="true"></canvas>
+  <div class="gm-center">
+    <div class="gm-title" aria-label="SpawnCity"><span>SPAWN</span><span>CITY</span></div>
+    <div class="gm-sub">DRONE · CARS · ZOMBIES</div>
+    <button id="gameMenuStart" type="button" disabled>LOADING</button>
+    <div id="gameMenuStatus">PREPARING WORLD</div>
+  </div>
+</div>
+<script>
+// Renamed RUSH -> SpawnCity: settings saved under the old keys move over once.
+(function(){try{var ls=window.localStorage,keys=[];for(var i=0;i<ls.length;i++){var k=ls.key(i);if(k&&k.indexOf("rush")===0)keys.push(k);}
+  keys.forEach(function(k){var n="spawnCity"+k.slice(4);if(ls.getItem(n)===null)ls.setItem(n,ls.getItem(k));ls.removeItem(k);});}catch(e){}})();
+</script>
+<script>
+// Background silence: when the app is closed / sent to the background (tab hidden, PWA switched
+// away, screen off) every Web Audio context is suspended and every <audio>/<video> paused —
+// music, engine, effects, voices. Nothing may resume while hidden (several modules call resume()
+// on their own). Coming back, every context that was running runs again: at once where the
+// browser allows it, otherwise on the very next touch / click / key (phones only let audio
+// start from a gesture) — never left suspended, so engines, ambience and explosions stay.
+(()=>{const ctxs=new Set(),media=new Set(),Base=window.AudioContext||window.webkitAudioContext;let hiddenNow=false;
+  const isHidden=()=>hiddenNow||document.visibilityState==="hidden";
+  if(Base&&!Base.__bgGuard){const resume=Base.prototype.resume;Base.__bgNativeResume=resume;
+    Base.prototype.resume=function(){ctxs.add(this);if(isHidden()){this.__bgWant=true;return Promise.resolve();}return resume.call(this);};
+    class Tracked extends Base{constructor(...a){super(...a);ctxs.add(this);try{this.addEventListener("statechange",()=>{if(this.state==="running")this.__bgWant=false;});}catch(e){}if(isHidden()){this.__bgWant=true;try{this.suspend();}catch(e){}}}}
+    Tracked.__bgGuard=true;window.AudioContext=Tracked;if(window.webkitAudioContext)window.webkitAudioContext=Tracked;}
+  const nativeResume=c=>{try{const r=(Base.__bgNativeResume||c.resume).call(c);if(r&&r.catch)r.catch(function(){});}catch(e){}};
+  const play=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){media.add(this);if(isHidden()){this.__bgWanted=true;return Promise.resolve();}this.__bgWanted=false;return play.apply(this,arguments);};
+  const pause=HTMLMediaElement.prototype.pause;HTMLMediaElement.prototype.pause=function(){if(!hiddenNow)this.__bgWanted=false;return pause.apply(this,arguments);};
+  function hide(){if(hiddenNow)return;hiddenNow=true;for(const c of ctxs){if(c.state==="running"||c.state==="interrupted"){c.__bgWant=true;try{c.suspend();}catch(e){}}}
+    for(const m of new Set([...media,...document.querySelectorAll("audio,video")])){if(!m.paused&&!(m.srcObject&&m.tagName==="VIDEO")){m.__bgWanted=true;try{pause.call(m);}catch(e){}}}document.documentElement.dataset.bgAudio="suspended";}
+  function wake(){if(isHidden())return;for(const c of ctxs){if(c.__bgWant&&c.state!=="running"&&c.state!=="closed")nativeResume(c);}
+    for(const m of media){if(m.__bgWanted){try{const r=play.call(m);if(r&&r.then)r.then(function(){m.__bgWanted=false;}).catch(function(){});else m.__bgWanted=false;}catch(e){}}}}
+  function show(){if(document.visibilityState==="hidden")return;hiddenNow=false;wake();document.documentElement.dataset.bgAudio="running";}
+  document.addEventListener("visibilitychange",()=>{document.visibilityState==="hidden"?hide():show();},{capture:true});
+  window.addEventListener("pagehide",e=>{if(document.visibilityState==="hidden"||e.persisted)hide();},{capture:true});document.addEventListener("freeze",hide,{capture:true});
+  window.addEventListener("pageshow",show,{capture:true});document.addEventListener("resume",show,{capture:true});
+  // the gesture that phones need to start audio again
+  for(const t of["pointerdown","touchend","keydown","click"])window.addEventListener(t,wake,{capture:true,passive:true});
+  window.__arondightBackgroundAudio={hide,show,wake,get hidden(){return hiddenNow;},contexts:()=>[...ctxs]};})();
+</script>
+
+<script>
+// Strict versioning for the installed app (home screen). The deployed page carries its build
+// SHA (first comment of the document); every deploy also publishes ./build.json with the same
+// SHA. We ask for build.json with no-store + a unique query (no CDN, no HTTP cache, no service
+// worker cache can answer) on start, on every return to the app (visibility, focus, pageshow,
+// back online) and every 30 s. A newer build:
+//  * before the first START (title screen, app launch / resume) → reload right away,
+//  * once a game has been started in this page, never on its own: a session in progress (also in
+//    the pause menu, after an app switch, in multiplayer) is never thrown out — an UPDATE pill
+//    (tap / U = update now) waits until the player chooses.
+// Before reloading, the service worker is told to update, every Cache Storage entry is dropped,
+// and the reload URL carries the new SHA so nothing on the way can serve the old page.
+(function(){
+  var first=document.firstChild,m=first&&first.nodeType===8&&/BUILD_SHA:([0-9a-f]{7,40})/.exec(first.nodeValue||""),mine=m&&m[1];
+  // bottom right: this build vs the online build, green when equal
+  var tag=document.createElement("div");tag.id="buildTag";tag.style.cssText="position:fixed;z-index:2147482000;right:max(6px,env(safe-area-inset-right));bottom:max(4px,env(safe-area-inset-bottom));padding:2px 6px;border-radius:4px;background:#000a;color:#9fb3c8;font:600 10px/1.3 ui-monospace,Menlo,monospace;pointer-events:none;letter-spacing:.02em";
+  function showTag(online){if(!tag.isConnected&&document.body)document.body.appendChild(tag);var a=mine?mine.slice(0,7):"dev",b=online?online.slice(0,7):"…";tag.textContent="v "+a+" · online "+b;tag.style.color=online&&mine&&online===mine?"#7ff0c5":online?"#ffcf6a":"#9fb3c8";}
+  if(document.body)showTag(null);else document.addEventListener("DOMContentLoaded",function(){showTag(null);});
+  if(!mine){fetch("./build.json?t="+Date.now(),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(j){showTag(j&&j.sha||null);}).catch(function(){});return;}
+  var pending=null,reloading=false,lastCheck=0,pill=null;
+  function menu(){return document.getElementById("gameMenu");}
+  function inMenu(){var el=menu();return !el||!el.hidden;}
+  var played=false;function playing(){if(!played&&document.body&&document.body.classList.contains("solo-flight"))played=true;return played;}setInterval(playing,1000);
+  function purge(){var jobs=[];/* the offline copy and map data stay (the worker serves the page network-first anyway); legacy caches go */try{if(window.caches&&caches.keys)jobs.push(caches.keys().then(function(k){return Promise.all(k.filter(function(n){return n.indexOf("spawncity-")!==0&&n!=="rush-tiles-v1"/* the worker moves the old map cache over */;}).map(function(n){return caches.delete(n);}));}));}catch(e){}
+    try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations)jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){return Promise.all(rs.map(function(r){return r.update().catch(function(){});}));}));}catch(e){}
+    return Promise.race([Promise.all(jobs),new Promise(function(r){setTimeout(r,1500);})]);}
+  function fresh(sha){if(reloading)return;
+    // loop guard: if the CDN still hands out the old page after two reloads for this SHA, wait for a tap
+    var key="spawnCityUpdateTries:"+sha,tries=0;try{tries=+sessionStorage.getItem(key)||0;sessionStorage.setItem(key,String(tries+1));}catch(e){}
+    if(tries>=2){showPill();return;}
+    reloading=true;purge().then(function(){var u=new URL(location.href);u.searchParams.set("v",sha.slice(0,12));location.replace(u.toString());});}
+  // in-game live notice: a new build is online → banner with a RELOAD button (tap / click / U key);
+  // the game keeps running until you choose, "LATER" hides it until the next check finds it again
+  function showPill(){if(pill&&pill.isConnected){if(Date.now()-(+pill.dataset.later||0)<600000)return;/* LATER = quiet for 10 min */pill.style.display="flex";return;}if(!document.body)return;pill=document.createElement("div");pill.id="appUpdatePill";pill.setAttribute("role","status");
+    pill.innerHTML='<span style="font:800 12px/1.2 system-ui,sans-serif;letter-spacing:.08em">⬆ UPDATE AVAILABLE</span><button type="button" data-u="go" style="padding:7px 12px;border-radius:14px;border:0;background:linear-gradient(180deg,#7ff0c5,#3fbf8a);color:#06261a;font:900 12px/1 system-ui,sans-serif;letter-spacing:.1em;cursor:pointer">RELOAD · U</button><button type="button" data-u="later" style="padding:7px 10px;border-radius:14px;border:1px solid #ffffff55;background:transparent;color:#cfe;font:700 11px/1 system-ui,sans-serif;cursor:pointer">LATER</button>';
+    pill.style.cssText="position:fixed;z-index:2147483000;left:50%;top:calc(max(8px,env(safe-area-inset-top)) + 56px);transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:8px 10px 8px 14px;border-radius:22px;border:2px solid #7ff0c5;background:#0d1118f0;color:#eafff7;box-shadow:0 8px 24px #000a;animation:appUpdIn .35s ease-out";
+    var st=document.createElement("style");st.textContent="@keyframes appUpdIn{from{opacity:0;transform:translate(-50%,-14px)}to{opacity:1;transform:translate(-50%,0)}}";document.head.appendChild(st);
+    pill.addEventListener("pointerdown",function(e){e.stopPropagation();},true);
+    pill.addEventListener("click",function(e){var b=e.target.closest&&e.target.closest("[data-u]");if(!b)return;e.preventDefault();e.stopPropagation();if(b.dataset.u==="later"){pill.style.display="none";pill.dataset.later=String(Date.now());return;}if(!pending)return;try{sessionStorage.removeItem("spawnCityUpdateTries:"+pending);}catch(_){}fresh(pending);});
+    window.addEventListener("keydown",function(e){if(e.code==="KeyU"&&pending&&pill&&pill.style.display!=="none"&&!e.repeat){try{sessionStorage.removeItem("spawnCityUpdateTries:"+pending);}catch(_){}fresh(pending);}});
+    document.body.appendChild(pill);}
+  function seen(sha,reason){if(sha)showTag(sha);if(!sha||sha===mine)return;pending=sha;if(!playing()&&(inMenu()||reason==="resume"||reason==="load"))fresh(sha);else showPill();}
+  function viaPage(reason){return fetch(location.pathname+"?vcheck="+Date.now(),{cache:"no-store",credentials:"same-origin"}).then(function(r){return r.ok?r.text():"";}).then(function(t){var n=/BUILD_SHA:([0-9a-f]{7,40})/.exec(t.slice(0,300));if(n)seen(n[1],reason);});}
+  function check(reason){var now=Date.now();if(reason!=="load"&&reason!=="resume"&&now-lastCheck<10000)return;lastCheck=now;
+    fetch("./build.json?t="+now,{cache:"no-store",credentials:"same-origin"}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){seen(String(j&&j.sha||""),reason);}).catch(function(){viaPage(reason).catch(function(){});});}
+  function resume(){if(pending&&!playing())fresh(pending);else check("resume");}
+  document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")resume();});
+  window.addEventListener("pageshow",function(e){if(e.persisted)resume();});
+  window.addEventListener("focus",function(){check("focus");});
+  window.addEventListener("online",function(){check("resume");});
+  setInterval(function(){if(pending&&inMenu()&&!playing())fresh(pending);else check("interval");},30000);
+  check("load");
+})();
+</script>
+<script>
+// Menu UI click: a short soft pulse blip in the soundtrack's key (B♭→E♭),
+// for START, HOME SCREEN and turning sound on. Respects the sound switch.
+(function(){
+  var ctx=null;
+  function soundOn(){try{return JSON.parse(localStorage.getItem("arondight45AudioSettingsV1")||"{}").soundEnabled!==false;}catch(e){return true;}}
+  function blip(strong){
+    if(!soundOn())return;var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+    try{ctx=ctx||new AC();if(ctx.state==="suspended")ctx.resume();var t=ctx.currentTime,out=ctx.createGain(),lp=ctx.createBiquadFilter();lp.type="lowpass";lp.frequency.setValueAtTime(3200,t);lp.frequency.exponentialRampToValueAtTime(900,t+.25);out.gain.value=strong?.22:.14;lp.connect(out).connect(ctx.destination);
+      [[932.33,0],[1244.51,.07]].slice(0,strong?2:1).forEach(function(n){var o=ctx.createOscillator(),g=ctx.createGain();o.type="square";o.frequency.value=n[0];g.gain.setValueAtTime(0,t+n[1]);g.gain.linearRampToValueAtTime(1,t+n[1]+.005);g.gain.exponentialRampToValueAtTime(.001,t+n[1]+.16);o.connect(g).connect(lp);o.start(t+n[1]);o.stop(t+n[1]+.2);});}catch(e){}
+  }
+  window.__oppUiBlip=blip;
+  document.addEventListener("click",function(e){var el=e.target&&e.target.closest&&e.target.closest("#gameMenuStart,#installApp,#soundSwitch,#musicSwitch,#gameExitButton");if(!el)return;
+    if(el.id==="soundSwitch"){setTimeout(function(){blip(false);},0);return;}blip(el.id==="gameMenuStart");},true);
+})();
+</script>
+<button id="installApp" type="button" hidden aria-label="Install on home screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>HOME SCREEN</button>
+<div id="installHint" hidden role="note"></div>
+<script>
+// Install as a home-screen app (top left of the menu).
+//  Android/Chrome: native install prompt (beforeinstallprompt).
+//  iOS Safari: no API exists — show the two taps (Share → Add to Home Screen).
+// Hidden when already running as an installed app.
+(function(){
+  var btn=document.getElementById("installApp"),hint=document.getElementById("installHint"),menu=document.getElementById("gameMenu"),deferred=null;
+  var standalone=window.matchMedia("(display-mode: standalone)").matches||window.matchMedia("(display-mode: fullscreen)").matches||navigator.standalone===true;
+  var ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(/macintosh/i.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
+  if("serviceWorker" in navigator)navigator.serviceWorker.register("./oppenheimer-sw.js",{scope:"./drone_simulator.html",updateViaCache:"none"}).catch(function(){});
+  function sync(){btn.hidden=standalone||!menu||menu.hidden||!(deferred||ios);if(btn.hidden)hint.hidden=true;setTimeout(sync,500);}
+  window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();deferred=e;});
+  window.addEventListener("appinstalled",function(){standalone=true;deferred=null;});
+  btn.addEventListener("pointerdown",function(e){e.stopPropagation();},true);
+  btn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();
+    if(deferred){deferred.prompt();deferred.userChoice.finally(function(){deferred=null;});return;}
+    if(ios){hint.innerHTML='Tippe unten in Safari auf <b>Teilen</b> &#x2191; und dann auf <b>Zum Home-Bildschirm</b>. SpawnCity startet danach im Vollbild wie eine App.';hint.hidden=!hint.hidden;}});
+  document.addEventListener("click",function(e){if(!hint.hidden&&e.target!==btn&&!btn.contains(e.target))hint.hidden=true;},true);
+  sync();
+})();
+</script>
+<button id="musicSwitch" type="button" aria-label="Music on/off" data-on="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="ms-x" d="M4 4l16 16"/></svg></button>
+<button id="soundSwitch" type="button" aria-label="Effects on/off" data-on="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="ss-wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="ss-x" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
+<script>
+// Two toggles, top right in the menu and (docked left of RESET) in game:
+// EFFECTS (soundEnabled — every effect, drone, shots, ambience) and MUSIC
+// (musicEnabled) — independent. Both write the shared audio settings, so
+// every audio module follows immediately.
+(function(){
+  var KEY="arondight45AudioSettingsV1",btn=document.getElementById("soundSwitch");
+  function read(){try{return JSON.parse(localStorage.getItem(KEY)||"{}");}catch(e){return{};}}
+  function on(){return read().soundEnabled!==false;}
+  function render(){btn.dataset.on=on()?"1":"0";btn.setAttribute("aria-pressed",on()?"true":"false");}
+  btn.addEventListener("pointerdown",function(e){e.stopPropagation();},true);
+  btn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();
+    var cfg=read();cfg.soundEnabled=!on();try{localStorage.setItem(KEY,JSON.stringify(cfg));}catch(err){}
+    window.dispatchEvent(new CustomEvent("arondight45-audio-settings-change",{detail:cfg}));render();});
+  var mbtn=document.getElementById("musicSwitch");function musicOn(){return read().musicEnabled!==false;}
+  function renderMusic(){mbtn.dataset.on=musicOn()?"1":"0";mbtn.setAttribute("aria-pressed",musicOn()?"true":"false");}
+  mbtn.addEventListener("pointerdown",function(e){e.stopPropagation();},true);
+  mbtn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();var cfg=read();cfg.musicEnabled=!musicOn();try{localStorage.setItem(KEY,JSON.stringify(cfg));}catch(err){}
+    var m=window.__oppMusicElement;if(m){if(cfg.musicEnabled===false)m.pause();else m.play().catch(function(){});}
+    window.dispatchEvent(new CustomEvent("arondight45-audio-settings-change",{detail:cfg}));renderMusic();});
+  window.addEventListener("arondight45-audio-settings-change",function(){renderMusic();});renderMusic();
+  window.addEventListener("arondight45-audio-settings-change",function(){render();});
+  // In game: sit just left of RESET (falls back to the menu's top-right spot).
+  function dock(){/* while playing on touch the edge HUD (sim/edge_hud_layout.mjs) owns these two: writing them here as well made them jump back and forth every few hundred ms */if(document.body.classList.contains("edge-hud")||btn.dataset.edgeAdopted){setTimeout(dock,400);return;}var reset=null,menu=document.getElementById("gameMenu");["mobileGameplayReset","soloReset"].forEach(function(id){var el=document.getElementById(id);if(!el||!el.offsetParent)return;var q=el.getBoundingClientRect();if(q.width<4||q.height<4)return;if(!reset||q.top<reset.getBoundingClientRect().top-2)reset=el;});var inGame=menu&&menu.hidden&&reset;
+    if(inGame){var r=reset.getBoundingClientRect(),right=window.innerWidth-r.left+6;btn.style.top=r.top+"px";btn.style.right=right+"px";btn.style.height=r.height+"px";mbtn.style.top=r.top+"px";mbtn.style.right=(right+btn.offsetWidth+6)+"px";mbtn.style.height=r.height+"px";}else{btn.style.top="";btn.style.right="";btn.style.height="";mbtn.style.top="";mbtn.style.right="";mbtn.style.height="";}
+    setTimeout(dock,400);}
+  render();dock();
+})();
+</script>
+<script>
+// Menu music starts right away: try autoplay on load, and if the browser
+// blocks it (iOS/Android do until the first touch), start on the very first
+// tap/key anywhere. The game's music module adopts this same element later,
+// so the track never restarts or doubles when START is pressed.
+(function(){
+  var cfg={};try{cfg=JSON.parse(localStorage.getItem("arondight45AudioSettingsV1")||"{}");}catch(e){}
+  if(cfg.musicEnabled===false)return;
+  var vol=Math.max(0,Math.min(1,(cfg.musicVolume==null?32:cfg.musicVolume)/100))*0.45;
+  var a=new Audio("./sim/audio/8_bits_only.m4a");a.loop=true;a.preload="auto";a.volume=vol;a.setAttribute("playsinline","");
+  window.__oppMusicElement=a;
+  // One audio session for the whole game: the Web Audio context for all
+  // effects is created on the same first tap that starts the music, so iOS
+  // never switches/interrupts the session later when the game is running.
+  function ctx(){try{if(!window.__sharedAudioContext){var AC=window.AudioContext||window.webkitAudioContext;if(AC)window.__sharedAudioContext=new AC({latencyHint:"interactive"});}var x=window.__sharedAudioContext;if(x&&x.state==="suspended")x.resume().catch(function(){});}catch(e){}}
+  function go(e){if(e&&e.isTrusted===false)return;if(e)ctx();if(!a.paused){off();return;}a.play().then(function(){document.documentElement.dataset.menuMusic="playing";off();}).catch(function(){document.documentElement.dataset.menuMusic="waiting-for-tap";});}
+  function off(){["pointerdown","touchend","keydown","click"].forEach(function(t){window.removeEventListener(t,go,true);});}
+  ["pointerdown","touchend","keydown","click"].forEach(function(t){window.addEventListener(t,go,true);});
+  go();
+})();
+</script>
+<script>
+(function(){
+  if(/[?&]dev=1/.test(location.search))document.body.classList.add("dev-ui");
+  // Menu flyover: neon wireframe city. Black plate, green ground grid and
+  // green wireframe blocks; the world stays fixed, only the camera moves.
+  // It is drawn in a Web Worker on an OffscreenCanvas, so it keeps flying
+  // perfectly smoothly while the main thread is busy loading the game
+  // (script start-up, WebGL context, Box3D, shader compilation). Without
+  // OffscreenCanvas it falls back to the same code on the main thread.
+  var c=document.getElementById("gameMenuBg"),menu=document.getElementById("gameMenu"),DPR=Math.min(1.5,window.devicePixelRatio||1);
+  function FLY(g,canvasRef,DPR,RAF){var W=0,H=0,HIDDEN=false,NEED_SIZE=true,GLOW=false,blocks=[],last=performance.now();
+  function size(){W=canvasRef.w;H=canvasRef.h;canvasRef.c.width=Math.max(1,Math.round(W*DPR));canvasRef.c.height=Math.max(1,Math.round(H*DPR));g.setTransform(DPR,0,0,DPR,0,0);NEED_SIZE=false;}
+  var STREET=10,FAR=520,GRID=16,BG="#0c0f13",LINE="rgba(255,190,120,.10)";
+  var cam={x:0,y:12,z:0,yaw:0,roll:0,pitch:0};
+  function rnd(a,b){return a+Math.random()*(b-a);}
+  function shapeBlock(b,z){b.z0=z;b.z1=z+rnd(14,34);b.depth=rnd(12,22);b.h=Math.random()<.2?rnd(40,78):rnd(14,30);b.floors=Math.random()<.5;return b;}
+  function addBlock(side,z){var b=shapeBlock({side:side},z);blocks.push(b);return b.z1+rnd(2,7);}
+  [-1,1].forEach(function(side){var z=-10;while(z<FAR+60)z=addBlock(side,z);});
+  var cy=1,sy=0;
+  // world (x right, y up, z forward) -> screen
+  function P(x,y,z,f){var dx=x-cam.x,dz=z-cam.z,rx=dx*cy-dz*sy,rz=dx*sy+dz*cy;if(rz<1.2)return null;return[W/2+rx/rz*f,H*(.55+cam.pitch)-(y-cam.y)/rz*f];}
+  function path(p){for(var i=0;i<p.length;i++)if(!p[i])return false;g.beginPath();g.moveTo(p[0][0],p[0][1]);for(var k=1;k<p.length;k++)g.lineTo(p[k][0],p[k][1]);g.closePath();return true;}
+  function face(p,fill){if(!path(p))return false;g.fillStyle=fill||BG;g.fill();g.stroke();return true;}
+  function seg(a,b){if(!a||!b)return;g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]);g.stroke();}
+  function frame(now){
+    if(HIDDEN){RAF(frame);last=now;return;}
+    var dt=Math.min(.05,(now-last)/1000);last=now;if(NEED_SIZE)size();
+    var t=now/1000,speed=26+6*Math.sin(t*.11),prevX=cam.x;cam.z+=speed*dt;cam.x=Math.sin(t*.23)*2.6;cam.y=12+Math.sin(t*.37)*2.2;
+    var lateral=(cam.x-prevX)/Math.max(dt,1e-3);cam.yaw+=((lateral/speed)*.6-cam.yaw)*Math.min(1,dt*2);cy=Math.cos(cam.yaw);sy=Math.sin(cam.yaw);cam.roll+=(-(lateral/speed)*.35-cam.roll)*Math.min(1,dt*2.5);cam.pitch=-.02+Math.sin(t*.29)*.012;
+    // recycle what is behind the camera to the far end (world stays put)
+    for(var k=0;k<blocks.length;k++){var b=blocks[k];if(b.z1<cam.z-8){var far=-1e9;for(var m=0;m<blocks.length;m++)if(blocks[m].side===b.side)far=Math.max(far,blocks[m].z1);shapeBlock(b,far+rnd(2,7));}}
+    var f=H*.95,hz=H*(.55+cam.pitch);g.setTransform(DPR,0,0,DPR,0,0);
+    // dusk sky: deep blue zenith -> burning orange horizon, sun glow at the vanishing point
+    var sk=g.createLinearGradient(0,0,0,hz+2);sk.addColorStop(0,"#0b1322");sk.addColorStop(.55,"#33303a");sk.addColorStop(.86,"#a4532a");sk.addColorStop(1,"#e88a3c");g.fillStyle=sk;g.fillRect(0,0,W,hz+2);
+    var sg=g.createRadialGradient(W/2,hz,0,W/2,hz,H*.7);sg.addColorStop(0,"rgba(255,190,110,.55)");sg.addColorStop(.25,"rgba(255,140,60,.18)");sg.addColorStop(1,"rgba(255,120,40,0)");g.fillStyle=sg;g.fillRect(0,0,W,hz+2);
+    var gr=g.createLinearGradient(0,hz,0,H);gr.addColorStop(0,"#4a3428");gr.addColorStop(.18,"#1d1a19");gr.addColorStop(1,"#0d0e10");g.fillStyle=gr;g.fillRect(0,hz,W,H-hz);
+    g.translate(W/2,hz);g.rotate(cam.roll);g.translate(-W/2,-hz);
+    g.lineJoin="round";
+    var zn=cam.z+1.5,zf=cam.z+FAR;
+    // road: lane dashes and kerbs (world-fixed, so they stream past)
+    g.strokeStyle="rgba(235,225,200,.55)";g.lineWidth=1.4;
+    for(var dz=Math.ceil(zn/12)*12;dz<zf;dz+=12){g.globalAlpha=Math.max(.05,1-(dz-cam.z)/260);seg(P(0,0,dz,f),P(0,0,dz+5,f));}
+    g.globalAlpha=1;g.strokeStyle="rgba(160,150,140,.45)";seg(P(-STREET+1.5,0,zn,f),P(-STREET+1.5,0,zf,f));seg(P(STREET-1.5,0,zn,f),P(STREET-1.5,0,zf,f));
+    function fogged(r,gg,bb,d){var k=Math.min(1,Math.max(0,(d-30)/420));return"rgb("+Math.round(r+(170-r)*k*.75)+","+Math.round(gg+(95-gg)*k*.75)+","+Math.round(bb+(60-bb)*k*.75)+")";}
+    function hash(a,b,c){var x=Math.sin(a*127.1+b*311.7+c*74.7)*43758.5453;return x-Math.floor(x);}
+    // buildings: far to near, dark concrete with lit windows
+    var list=blocks.filter(function(b){return b.z1>cam.z+1.5&&b.z0<cam.z+FAR;}).sort(function(a,b){return b.z0-a.z0;});
+    g.lineWidth=1;
+    for(var i=0;i<list.length;i++){var b=list[i],x=b.side*STREET,xb=b.side*(STREET+b.depth),z0=Math.max(b.z0,cam.z+1.6),z1=b.z1,dist=b.z0-cam.z;
+      if(!b.seed)b.seed=Math.random()*1000;
+      g.strokeStyle="rgba(0,0,0,.55)";
+      face([P(x,0,z0,f),P(xb,0,z0,f),P(xb,b.h,z0,f),P(x,b.h,z0,f)],fogged(30,30,34,dist));
+      var fac=[P(x,0,z0,f),P(x,0,z1,f),P(x,b.h,z1,f),P(x,b.h,z0,f)];
+      if(face(fac,fogged(44,42,44,dist))){
+        var near=fac[0]&&fac[1]?Math.abs(fac[0][0]-fac[1][0]):0;
+        if(near>16){var cols=Math.floor((b.z1-b.z0)/3.4),rows=Math.floor(b.h/3.3);
+          for(var r=0;r<rows;r++)for(var q=0;q<cols;q++){var lit=hash(b.seed,r,q);if(lit<.6)continue;var wz=b.z0+1+q*3.4;if(wz<z0||wz+1.6>z1)continue;var wy=2+r*3.3;
+            var A=P(x,wy,wz,f),B=P(x,wy,wz+1.5,f),C=P(x,wy+1.6,wz+1.5,f),D=P(x,wy+1.6,wz,f);if(!A||!B||!C||!D)continue;
+            g.beginPath();g.moveTo(A[0],A[1]);g.lineTo(B[0],B[1]);g.lineTo(C[0],C[1]);g.lineTo(D[0],D[1]);g.closePath();
+            g.fillStyle=lit>.93?"rgba(255,214,150,.95)":lit>.8?"rgba(255,180,100,.75)":"rgba(150,170,190,.35)";g.fill();}}
+        if(cam.y>b.h)face([P(x,b.h,z0,f),P(x,b.h,z1,f),P(xb,b.h,z1,f),P(xb,b.h,z0,f)],fogged(26,26,28,dist));}}
+    // sodium street lamps
+    for(var lz=Math.ceil(zn/26)*26;lz<zf;lz+=26)for(var sd=-1;sd<=1;sd+=2){var L=P(sd*(STREET-1),7,lz,f),Lb=P(sd*(STREET-1),0,lz,f);if(!L||!Lb)continue;var dd=lz-cam.z,rr=Math.max(1,30/Math.max(dd,1)*6);
+      g.globalAlpha=Math.max(.15,1-dd/420);g.strokeStyle="rgba(20,20,22,.9)";g.lineWidth=Math.max(1,rr*.25);seg(L,Lb);
+      var lg=g.createRadialGradient(L[0],L[1],0,L[0],L[1],rr*5);lg.addColorStop(0,"rgba(255,190,110,.95)");lg.addColorStop(.25,"rgba(255,150,60,.35)");lg.addColorStop(1,"rgba(255,140,50,0)");g.fillStyle=lg;g.fillRect(L[0]-rr*5,L[1]-rr*5,rr*10,rr*10);}
+    g.globalAlpha=1;
+    GLOW=false;g.globalAlpha=1;
+    g.setTransform(DPR,0,0,DPR,0,0);var vg=g.createRadialGradient(W/2,H/2,H*.25,W/2,H/2,H*.95);vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(0,0,0,.6)");g.fillStyle=vg;g.fillRect(0,0,W,H);RAF(frame);
+  }
+  RAF(frame);
+  return{resize:function(w,h){canvasRef.w=w;canvasRef.h=h;NEED_SIZE=true;},hidden:function(v){HIDDEN=v;}};}
+  var api=null;
+  function report(){var w=c.clientWidth,h=c.clientHeight;if(api)api.resize(w,h);else if(worker)worker.postMessage({type:"size",w:w,h:h});}
+  function hiddenState(){var v=menu.hidden;if(api)api.hidden(v);else if(worker)worker.postMessage({type:"hidden",v:v});}
+  var worker=null;
+  try{
+    if(c.transferControlToOffscreen&&window.Worker&&!/[?&]menuMain=1/.test(location.search)){
+      var off=c.transferControlToOffscreen();
+      var src="var FLY="+FLY.toString()+";var f=null,ref=null;onmessage=function(e){var d=e.data;if(d.type==='init'){ref={c:d.canvas,w:d.w,h:d.h};var RAF=self.requestAnimationFrame?self.requestAnimationFrame.bind(self):function(cb){return setTimeout(function(){cb(performance.now());},16);};f=FLY(d.canvas.getContext('2d'),ref,d.dpr,RAF);}else if(f&&d.type==='size')f.resize(d.w,d.h);else if(f&&d.type==='hidden')f.hidden(d.v);};";
+      worker=new Worker(URL.createObjectURL(new Blob([src],{type:"text/javascript"})));
+      worker.postMessage({type:"init",canvas:off,w:c.clientWidth,h:c.clientHeight,dpr:DPR},[off]);
+      document.documentElement.dataset.menuFlyover="offscreen-worker";
+    }
+  }catch(e){worker=null;}
+  if(!worker){api=FLY(c.getContext("2d"),{c:c,w:c.clientWidth,h:c.clientHeight},DPR,function(cb){return requestAnimationFrame(cb);});document.documentElement.dataset.menuFlyover="main-thread";}
+  window.addEventListener("resize",report,{passive:true});
+  new MutationObserver(hiddenState).observe(menu,{attributes:true,attributeFilter:["hidden"]});
+})();
+</script>
+<div class="viewport" id="viewport"></div>
+<section class="panel">
+<h1>SpawnCity · engineering</h1><p class="sub">Phone 1 is the simulation/view station. Phone 2 is the dedicated remote controller. In SIM mode the exact shared C++ <code>fc::Runtime</code> executes as WebAssembly. The two phones talk directly over WebRTC; GitHub Pages remains purely static.</p>
+<div class="tabs"><button id="modeSim" class="active">SIM</button><button id="modeHil">HIL</button><button id="modeReplay">REAL LOG</button></div><div id="modeInfo" class="modebox"></div>
+<div class="row"><button id="connect">Controller ready</button><button id="run" class="primary" disabled>Start</button><button id="reset">Reset</button><button id="exportLog">Export run</button></div><div class="statusline" id="status">Loading flight core…</div>
+<div class="card remote-card"><h2>Two-phone control · serverless P2P</h2><label>Input source<select id="inputSource"><option value="remote" selected>REMOTE PHONE · WEBRTC P2P</option><option value="local">LOCAL FALLBACK</option></select></label><div class="row"><button id="remoteConnect">PAIR CONTROLLER</button><a id="controllerLink" class="linkbutton" href="./drone_controller.html" target="_blank" rel="noopener">Open controller page</a></div><div id="remoteStatus" class="statusline">P2P disconnected. Missing/stale control always forces throttle 0 and ARM OFF.</div></div>
+<div class="card mobile-controls" aria-hidden="true"><h2>Hidden local fallback controls</h2><div class="grid"><label>Roll<input id="touchRoll" type="range" min="-1" max="1" step="0.01" value="0"></label><label>Pitch<input id="touchPitch" type="range" min="-1" max="1" step="0.01" value="0"></label><label>Yaw<input id="touchYaw" type="range" min="-1" max="1" step="0.01" value="0"></label><label>Throttle<input id="touchThrottle" type="range" min="0" max="1" step="0.005" value="0"></label></div><button id="touchArm">ARM request: OFF</button></div>
+<div class="card desktop-help"><h2>Local fallback keyboard</h2><div class="help"><b>W/S</b> pitch · <b>A/D</b> roll · <b>Q/E</b> yaw · <b>R/F</b> throttle · <b>Space</b> arm request. Select LOCAL FALLBACK above to use it.</div></div>
+<div class="card"><h2>Physical airframe model · component derived</h2><div class="grid"><label>Derived mass kg<input id="mass" type="number" step="0.001" value="0.720" readonly></label><label>Motor span mm<input id="span" type="number" step="1" value="225"></label><label>Prop diameter in<input id="propD" type="number" step="0.1" value="5.0"></label><label>Motor Kv rpm/V<input id="kv" type="number" step="10" value="2300"></label><label>Motor R Ω<input id="resistance" type="number" step="0.001" value="0.080"></label><label>Motor current max A<input id="motorCurrentLimitA" type="number" step="1" value="45"></label><label>ESC current max A<input id="escCurrentLimitA" type="number" step="1" value="45"></label><label>Rotor inertia kg·m²<input id="rotorJ" type="number" step="0.000001" value="0.000011"></label><label>Prop Ct<input id="ct" type="number" step="0.001" value="0.105"></label><label>Prop Cq<input id="cq" type="number" step="0.001" value="0.012"></label><label>Battery cells S<input id="batteryCells" type="number" step="1" value="4"></label><label>Battery Ah<input id="capacity" type="number" step="0.1" value="1.5"></label><label>Battery R Ω<input id="batteryR" type="number" step="0.001" value="0.055"></label><label>Battery current max A<input id="batteryMaxCurrentA" type="number" step="5" value="180"></label><label>Derived Ixx kg·m²<input id="ixx" type="number" step="0.000001" value="0" readonly></label><label>Derived Iyy kg·m²<input id="iyy" type="number" step="0.000001" value="0" readonly></label><label>Derived Izz kg·m²<input id="izz" type="number" step="0.000001" value="0" readonly></label><label>Air density<input id="rho" type="number" step="0.001" value="1.225"></label><label>Linear drag scale<input id="dragScale" type="number" step="0.01" value="0.35"></label><label>Ground effect<input id="groundEffect" type="number" step="0.05" value="0.18"></label></div><details><summary>Component bill of mass / placement</summary><div class="grid"><label>Frame g<input id="frameMassG" type="number" step="1" value="180"></label><label>Each motor g<input id="motorMassG" type="number" step="1" value="35"></label><label>Each prop g<input id="propMassG" type="number" step="0.5" value="5"></label><label>Battery g<input id="batteryMassG" type="number" step="1" value="200"></label><label>ESC g<input id="escMassG" type="number" step="1" value="30"></label><label>FC + RX g<input id="fcRxMassG" type="number" step="1" value="20"></label><label>Camera + VTX g<input id="cameraVtxMassG" type="number" step="1" value="30"></label><label>Wiring + hardware g<input id="wiringHardwareMassG" type="number" step="1" value="100"></label><label>Battery X mm<input id="batteryXmm" type="number" step="1" value="15"></label><label>Battery Z mm<input id="batteryZmm" type="number" step="1" value="-15"></label><label>Camera X mm<input id="cameraXmm" type="number" step="1" value="-70"></label><label>Camera Z mm<input id="cameraZmm" type="number" step="1" value="28"></label></div><div class="help">These are explicit nominal BOM inputs, not hidden fitted mass/inertia. Replace them with measured component values; motor/prop positions derive from motor span.</div></details><div id="componentMassSummary" class="statusline"></div><div id="physicalAuthority" class="statusline"></div><div id="modelValidationStatus" class="statusline bad" data-validation="unvalidated">UNVALIDATED · nominal coefficients; no independent real-flight holdout evidence</div><div class="help">Mass, center of mass and the complete inertia tensor are derived from the component BOM. Electrical authority comes from battery sag/current limits → motor Kv/R/back-EMF → prop Ct/Cq → Box3D forces. REAL LOG fitting still reserves the final 30% as unseen holdout.</div></div>
+<div class="card"><h2>Environment / faults</h2><div class="grid"><label>Wind X m/s<input id="windX" type="number" step="0.1" value="0"></label><label>Wind Y m/s<input id="windY" type="number" step="0.1" value="0"></label><label>Failed motor<select id="failedMotor"><option value="-1">None</option><option value="0">M1</option><option value="1">M2</option><option value="2">M3</option><option value="3">M4</option></select></label><label>IMU<select id="imuValid"><option value="1">Valid</option><option value="0">Failed</option></select></label></div></div>
+<div class="card"><h2>REAL flight log / digital-twin calibration</h2><div class="help">CSV or JSON. Required: <code>time_s</code> and <code>motor1_us..motor4_us</code>. Identification also consumes <code>x,y,z</code>, <code>vx,vy,vz</code>, <code>roll_deg,pitch_deg,yaw_deg</code>, <code>battery_v</code> and <code>current_a</code> whenever present. Inputs are applied as zero-order holds over their actual logged time intervals.</div><div class="row"><input id="logFile" type="file" accept=".csv,.json,application/json,text/csv"><button id="fit" disabled>Fit physics</button></div><div class="progress"><div id="fitProgress"></div></div><div class="statusline" id="fitStatus">No real log loaded.</div></div>
+</section>
+<aside class="telemetry"><div class="kv"><span>mode</span><span id="tMode">SIM</span><span>controller</span><span id="tController">loading</span><span>FC state</span><span id="fcState">—</span><span>sim time</span><span id="simTime">0.000 s</span><span>altitude</span><span id="altitude">0.000 m</span><span>speed</span><span id="velocity">0.000 m/s</span><span>FC attitude</span><span id="attitude">0 / 0 / 0°</span><span>motors μs</span><span id="motors">1000 1000 1000 1000</span><span>rotor rpm</span><span id="rpm">0 0 0 0</span><span>battery</span><span id="battery">16.80 V</span><span>current</span><span id="current">0.0 A</span><span>controller time</span><span id="processing">0 μs</span><span>step RTT</span><span id="rtt">0.00 ms</span><span>sim / wall</span><span id="speed">0.00×</span><span>arm request</span><span id="armSwitch">OFF</span><span>throttle</span><span id="throttle">0.0%</span><span>log samples</span><span id="logSamples">0</span></div></aside>
+<dialog id="pairDialog">
+  <h2>Point VIEW at the controller QR</h2>
+  <p>No server and no code copying. On the controller phone tap <b>CONNECT</b>. Then point this VIEW camera at its QR. The VIEW answer appears automatically as a QR for the controller to scan.</p>
+  <div class="pair-grid">
+    <div class="pair-step"><b>SCAN CONTROLLER</b><div class="scanner"><video id="offerVideo" autoplay muted playsinline></video><canvas id="offerCanvas" hidden></canvas></div><div>The OFFER is detected automatically.</div></div>
+    <div class="pair-step"><b>SHOW ANSWER</b><img id="answerQr" class="qr" alt="View WebRTC answer QR" hidden><div>After detection, hold this answer QR toward the controller phone.</div></div>
+  </div>
+  <div id="pairStatus" class="statusline">Camera not started yet.</div>
+  <details><summary>Manual fallback only</summary><div class="pair-step"><b>Controller OFFER</b><textarea id="remoteOffer" class="signal" spellcheck="false" placeholder="Paste controller offer"></textarea><div class="row"><button id="acceptOffer">Accept + create answer</button></div></div><div class="pair-step"><b>VIEW ANSWER</b><textarea id="remoteAnswer" class="signal" readonly spellcheck="false"></textarea><div class="row"><button id="copyAnswer">Copy answer</button><button id="shareAnswer">Share answer</button></div></div></details>
+  <div class="dialog-actions"><button id="closePair">Close</button></div>
+</dialog>
+<script type="module" src="./sim/real_world_bootstrap.mjs"></script>
+<script type="module" src="./sim/auto_flight_start.mjs"></script>
+<script id="spawncityExitGuard">
+// SpawnCity exit guard. The deploy workflow inlines this as a plain <script> at the end of
+// drone_simulator.html. The game HUD has its own EXIT (#gameExitButton), but some states hide or
+// cover it (a vehicle, a panel or dialog over the view, a HUD module that failed to load). Whenever
+// a game is running and that EXIT can't be tapped for a moment, this shows a fallback EXIT in the
+// top-left corner. "JA" leaves through the game's own exit; if the menu still isn't back after a
+// short wait, the page reloads, which always lands on the start menu.
+(function(){
+  "use strict";
+  var $=function(id){return document.getElementById(id);};
+  var exitBtn=null,ask=null,missingSince=0;
+
+  function menuShown(){var m=$("gameMenu");return Boolean(m&&!m.hidden&&getComputedStyle(m).display!=="none"); /* fixed: offsetParent is always null */}
+  function gameRunning(){return document.body&&document.body.classList.contains("solo-flight")&&!menuShown();}
+  function tappable(el){
+    if(!el||el.hidden)return false;var r=el.getBoundingClientRect();if(r.width<8||r.height<8)return false;
+    var cs=getComputedStyle(el);if(cs.display==="none"||cs.visibility==="hidden"||Number(cs.opacity)<.2)return false;
+    var x=r.left+r.width/2,y=r.top+r.height/2;if(x<0||y<0||x>innerWidth||y>innerHeight)return false;
+    var own=exitBtn&&!exitBtn.hidden;if(own)exitBtn.style.visibility="hidden"; /* don't count our own fallback as "covering" */
+    var top=document.elementFromPoint(x,y);if(own)exitBtn.style.visibility="";
+    return Boolean(top&&(top===el||el.contains(top)));
+  }
+  function ensure(){
+    if(exitBtn&&exitBtn.isConnected)return;
+    exitBtn=document.createElement("button");exitBtn.id="scExit";exitBtn.type="button";exitBtn.hidden=true;exitBtn.textContent="⟵ EXIT";exitBtn.setAttribute("aria-label","Zurück zum Hauptmenü");
+    ask=document.createElement("div");ask.id="scExitAsk";ask.hidden=true;ask.setAttribute("role","dialog");ask.setAttribute("aria-modal","true");
+    ask.innerHTML='<div class="box">ZURÜCK ZUM HAUPTMENÜ?<div class="row"><button type="button" data-yes>JA</button><button type="button" data-no>NEIN</button></div></div>';
+    var stop=function(e){e.stopPropagation();};
+    ["pointerdown","pointerup","touchstart","touchend","mousedown"].forEach(function(t){exitBtn.addEventListener(t,stop,true);ask.addEventListener(t,stop,true);});
+    exitBtn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();ask.hidden=false;try{document.exitPointerLock&&document.exitPointerLock();}catch(_){}} ,true);
+    ask.addEventListener("click",function(e){
+      e.preventDefault();e.stopPropagation();var t=e.target;
+      if(t&&t.closest&&t.closest("[data-yes]")){ask.hidden=true;leave();}
+      else if(t&&t.closest&&(t.closest("[data-no]")||t===ask))ask.hidden=true;
+    },true);
+    document.body.appendChild(exitBtn);document.body.appendChild(ask);
+  }
+  function leave(){
+    try{var q=$("quitConfirmDialog");if(q)q.remove();}catch(_){}
+    try{var s=$("soloExit");if(s)s.click();}catch(_){}
+    setTimeout(function(){if(!menuShown()){try{location.reload();}catch(_){}}},1200);
+  }
+  function tick(){
+    try{
+      if(!document.body){return;}ensure();
+      var need=false;
+      if(gameRunning()&&!$("quitConfirmDialog")&&ask.hidden){
+        if(tappable($("gameExitButton"))){missingSince=0;}
+        else{var now=performance.now();if(!missingSince)missingSince=now;need=now-missingSince>1200;}
+      }else missingSince=0;
+      if(exitBtn.hidden===need)exitBtn.hidden=!need;
+      if(!gameRunning()&&!ask.hidden)ask.hidden=true;
+      document.documentElement.dataset.scExitGuard=need?"shown":"idle";
+    }catch(_){}
+  }
+  setInterval(tick,300);
+})();
+</script>
+</body></html>
