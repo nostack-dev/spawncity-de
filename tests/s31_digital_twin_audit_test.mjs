@@ -5,7 +5,7 @@ const read=path=>readFileSync(path,"utf8");
 const production=read("esp32/Arondight45_DroneFC_S31.cpp");
 const hil=read("esp32/Arondight45_DroneFC_HIL_S31.cpp");
 const sil=read("sim/Arondight45_DroneFC_SIL_WASM.cpp");
-const workflow=read(".github/workflows/s31-hil.yml");
+const workflow=read(".github/workflows/esp32-hil.yml");
 const simulator=read("sim/simulator.mjs");
 const settings=read("sim/control_settings.mjs");
 const colliderDebug=read("sim/box3d_collider_debug.mjs");

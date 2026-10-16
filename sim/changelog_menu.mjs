@@ -5,6 +5,10 @@
 // Mouse, touch, keyboard (Esc closes) and the pad (pad_actions.mjs: up/down scroll, B closes).
 export const CHANGELOG_MENU_VERSION="title-changelog-v1";
 export const CHANGELOG=Object.freeze([
+  {date:"2026-10-16",time:"14:42",title:"Neueste Spielversion und Changelog wieder live",items:[
+    "Alle bisherigen Änderungen und Updates erscheinen wieder in der richtigen Reihenfolge im NEU / CHANGELOG-Menü.",
+    "Die aktuelle Spielversion wird jetzt einheitlich unter spawncity.de veröffentlicht – einschließlich des verbesserten Touchpad-Mouselooks.",
+    "Das Spiel prüft beim Veröffentlichen, ob die richtige Version tatsächlich auf spawncity.de angekommen ist."]},
   {date:"2026-10-16",time:"14:11",title:"Touchpad-Mouselook in Ego-Sicht",items:[
     "Notebook-Touchpads drehen die Kamera in der Ego-Perspektive wieder gleichmäßig, auch bei schnellen Fingerbewegungen.",
     "Die Steuerung nutzt zuverlässige Mausbewegungen statt Raw-Input-Zwang; Schießen, Gamepad und Touch-Bedienung bleiben erhalten."]},

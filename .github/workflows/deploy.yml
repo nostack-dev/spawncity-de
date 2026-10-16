@@ -205,21 +205,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Verify live game once DNS answers
-        continue-on-error: true
+      - name: Verify canonical live game and complete changelog
+        timeout-minutes: 16
         env:
           GH_SHA: ${{ github.sha }}
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           origin="$(node tools/public_site.mjs origin)"
-          fetched=0
-          for attempt in $(seq 1 8); do
-            if curl -fsSL --retry 1 --connect-timeout 8 --max-time 20 -H "Cache-Control: no-cache" \
-              "$origin/drone_simulator.html?ci=${GH_SHA}-${attempt}" -o /tmp/spawncity-live.html \
-              && grep -q "ARONDIGHT45_BUILD_SHA:${GH_SHA}" /tmp/spawncity-live.html; then
-              fetched=1
-              break
+          for attempt in $(seq 1 75); do
+            if curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H "Cache-Control: no-cache" \
+                "$origin/build.json?sha=${GH_SHA}-${attempt}" -o /tmp/spawncity-build.json \
+              && node -e 'const p=require("/tmp/spawncity-build.json");if(p.sha!==process.argv[1])process.exit(1)' "$GH_SHA" \
+              && curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H "Cache-Control: no-cache" \
+                "$origin/drone_simulator.html?ci=${GH_SHA}-${attempt}" -o /tmp/spawncity-live.html \
+              && grep -q "ARONDIGHT45_BUILD_SHA:${GH_SHA}" /tmp/spawncity-live.html \
+              && grep -q "Touchpad-Mouselook in Ego-Sicht" /tmp/spawncity-live.html; then
+              echo "Verified real SpawnCity origin, source SHA and current changelog: $GH_SHA"
+              exit 0
             fi
-            sleep 5
+            sleep 10
           done
-          test "$fetched" = 1
+          echo "::error::The live domain did not receive the canonical build or changelog."
+          exit 1
