@@ -1,0 +1,47 @@
+name: One-time restore of simulator tests
+on:
+  push:
+    branches: ["restore-game-ci-and-live-changelog-20261016"]
+    paths: [".github/workflows/restore-game-tests-once.yml"]
+permissions:
+  contents: write
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Diagnose hosting and restore local test ownership
+        run: |
+          set -euo pipefail
+          echo "::group::Live host and Pages diagnostics"
+          for host in https://spawncity.de https://nostack-dev.github.io/spawncity-de https://christianhohlfeld.github.io/spawncity-de; do
+            echo "ORIGIN=$host"
+            curl -LsS -o /tmp/spawncity-probe.html --connect-timeout 6 --max-time 15 -w 'html_status=%{http_code} effective=%{url_effective} bytes=%{size_download}\n' "$host/drone_simulator.html" || true
+            grep -aoE 'ARONDIGHT45_BUILD_SHA:[0-9a-f]{40}' /tmp/spawncity-probe.html | head -1 || true
+            curl -LsS --connect-timeout 6 --max-time 12 -w 'build_status=%{http_code}\n' "$host/build.json" || true
+            echo ""
+          done
+          for owner in nostack-dev ChristianHohlfeld; do
+            echo "PAGES_SETTINGS=$owner/spawncity-de"
+            curl -LsS --connect-timeout 6 --max-time 12 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$owner/spawncity-de/pages" | head -c 2800 || true
+            echo ""
+          done
+          echo "::endgroup::"
+          SRC_SHA=2165abec7f59fe2cc27e82db3bba7d5531aaa9f9
+          git init -q /tmp/kurz-tests
+          git -C /tmp/kurz-tests fetch -q --depth 1 https://github.com/nostack-dev/kurzlernen-de.git "$SRC_SHA"
+          git -C /tmp/kurz-tests checkout -q FETCH_HEAD
+          test "$(git -C /tmp/kurz-tests rev-parse HEAD)" = "$SRC_SHA"
+          cp -a /tmp/kurz-tests/tests/. tests/
+          cp /tmp/kurz-tests/tools/validate-simulator.py tools/validate-simulator.py
+          cp /tmp/kurz-tests/tools/build-intrinsic-orcl.mjs tools/build-intrinsic-orcl.mjs
+          node tests/fps_control_test.mjs
+          node tests/desktop_mouse_chord_contract_test.mjs
+          node tests/first_person_control_settings_test.mjs
+          node tests/touchpad_pointerlock_contract_test.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/ tools/validate-simulator.py tools/build-intrinsic-orcl.mjs
+          git rm .github/workflows/restore-game-tests-once.yml
+          git commit -m "Restore complete simulator and hardware test suite to SpawnCity" -m "One-time transfer from kurzlernen-de@2165abec7f59fe2cc27e82db3bba7d5531aaa9f9. No runtime import; tests now owned by SpawnCity."
+          git push origin HEAD:restore-game-ci-and-live-changelog-20261016
