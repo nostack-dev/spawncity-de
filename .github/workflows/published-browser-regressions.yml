@@ -1,0 +1,102 @@
+name: Published SpawnCity browser regressions
+on:
+  workflow_run:
+    workflows: ["Deploy SpawnCity"]
+    types: [completed]
+  push:
+    branches: ["restore-hardware-browser-pipelines-20261016"]
+    paths: [".github/workflows/published-browser-regressions.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: spawncity-live-browser-regressions
+  cancel-in-progress: true
+jobs:
+  verify-release:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    outputs:
+      build_sha: ${{ steps.live.outputs.build_sha }}
+    steps:
+      - name: Require canonical live SHA (not just HTTP 200)
+        id: live
+        env:
+          EXPECTED_WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          git init -q /tmp/spawncity-release
+          git -C /tmp/spawncity-release fetch -q --depth 1 https://github.com/nostack-dev/spawncity-de.git gh-pages
+          git -C /tmp/spawncity-release checkout -q FETCH_HEAD
+          expected_sha="$(node -p 'JSON.parse(require("fs").readFileSync("/tmp/spawncity-release/build.json","utf8")).sha')"
+          if [ -n "$EXPECTED_WORKFLOW_SHA" ] && [ "$EXPECTED_WORKFLOW_SHA" != "$expected_sha" ]; then
+            echo "::error::A different build has superseded this workflow run; use the current published SHA"
+            exit 1
+          fi
+          for attempt in $(seq 1 72); do
+            if curl -fsSL --retry 1 --connect-timeout 6 --max-time 15 -H 'Cache-Control: no-cache' "https://spawncity.de/build.json?release=${expected_sha}-${attempt}" -o /tmp/live-build.json \
+              && node -e 'const a=require("/tmp/live-build.json");if(a.sha!==process.argv[1])process.exit(1)' "$expected_sha" \
+              && curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H 'Cache-Control: no-cache' "https://spawncity.de/drone_simulator.html?release=${expected_sha}-${attempt}" -o /tmp/live-game.html \
+              && grep -q "ARONDIGHT45_BUILD_SHA:${expected_sha}" /tmp/live-game.html \
+              && grep -q "Touchpad-Mouselook in Ego-Sicht" /tmp/live-game.html; then
+              echo "build_sha=${expected_sha}" >> "$GITHUB_OUTPUT"
+              echo "Live origin serves canonical built simulator and new changelog: ${expected_sha}"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::spawncity.de did not serve the canonical release and changelog."
+          exit 1
+  desktop:
+    needs: verify-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install browser harness
+        run: |
+          npm install --prefix /tmp/browser-deps --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+          ln -s /tmp/browser-deps/node_modules node_modules
+      - name: Real Chromium desktop fire and first-person input
+        env:
+          GH_SHA: ${{ needs.verify-release.outputs.build_sha }}
+        run: |
+          set -euo pipefail
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/desktop_mouse_chord_browser_smoke.mjs "https://spawncity.de/drone_simulator.html?ci=${GH_SHA}"
+  mobile:
+    needs: verify-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install browser harness
+        run: |
+          npm install --prefix /tmp/browser-deps --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+          ln -s /tmp/browser-deps/node_modules node_modules
+      - name: Mobile startup and touch layout in Chromium
+        env:
+          GH_SHA: ${{ needs.verify-release.outputs.build_sha }}
+        run: |
+          set -euo pipefail
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/mobile_startup_live_smoke.mjs "https://spawncity.de/drone_simulator.html?ci=${GH_SHA}"
+  physics-and-visual:
+    needs: verify-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install browser harness
+        run: |
+          npm install --prefix /tmp/browser-deps --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+          ln -s /tmp/browser-deps/node_modules node_modules
+      - name: Live physics and visual smoke checks
+        env:
+          GH_SHA: ${{ needs.verify-release.outputs.build_sha }}
+        run: |
+          set -euo pipefail
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/physics_diagnostics_live.mjs "https://spawncity.de/drone_simulator.html?ci=${GH_SHA}"
+          CHROME_BIN="$CHROME_BIN" node tests/visual_diagnostics_live.mjs "https://spawncity.de/drone_simulator.html?ci=${GH_SHA}"
