@@ -1,0 +1,66 @@
+name: Gameplay regressions
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths: ["sim/**", "esp32/**", "tests/**", "drone_simulator.html", "drone_controller.html", ".github/workflows/gameplay-regression.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deterministic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Game architecture, desktop, mobile and gameplay contracts
+        run: |
+          set -euo pipefail
+          node tests/standalone_source_test.mjs
+          node tests/touchpad_pointerlock_contract_test.mjs
+          for test in \
+            tests/fps_control_test.mjs \
+            tests/desktop_mouse_chord_contract_test.mjs \
+            tests/first_person_control_settings_test.mjs \
+            tests/first_person_controller_contract_test.mjs \
+            tests/xbox_gamepad_test.mjs \
+            tests/player_vitals_logic_test.mjs \
+            tests/wanted_system_test.mjs \
+            tests/gameplay_fun_logic_test.mjs \
+            tests/combat_audio_bank_test.mjs \
+            tests/combat_center_fire_test.mjs \
+            tests/voice_control_bindings_test.mjs \
+            tests/voice_solo_contract_test.mjs \
+            tests/voice_codec_test.mjs \
+            tests/mobile_peer_marker_layout_test.mjs \
+            tests/mobile_vehicle_entry_layout_test.mjs \
+            tests/rules_voice_hud_layout_test.mjs \
+            tests/rules_vote_test.mjs \
+            tests/multiplayer_navigation_test.mjs \
+            tests/vs_global_lobby_test.mjs \
+            tests/vs_first_join_host_test.mjs \
+            tests/vs_host_join_handshake_test.mjs \
+            tests/jet_f_interact_test.mjs \
+            tests/jet_seat_table_test.mjs \
+            tests/jet_seat_coordinator_test.mjs \
+            tests/nav_ar_route_math_test.mjs \
+            tests/nav_route_request_gate_test.mjs \
+            tests/drone_world_grounding_contract_test.mjs \
+            tests/world_ground_streaming_regression_test.mjs \
+            tests/terrain_dem_consistency_regression_test.mjs \
+            tests/physics_validation_test.mjs \
+            tests/critical_damage_logic_test.mjs \
+            tests/world_building_collisions_test.mjs; do
+            echo "::group::$test"
+            node "$test"
+            echo "::endgroup::"
+          done
+      - name: Simulator and C++ compilation contracts
+        run: |
+          set -euo pipefail
+          find sim -type f -name '*.mjs' -print0 | xargs -0 -n1 -P4 node --check
+          g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -Iesp32 tests/state_control_test.cpp -o /tmp/state_control_test
+          /tmp/state_control_test
+          g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -Iesp32 tests/drone_fc_core_test.cpp -o /tmp/drone_fc_core_test
+          /tmp/drone_fc_core_test
