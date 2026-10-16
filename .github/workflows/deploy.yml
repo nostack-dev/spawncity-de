@@ -44,91 +44,23 @@ jobs:
             cat /tmp/pages-body.json; echo
           fi
 
-      - name: Import the game tree
+      - name: Check standalone SpawnCity sources
         run: |
-          set -euxo pipefail
-          mkdir -p /tmp/overlay/sim /tmp/overlay/tools /tmp/overlay/tests /tmp/overlay/docs
-          # every module in this repo's sim/ replaces the game's file of the same name
-          for f in sim/*.mjs sim/*.css sim/*.js sim/OVERRIDES.sha256; do
-            if [ -f "$f" ]; then cp "$f" "/tmp/overlay/sim/$(basename "$f")"; fi
-          done
-          for f in tools/public_site.mjs tools/s31_hil_bridge.mjs; do
-            if [ -f "$f" ]; then cp "$f" "/tmp/overlay/tools/$(basename "$f")"; fi
-          done
-          for f in tests/site_config_test.mjs tests/live_site.mjs; do
-            if [ -f "$f" ]; then cp "$f" "/tmp/overlay/tests/$(basename "$f")"; fi
-          done
-          if [ -f docs/SPAWNCITY_DEPLOY.md ]; then cp docs/SPAWNCITY_DEPLOY.md /tmp/overlay/docs/; fi
-          mkdir -p /tmp/overlay/seo; if [ -d seo ]; then cp seo/* /tmp/overlay/seo/; fi
-          for f in index.html CNAME; do
-            if [ -f "$f" ]; then cp "$f" /tmp/overlay/; fi
-          done
-          rm -rf /tmp/kl
-          git init /tmp/kl
-          git -C /tmp/kl fetch --depth 1 https://github.com/nostack-dev/kurzlernen-de.git 2165abec7f59fe2cc27e82db3bba7d5531aaa9f9
-          git -C /tmp/kl checkout FETCH_HEAD
-          # Overrides are whole-file copies made from these exact game files. If the pinned game
-          # commit changes one of them, stop: the override would silently drop the newer code.
-          if [ -s /tmp/overlay/sim/OVERRIDES.sha256 ]; then (cd /tmp/kl && sha256sum -c /tmp/overlay/sim/OVERRIDES.sha256); fi
-          rm -rf sim esp32
-          cp -a /tmp/kl/sim /tmp/kl/esp32 .
-          cp /tmp/kl/drone_simulator.html /tmp/kl/drone_controller.html /tmp/kl/drone_simulator.webmanifest /tmp/kl/oppenheimer-sw.js .
-          mkdir -p tests docs tools
-          cp /tmp/kl/tests/sil_wasm_smoke.mjs tests/
-          if [ -d /tmp/overlay/sim ]; then cp /tmp/overlay/sim/* sim/; fi
-          if [ -d /tmp/overlay/tools ]; then cp /tmp/overlay/tools/* tools/; fi
-          if [ -d /tmp/overlay/tests ]; then cp /tmp/overlay/tests/* tests/; fi
-          if [ -d /tmp/overlay/docs ]; then cp /tmp/overlay/docs/* docs/; fi
-          if [ -f /tmp/overlay/index.html ]; then cp /tmp/overlay/index.html .; fi
-          if [ -f /tmp/overlay/CNAME ]; then cp /tmp/overlay/CNAME .; fi
-          python3 - <<'PY'
-          from pathlib import Path
-          host=Path("CNAME").read_text().strip()
-          page=Path("drone_simulator.html")
-          html=page.read_text()
-          canon=f"https://{host}/drone_simulator.html"
-          image=f"https://{host}/sim/icons/spawncity-512.png"
-          # SEO + share cards (X/Twitter, WhatsApp, Facebook, LinkedIn): seo/head.html, with the live host
-          seo=Path("/tmp/overlay/seo/head.html")
-          if seo.exists() and 'name="twitter:card"' not in html:
-              head=seo.read_text().replace("{HOST}",host)
-              html=html.replace("<title>SpawnCity</title>",head+"<title>SpawnCity – Drohne, Auto &amp; Jet in deiner echten Stadt</title>",1)
-              page.write_text(html)
-          for name in ["spawncity-card.png","robots.txt","sitemap.xml"]:
-              src=Path("/tmp/overlay/seo")/name
-              if src.exists():
-                  if name.endswith(".png"):Path(name).write_bytes(src.read_bytes())
-                  else:Path(name).write_text(src.read_text().replace("{HOST}",host))
-          html=page.read_text()
-          if 'id="spawncityLayout"' not in html:
-              css=Path("sim/spawncity_layout.css").read_text()
-              i=html.rfind("</head>")
-              html=html[:i]+'<style id="spawncityLayout">\n'+css+'</style>\n'+html[i:]
-          if 'id="spawncityExitGuard"' not in html:
-              js=Path("sim/spawncity_exit_guard.js").read_text().replace("</script","<\\/script")
-              j=html.rfind("</body>")
-              html=html[:j]+'<script id="spawncityExitGuard">\n'+js+'</script>\n'+html[j:]
-          page.write_text(html)
-          controller=Path("drone_controller.html")
-          chtml=controller.read_text().replace("<title>OPPENHEIMER Remote</title>","<meta name=\"robots\" content=\"noindex\">\n<title>SpawnCity Remote</title>").replace("OPPENHEIMER · REMOTE","SPAWNCITY · REMOTE")
-          controller.write_text(chtml)
-          lan=Path("sim/lan_vs.mjs")
-          ltxt=lan.read_text()
-          import re
-          new='import {SITE} from "./site_config.mjs";\nconst APP_ID=SITE.multiplayerAppId;'
-          if "APP_ID=SITE.multiplayerAppId" not in ltxt:
-              ltxt, n = re.subn(r'^const APP_ID="[^"]*";', lambda m: new, ltxt, count=1, flags=re.M)
-              assert n == 1, "APP_ID line not found in sim/lan_vs.mjs"
-              lan.write_text(ltxt)
-          log=Path("sim/changelog_menu.mjs")
-          ctxt=log.read_text()
-          if "Neuer Mehrspieler-Raum" not in ctxt:
-              entry='  {date:"2026-10-16",time:"03:30",title:"Neue Hände, Sniper-Timing, Fixes",items:[\n    "Neue Hände in der Ego-Sicht und eine schnellere Messer-Animation.",\n    "Sniper: Treffer und Einschlag kommen erst an, wenn die Kugel da ist.",\n    "Granatwerfer-Explosionen sind wieder deutlich zu hören.",\n    "Auf Dachaufbauten (Treppenhäuser) kann man jetzt stehen.",\n    "Gebäude sind beim Start nicht mehr schon eingestürzt.",\n    "Startmenü passt auf das Handy quer, und EXIT ist immer erreichbar."]},\n  {date:"2026-10-16",time:"02:30",title:"Neuer Mehrspieler-Raum",items:[\n    "SpawnCity hat jetzt einen eigenen Mehrspieler-Raum.",\n    "Bitte die Seite einmal neu laden. Wer noch eine ältere Version offen hat, sieht die anderen erst nach dem Neuladen.",\n    "Die Fernsteuerung (Remote) wird einfach neu gekoppelt wie bisher."]},\n  {date:"2026-10-15",time:"23:58",title:"spawncity.de ist die Adresse",items:[\n    "Das Spiel läuft jetzt unter spawncity.de. Die Startseite geht direkt ins Spiel.",\n    "Die Home-Bildschirm-App bleibt an der Adresse, mit der du sie angelegt hast. Einmal unter spawncity.de öffnen und neu auf den Home-Bildschirm legen."]},\n'
-              ctxt=ctxt.replace("export const CHANGELOG=Object.freeze([\n", "export const CHANGELOG=Object.freeze([\n"+entry, 1)
-              log.write_text(ctxt)
-          PY
-          test "$(tr -d '[:space:]' < CNAME)" = "spawncity.de"
-          rm -f bin-probe.txt
+          set -euo pipefail
+          test -s drone_simulator.html
+          test -s drone_controller.html
+          test -s drone_simulator.webmanifest
+          test -s oppenheimer-sw.js
+          test -s sim/real_world_bootstrap.mjs
+          test -s sim/lan_vs.mjs
+          test -s sim/changelog_menu.mjs
+          test -s sim/audio/headshot_announcer.mp3
+          test -s esp32/Arondight45_DroneFC_Core.hpp
+          test -s tests/sil_wasm_smoke.mjs
+          node --check sim/real_world_bootstrap.mjs
+          node --check sim/lan_vs.mjs
+          node --check sim/changelog_menu.mjs
+          node tests/standalone_source_test.mjs
 
       - name: Check SpawnCity site config
         run: node tests/site_config_test.mjs

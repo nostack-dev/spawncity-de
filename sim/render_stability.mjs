@@ -1,0 +1,21 @@
+const SOFTWARE_RENDERER_RE=/(swiftshader|llvmpipe|software raster|software renderer)/i;
+const ANDROID_RE=/android/i;
+const HONOR_RE=/(?:\bhonor\b|\bhuawei\b|magicos)/i;
+const APPLE_MOBILE_RE=/(?:iphone|ipad|ipod)|(?:macintosh.*mobile)/i;
+
+export function renderPlatformProfile({userAgent="",devicePixelRatio=1,rendererName=""}={}){
+  const ua=String(userAgent||""),android=ANDROID_RE.test(ua),honor=HONOR_RE.test(ua),appleMobile=APPLE_MOBILE_RE.test(ua),software=SOFTWARE_RENDERER_RE.test(String(rendererName||""));
+  const nativePixelRatio=Math.max(.25,Number(devicePixelRatio)||1);const hq=/[?&]hq=1/.test(String(globalThis.location?.search||""));let pixelRatioCeiling=software?Math.min(nativePixelRatio,hq?1:.30):android?Math.min(nativePixelRatio,1):Math.min(nativePixelRatio,1.25);
+  // Sharper image on capable phones (1x on a 3x iPhone looked pixelated).
+  if(!software&&android)pixelRatioCeiling=Math.min(nativePixelRatio,1.15);else if(!software&&appleMobile)pixelRatioCeiling=Math.min(nativePixelRatio,1.5);else if(!software)pixelRatioCeiling=Math.min(nativePixelRatio,1.5);
+  return Object.freeze({android,honor,appleMobile,software,pixelRatioCeiling,stableBackbuffer:android||honor,canvasDesynchronized:false});
+}
+
+export function quantizedViewportSize(width,height){
+  const even=value=>Math.max(2,Math.round(Math.max(1,Number(value)||1)/2)*2);
+  return Object.freeze({width:even(width),height:even(height)});
+}
+
+export function viewportSizeChanged(previous,next){
+  return !previous||previous.width!==next.width||previous.height!==next.height;
+}

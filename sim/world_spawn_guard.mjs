@@ -1,0 +1,56 @@
+import "./gameplay_polish_lite.mjs";
+import "./combat_visual_polish.mjs";
+import "./mobile_zoom_guard.mjs";
+import "./world_action_feedback.mjs";
+import "./foot_look_capture.mjs";
+import "./player_vitals_runtime.mjs";
+import "./walk_world_experience_hotfix.mjs";
+import "./wanted_police_pre_guard.mjs";
+import "./wanted_police_drones.mjs";
+import "./police_ground_units.mjs";
+import "./fighter_jets.mjs";
+import "./jet_mode.mjs";
+import "./people_impacts.mjs";
+import "./tow_service.mjs";
+import "./military_response.mjs";
+import "./zombie_nights.mjs";
+import "./dynamic_lights.mjs";
+import "./shader_prewarm.mjs";
+import "./street_lamps.mjs";
+import "./cows.mjs";
+import "./pigeons.mjs";
+import "./jetpack_audio.mjs";
+import "./hand_grenade.mjs";
+import "./scene_lighting.mjs";
+import "./gps_live_mode.mjs";
+import "./gangsters.mjs";
+import "./police_sirens.mjs";
+import "./world_map_full.mjs";
+import "./car_radio.mjs";
+import "./jogger_chain.mjs";
+import "./guided_missile.mjs";
+import "./ping_marker.mjs";
+import "./flak_battery.mjs";
+import "./edge_hud_layout.mjs";
+import "./world_rigid_body_runtime.mjs";
+import "./walk_ui_layout_hotfix.mjs";
+import "./combat_hit_stack_guard.mjs";
+import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
+
+let installed=false;
+
+export function installWorldSpawnGuard(){
+  if(installed)return true;const bridge=globalThis.__arondightRealWorld;if(!bridge||typeof bridge.attachBuildingCollisionSink!=="function")return false;installed=true;
+  const baseAttach=bridge.attachBuildingCollisionSink.bind(bridge);let lastPrismCount=0,resetQueued=false;
+  bridge.attachBuildingCollisionSink=sink=>baseAttach(snapshot=>{
+    const prismCount=Math.max(0,Number(snapshot?.prismCount)||0),firstLoaded=lastPrismCount===0&&prismCount>0,scene=bridge.threeScene,airframe=scene?bridge.airframeFor?.(scene):null,p=airframe?.position,nearGround=Number.isFinite(p?.z)&&p.z<.35,unsafe=firstLoaded&&nearGround&&!buildingLaunchPointClear(snapshot,[Number(p?.x)||0,Number(p?.y)||0],{clearanceM:.9});
+    lastPrismCount=prismCount;sink(snapshot);
+    const viewport=document.getElementById("viewport");if(viewport){viewport.dataset.worldSpawnGuard=unsafe?"relocate":firstLoaded?"clear":prismCount?"tracking":"waiting";viewport.dataset.worldSpawnGuardPrisms=String(prismCount);}
+    if(!unsafe||resetQueued)return;resetQueued=true;queueMicrotask(()=>{
+      resetQueued=false;const button=document.getElementById("soloReset");if(!button)return;if(viewport){viewport.dataset.worldSpawnGuardResets=String((Number(viewport.dataset.worldSpawnGuardResets)||0)+1);viewport.dataset.worldSpawnGuard="resetting-to-clear-launch";}button.click();
+    });
+  });
+  return true;
+}
+
+installWorldSpawnGuard();
