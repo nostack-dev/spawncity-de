@@ -20,12 +20,14 @@ jobs:
     outputs:
       build_sha: ${{ steps.live.outputs.build_sha }}
     steps:
+      - uses: actions/checkout@v4
       - name: Require canonical live SHA (not just HTTP 200)
         id: live
         env:
           EXPECTED_WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
+          origin="$(node tools/public_site.mjs origin)"
           git init -q /tmp/spawncity-release
           git -C /tmp/spawncity-release fetch -q --depth 1 https://github.com/nostack-dev/spawncity-de.git gh-pages
           git -C /tmp/spawncity-release checkout -q FETCH_HEAD
@@ -35,9 +37,9 @@ jobs:
             exit 1
           fi
           for attempt in $(seq 1 72); do
-            if curl -fsSL --retry 1 --connect-timeout 6 --max-time 15 -H 'Cache-Control: no-cache' "https://spawncity.de/build.json?release=${expected_sha}-${attempt}" -o /tmp/live-build.json \
+            if curl -fsSL --retry 1 --connect-timeout 6 --max-time 15 -H 'Cache-Control: no-cache' "$origin/build.json?release=${expected_sha}-${attempt}" -o /tmp/live-build.json \
               && node -e 'const a=require("/tmp/live-build.json");if(a.sha!==process.argv[1])process.exit(1)' "$expected_sha" \
-              && curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H 'Cache-Control: no-cache' "https://spawncity.de/drone_simulator.html?release=${expected_sha}-${attempt}" -o /tmp/live-game.html \
+              && curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H 'Cache-Control: no-cache' "$origin/drone_simulator.html?release=${expected_sha}-${attempt}" -o /tmp/live-game.html \
               && grep -q "ARONDIGHT45_BUILD_SHA:${expected_sha}" /tmp/live-game.html \
               && grep -q "Touchpad-Mouselook in Ego-Sicht" /tmp/live-game.html; then
               echo "build_sha=${expected_sha}" >> "$GITHUB_OUTPUT"
@@ -63,8 +65,9 @@ jobs:
           GH_SHA: ${{ needs.verify-release.outputs.build_sha }}
         run: |
           set -euo pipefail
+          origin="$(node tools/public_site.mjs origin)"
           CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
-          CHROME_BIN="$CHROME_BIN" node tests/desktop_mouse_chord_browser_smoke.mjs "https://spawncity.de/drone_simulator.html?ci=${GH_SHA}"
+          CHROME_BIN="$CHROME_BIN" node tests/desktop_mouse_chord_browser_smoke.mjs "$origin/drone_simulator.html?ci=${GH_SHA}"
   mobile:
     needs: verify-release
     runs-on: ubuntu-latest
@@ -80,8 +83,9 @@ jobs:
           GH_SHA: ${{ needs.verify-release.outputs.build_sha }}
         run: |
           set -euo pipefail
+          origin="$(node tools/public_site.mjs origin)"
           CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
-          CHROME_BIN="$CHROME_BIN" node tests/mobile_startup_live_smoke.mjs "https://spawncity.de/drone_simulator.html?ci=${GH_SHA}"
+          CHROME_BIN="$CHROME_BIN" node tests/mobile_startup_live_smoke.mjs "$origin/drone_simulator.html?ci=${GH_SHA}"
   physics-and-visual:
     needs: verify-release
     runs-on: ubuntu-latest
@@ -97,6 +101,7 @@ jobs:
           GH_SHA: ${{ needs.verify-release.outputs.build_sha }}
         run: |
           set -euo pipefail
+          origin="$(node tools/public_site.mjs origin)"
           CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
-          CHROME_BIN="$CHROME_BIN" node tests/physics_diagnostics_live.mjs "https://spawncity.de/drone_simulator.html?ci=${GH_SHA}"
-          CHROME_BIN="$CHROME_BIN" node tests/visual_diagnostics_live.mjs "https://spawncity.de/drone_simulator.html?ci=${GH_SHA}"
+          CHROME_BIN="$CHROME_BIN" node tests/physics_diagnostics_live.mjs "$origin/drone_simulator.html?ci=${GH_SHA}"
+          CHROME_BIN="$CHROME_BIN" node tests/visual_diagnostics_live.mjs "$origin/drone_simulator.html?ci=${GH_SHA}"
