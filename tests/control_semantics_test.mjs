@@ -8,17 +8,21 @@ import {
   MAX_GAME_TILT_DEG,GAME_AGL_SENSOR_RANGE_MARGIN_M,MIN_GAME_AGL_SENSOR_SLANT_RANGE_M
 } from "../sim/control_semantics.mjs";
 
+// Simulator sources and CI now live ONLY in the SpawnCity repository.
+// The unrelated Kurzlernen/Editor3D workflows are intentionally not copied.
 assert.deepEqual(
   readdirSync(".github/workflows").sort(),
-  ["deploy.yml","editor3d-assemble.yml","editor3d-box3d-main-upgrade.yml","editor3d-e2e.yml","editor3d-flicker-fix.yml","editor3d-live.yml","editor3d-mobile-orbit.yml","editor3d-newton-cradle.yml","mobile-gameplay-regression.yml","physics-diagnostics.yml","s31-hil.yml","simulator-live.yml","simulator-pr.yml","suggestions.yml","visual-diagnostics.yml"],
-  "production tree must contain only the approved Pages, Editor3D, mobile gameplay, visual + physics diagnostics and S31 HIL workflows",
+  ["deploy.yml","esp32-hil.yml","gameplay-regression.yml","player-suggestions.yml","pr-checks.yml","published-browser-regressions.yml"],
+  "SpawnCity's game Actions must be complete and contain no unrelated legacy workflows",
 );
 
-for(const name of ["simulator-pr.yml","simulator-live.yml"]){
+for(const name of ["gameplay-regression.yml","esp32-hil.yml","published-browser-regressions.yml","pr-checks.yml","player-suggestions.yml"]){
   const ci=readFileSync(`.github/workflows/${name}`,"utf8");
   assert.match(ci,/contents: read/);
-  assert.doesNotMatch(ci,/(contents|pages|issues): write/,"simulator verification must be read-only");
+  assert.doesNotMatch(ci,/(contents|pages|issues): write/,"game verification must have read-only permissions");
 }
+const deploy=readFileSync(".github/workflows/deploy.yml","utf8");
+assert.doesNotMatch(deploy,/continue-on-error:\s*true\s*\n\s*env:\s*\n\s*GH_SHA/, "live release checks must not hide failures");
 
 const near=(a,b,eps=1e-6,msg="")=>assert.ok(Math.abs(a-b)<=eps,`${msg} expected ${b}, got ${a}`);
 
