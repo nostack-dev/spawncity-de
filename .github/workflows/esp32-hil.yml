@@ -44,5 +44,5 @@ jobs:
       - name: Compile ESP-IDF firmware
         run: |
           set -euo pipefail
-          docker pull espressif/idf:v5.5.1
-          docker run --rm -v "$PWD:/w" -w /w espressif/idf:v5.5.1 bash esp32/ci_build.sh
+          for retry in 1 2 3; do if docker pull -q "espressif/idf@sha256:68085df693b34bacfd69984ae05bb1e3b475ea3d4684943cfeed5a39954850e7"; then break; fi; sleep $((retry*15)); done
+          docker run --rm -v "$PWD:/w" -w /w "espressif/idf@sha256:68085df693b34bacfd69984ae05bb1e3b475ea3d4684943cfeed5a39954850e7" bash esp32/ci_build.sh
