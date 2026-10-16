@@ -61,6 +61,7 @@ jobs:
           node --check sim/lan_vs.mjs
           node --check sim/changelog_menu.mjs
           node tests/standalone_source_test.mjs
+          node tests/touchpad_pointerlock_contract_test.mjs
 
       - name: Check SpawnCity site config
         run: node tests/site_config_test.mjs
