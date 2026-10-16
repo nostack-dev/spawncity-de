@@ -5,6 +5,9 @@
 // Mouse, touch, keyboard (Esc closes) and the pad (pad_actions.mjs: up/down scroll, B closes).
 export const CHANGELOG_MENU_VERSION="title-changelog-v1";
 export const CHANGELOG=Object.freeze([
+  {date:"2026-10-16",time:"14:11",title:"Touchpad-Mouselook in Ego-Sicht",items:[
+    "Notebook-Touchpads drehen die Kamera in der Ego-Perspektive wieder gleichmäßig, auch bei schnellen Fingerbewegungen.",
+    "Die Steuerung nutzt zuverlässige Mausbewegungen statt Raw-Input-Zwang; Schießen, Gamepad und Touch-Bedienung bleiben erhalten."]},
   {date:"2026-10-16",time:"10:46",title:"Headshots, Sniper-Fixes, echte Jogger",items:[
     "HEADSHOT! Kopftreffer mit Sniper und Glock töten sofort, mit der MP dreifacher Schaden – mit Einblendung und Ansager.",
     "Sniper-Zielfernrohr hängt nicht mehr: Drohne, Auto, Jet, Drehen des Handys oder Tod beenden das Zielen sofort.",
