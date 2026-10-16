@@ -1,0 +1,48 @@
+name: ESP32 flight stack and physics
+on:
+  pull_request:
+    branches: [main]
+    paths: ["sim/**", "esp32/**", "tests/**", ".github/workflows/esp32-hil.yml"]
+  push:
+    branches: [main]
+    paths: ["sim/**", "esp32/**", "tests/**", ".github/workflows/esp32-hil.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hardware-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deterministic flight-core and host integration tests
+        run: |
+          set -euo pipefail
+          for pair in "drone_fc_core_test" "state_control_test" "flow_nav_test"; do
+            g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -Iesp32 "tests/$pair.cpp" -o "/tmp/$pair"
+            "/tmp/$pair"
+          done
+          g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -Iesp32 tests/drone_hil_protocol_test.cpp -o /tmp/hil_protocol
+          /tmp/hil_protocol
+          g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -Iesp32 sim/Arondight45_DroneFC_SIL_WASM.cpp -o /tmp/sil_core
+          /tmp/sil_core
+          for test in \
+            tests/control_semantics_test.mjs \
+            tests/visual_pose_stabilization_test.mjs \
+            tests/render_stability_test.mjs \
+            tests/vs_pose_sync_test.mjs \
+            tests/s31_digital_twin_audit_test.mjs \
+            tests/drone_runtime_perf_contract_test.mjs \
+            tests/physics_validation_test.mjs \
+            tests/p2p_link_test.mjs \
+            tests/lan_vs_smoke.mjs; do node "$test"; done
+  esp-idf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile ESP-IDF firmware
+        run: |
+          set -euo pipefail
+          docker pull espressif/idf:v5.5.1
+          docker run --rm -v "$PWD:/w" -w /w espressif/idf:v5.5.1 bash esp32/ci_build.sh
