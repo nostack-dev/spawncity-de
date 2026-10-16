@@ -1,0 +1,105 @@
+import puppeteer from "puppeteer-core";
+import {mkdir,writeFile} from "node:fs/promises";
+
+// Visual + performance diagnostics of the LIVE build on a phone-sized
+// viewport with a real city (fixed GPS). Writes screenshots and metrics to
+// artifacts/diag/ — the workflow publishes them on the ci-diagnostics branch.
+const input=process.argv[2]||"https://kurzlernen.de/drone_simulator.html",executablePath=process.env.CHROME_BIN;
+if(!executablePath)throw new Error("CHROME_BIN must point to Chrome/Chromium");
+const OUT="artifacts/diag",report={url:input,steps:[],errors:[]};await mkdir(OUT,{recursive:true});
+const browser=await puppeteer.launch({headless:true,executablePath,args:["--no-sandbox","--disable-dev-shm-usage","--enable-webgl","--ignore-gpu-blocklist","--use-gl=angle","--use-angle=swiftshader","--autoplay-policy=no-user-gesture-required"]});
+const page=await browser.newPage(),pause=ms=>new Promise(r=>setTimeout(r,ms));
+page.on("pageerror",e=>report.errors.push(String(e.message||e).slice(0,300)));
+page.on("console",m=>{if(m.type()==="error"||m.type()==="warning")report.errors.push(`${m.type()}: ${m.text().slice(0,240)}`);});
+const url=new URL(input);url.searchParams.set("menu","1");url.searchParams.set("hq","1");
+await browser.defaultBrowserContext().overridePermissions(url.origin,["geolocation"]);
+await page.setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1");
+await page.setViewport({width:844,height:390,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+await page.setGeolocation({latitude:52.5208,longitude:13.4094,accuracy:5});
+const metrics=()=>page.evaluate(async()=>{const v=document.querySelector("#viewport")||{dataset:{}},d=v.dataset;
+  const fps=await new Promise(res=>{let n=0;const t0=performance.now();const f=()=>{n++;if(performance.now()-t0<2000)requestAnimationFrame(f);else res(n/((performance.now()-t0)/1000));};requestAnimationFrame(f);});
+  const r=globalThis.__arondightRealWorld?.threeRenderer?.info;
+  // which top-level groups produce the draw calls (visible meshes in view)
+  let draws=null;try{const b=globalThis.__arondightRealWorld;
+    const sc=b?.threeScene,c=b?.threeCamera;if(sc&&c){const out={};const vis=n=>{for(let o=n;o;o=o.parent)if(!o.visible)return false;return true;};
+      sc.traverse(n=>{if(!(n.isMesh||n.isLine||n.isPoints||n.isSprite)||!vis(n)||n.material?.visible===false)return;let top=n;while(top.parent&&top.parent!==sc)top=top.parent;const key=(top.name||top.type)+(n.isInstancedMesh?"[inst]":"");const g=n.geometry,tri=g?((g.index?g.index.count:(g.attributes?.position?.count||0))/3)*(n.isInstancedMesh?n.count:1):0;const o=out[key]||(out[key]=[0,0,0]);o[0]++;o[1]+=Math.round(tri);if(n.castShadow)o[2]+=Math.round(tri);});
+      draws=Object.entries(out).sort((x,y)=>y[1][1]-x[1][1]).slice(0,22).map(([k,v])=>[k,`${v[0]}dc/${v[1]}tri/${v[2]}shadowTri`]);}}catch(e){draws=String(e).slice(0,100);}
+  return{draws,fps:+fps.toFixed(1),drawCalls:r?.render?.calls,triangles:r?.render?.triangles,lines:r?.render?.lines,programs:r?.programs?.length,programNames:(r?.programs||[]).map(p=>`${p.name||"?"}#${String(p.cacheKey||"").slice(0,24)}`),status:document.querySelector("#status")?.textContent,worldMode:d.worldMode,mapSync:d.worldMapSyncMode,cityBuildings:d.worldCityBuildings,water:`${d.worldWaterCells||0}/${d.worldWaterBasins||0}/${d.worldWaterBridges||0}`,ground:d.worldGroundSource,roads:d.worldCityRoads,bloom:d.neonBloom,style:d.visualStyle,collisionPrisms:d.worldBuildingCollisionPrisms,neonMeshes:d.neonStyledMeshes,terrainShapes:d.terrainShapes,nukeDebris:d.nukeDebrisAlive,nukeFlung:d.nukeFlungActors,nukeBuildings:d.nukeDestructionBuildings,nukeActors:d.nukeDestructionActors,droneHp:d.droneHp,footTouch:d.footTouch,walkMode:globalThis.__arondightWalkMode?.mode,menuHidden:document.getElementById("gameMenu")?.hidden};});
+async function step(name,fn){const t=Date.now();try{await fn?.();}catch(e){report.errors.push(`${name}: ${String(e.message||e).slice(0,300)}`);}let m={};try{m=await metrics();}catch(e){m={error:String(e).slice(0,200)};}try{await page.screenshot({path:`${OUT}/${String(report.steps.length).padStart(2,"0")}-${name}.png`});}catch{}report.steps.push({name,ms:Date.now()-t,...m});}
+// CPU profile (JS self time per function) — which code costs frame time.
+async function cpuProfile(label,ms=5000){try{const cdp=await page.target().createCDPSession();await cdp.send("Profiler.enable");await cdp.send("Profiler.setSamplingInterval",{interval:500});await cdp.send("Profiler.start");await pause(ms);const{profile}=await cdp.send("Profiler.stop");
+  const byId=new Map(profile.nodes.map(n=>[n.id,n])),self=new Map(),dt=profile.timeDeltas||[];let total=0;
+  profile.samples.forEach((id,i)=>{const n=byId.get(id),d=dt[i]||0;total+=d;const cf=n.callFrame,key=`${cf.functionName||"(anon)"} ${String(cf.url).split("/").pop()}:${cf.lineNumber+1}`;self.set(key,(self.get(key)||0)+d);});
+  const top=[...self].sort((a,b)=>b[1]-a[1]).slice(0,45).map(([k,v])=>[k,+(v/total*100).toFixed(1)]);(report.cpuProfiles??={})[label]=top;await cdp.detach();}catch(e){(report.cpuProfiles??={})[label]={error:String(e.message||e).slice(0,200)};}}
+async function armDroneAtomically(){
+  const deadline=Date.now()+15000;
+  while(Date.now()<deadline){
+    const state=await page.evaluate(()=>{const button=document.querySelector("#soloArm"),fc=(document.querySelector("#soloState")?.textContent||"").trim(),canDeploy=Boolean(globalThis.__arondightDroneDamageModel?.canDeploy);if(fc==="ARMED")return{armed:true,clicked:false,disabled:Boolean(button?.disabled),fc,canDeploy};if(button&&!button.disabled&&button.textContent.trim()==="ARM"&&canDeploy){button.click();return{armed:false,clicked:true,disabled:false,fc,canDeploy};}return{armed:false,clicked:false,disabled:Boolean(button?.disabled),fc,canDeploy};});
+    if(state.armed)return state;
+    if(state.clicked){try{await page.waitForFunction(()=>document.querySelector("#soloState")?.textContent?.trim()==="ARMED"&&document.querySelector("#viewport")?.dataset.fireArmed==="1",{timeout:9000});return await page.evaluate(()=>({armed:true,clicked:true,disabled:Boolean(document.querySelector("#soloArm")?.disabled),fc:document.querySelector("#soloState")?.textContent?.trim(),canDeploy:Boolean(globalThis.__arondightDroneDamageModel?.canDeploy)}));}catch{}}
+    await pause(120);
+  }
+  throw new Error(`could not atomically arm healthy drone for diagnostics: ${JSON.stringify(await page.evaluate(()=>({destroyed:Boolean(globalThis.__arondightDroneDamageModel?.destroyed),canDeploy:Boolean(globalThis.__arondightDroneDamageModel?.canDeploy),disabled:Boolean(document.querySelector("#soloArm")?.disabled),button:document.querySelector("#soloArm")?.textContent?.trim(),fc:document.querySelector("#soloState")?.textContent?.trim(),mode:globalThis.__arondightWalkMode?.mode})))}`);
+}
+
+try{
+  const t0=Date.now();await page.goto(url.href,{waitUntil:"domcontentloaded",timeout:60000});report.domContentLoadedMs=Date.now()-t0;
+  page.evaluate(()=>new Promise(r=>document.readyState==="complete"?r():addEventListener("load",r,{once:true}))).then(()=>{report.loadEventMs=Date.now()-t0;}).catch(()=>{});
+  await step("boot-5s",()=>pause(5000));
+  report.boot=await page.evaluate(()=>({readyState:document.readyState,status:document.querySelector("#status")?.textContent,pendingResources:performance.getEntriesByType("resource").filter(e=>!e.responseEnd).map(e=>e.name).slice(0,10),resources:performance.getEntriesByType("resource").map(e=>({n:e.name.slice(-60),ms:Math.round(e.duration),kb:Math.round((e.transferSize||0)/1024)})).slice(0,40)})).catch(e=>({error:String(e)}));
+  await step("menu",()=>page.waitForFunction(()=>document.getElementById("gameMenuStart")?.textContent?.trim()==="START",{timeout:45000}));
+  await step("started",async()=>{await page.click("#gameMenuStart");await page.waitForFunction(()=>document.getElementById("gameMenu")?.hidden===true,{timeout:60000});await pause(4000);});
+  await step("city-drone",async()=>{await page.waitForFunction(()=>Number(document.querySelector("#viewport")?.dataset.worldCityBuildings)>20,{timeout:30000}).catch(()=>{});await pause(1500);});
+  report.mapProbe=await page.evaluate(()=>{const b=globalThis.__arondightRealWorld,out={source:b?.buildingSourceId,cam:b?.threeCamera?[+b.threeCamera.position.x.toFixed(1),+b.threeCamera.position.y.toFixed(1)]:null,layers:{}};
+    for(const layer of["transportation","water","waterway","park","landcover","landuse","building"]){try{const f=b.map.querySourceFeatures(b.buildingSourceId,{sourceLayer:layer});const g=f[0]?.geometry,c=g?.coordinates;let first=null;try{first=g?.type==="Polygon"?c[0][0]:g?.type==="LineString"?c[0]:g?.type==="MultiLineString"?c[0][0]:g?.type==="MultiPolygon"?c[0][0][0]:null;}catch{}out.layers[layer]={n:f.length,type:g?.type,cls:f[0]?.properties?.class,first,proj:first?b.projectLngLat(first[0],first[1]).map(v=>+v.toFixed(1)):null};}catch(e){out.layers[layer]={error:String(e.message||e)};}}
+    const v=document.getElementById("viewport");out.roads=v?.dataset.worldCityRoads;out.water=[v?.dataset.worldWaterCells,v?.dataset.worldWaterBasins,v?.dataset.worldWaterBridges];out.waterState=v?.dataset.worldWaterState;out.elevation=v?.dataset.terrainElevation;out.waterStats=v?.dataset.worldWaterStats;out.minimapGuard=v?.dataset.minimapGuard||"ok";const mh=document.getElementById("worldLookHud");if(mh){const r=mh.getBoundingClientRect(),cs=getComputedStyle(mh);out.minimap={x:Math.round(r.left),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),display:cs.display,vis:cs.visibility,op:cs.opacity,z:cs.zIndex};}out.font=getComputedStyle(document.body).fontFamily;return out;});
+  // Cost attribution: frame rate with individual layers switched off.
+  report.attribution=await page.evaluate(async()=>{
+    const fps=()=>new Promise(res=>{let n=0;const t0=performance.now();const f=()=>{n++;if(performance.now()-t0<2500)requestAnimationFrame(f);else res(+(n/((performance.now()-t0)/1000)).toFixed(1));};requestAnimationFrame(f);});
+    const scene=globalThis.__arondightRealWorld?.threeScene,out={};if(!scene)return out;
+    const byName=n=>scene.getObjectByName(n),edges=[];scene.traverse(o=>{if(o.userData?.neonEdge)edges.push(o);});
+    const geo=document.getElementById("geoViewport");
+    const trial=async(name,off,on)=>{off();await new Promise(r=>setTimeout(r,400));out[name]=await fps();on();};
+    out.baseline=await fps();
+    await trial("noCitySolids",()=>{const m=byName("WORLD_CITY_SOLIDS");if(m)m.visible=false;},()=>{const m=byName("WORLD_CITY_SOLIDS");if(m)m.visible=true;});
+    await trial("noCityEdges",()=>{const m=byName("WORLD_CITY_EDGES");if(m)m.visible=false;},()=>{const m=byName("WORLD_CITY_EDGES");if(m)m.visible=true;});
+    await trial("noObjectEdges",()=>edges.forEach(e=>e.visible=false),()=>edges.forEach(e=>e.visible=true));
+    await trial("noGrid",()=>{const m=byName("NEON_GROUND_GRID");if(m)m.visible=false;},()=>{const m=byName("NEON_GROUND_GRID");if(m)m.visible=true;});
+    const hide=n=>()=>{const m=byName(n);if(m)m.visible=false;},show=n=>()=>{const m=byName(n);if(m)m.visible=true;};
+    for(const n of["WORLD_CITY_ROADS","WORLD_GROUND","WORLD_WATER","REAL_SKY","WORLD_PROCEDURAL_POPULATION","WORLD_PROCEDURAL_DECOR"])await trial(`no_${n}`,hide(n),show(n));
+    const r=globalThis.__arondightRealWorld?.threeRenderer;if(r)await trial("noShadows",()=>{r.shadowMap.enabled=false;},()=>{r.shadowMap.enabled=true;});
+    const bl=globalThis.__arondightNeonBloom;if(bl&&bl.enabled)await trial("noBloom",()=>{bl.enabled=false;},()=>{bl.enabled=true;});
+    if(r)await trial("halfRes",()=>{r.__pr=r.getPixelRatio();r.setPixelRatio(r.__pr/2);},()=>r.setPixelRatio(r.__pr));
+    await trial("noMapCanvas",()=>{if(geo)geo.style.display="none";},()=>{if(geo)geo.style.display="";});
+    out.objectEdges=edges.length;return out;
+  }).catch(e=>({error:String(e)}));
+  await step("minimap-expanded",async()=>{await page.evaluate(()=>globalThis.__arondightRealWorld?.toggleMinimapExpanded?.());await pause(800);});
+  await page.evaluate(()=>globalThis.__arondightRealWorld?.toggleMinimapExpanded?.());
+  await cpuProfile("drone");
+  await step("on-foot",async()=>{await page.evaluate(()=>globalThis.__arondightWalkMode?.setMode?.("foot",{persist:false,reason:"diag"}));await pause(2500);});
+  await cpuProfile("foot");
+  await step("foot-touch-move",async()=>{const r=await page.$eval("#footMove",e=>{const b=e.getBoundingClientRect();return{x:b.left+b.width/2,y:b.top+b.height/2,w:b.width};}).catch(()=>null);if(!r)throw new Error("no #footMove");const before=await page.evaluate(()=>({...globalThis.__arondightWalkMode.position}));const t=page.touchscreen;await t.touchStart(r.x,r.y);for(let i=1;i<=10;i++){await t.touchMove(r.x,r.y-r.w*.05*i);await pause(60);}await pause(1500);const after=await page.evaluate(()=>({...globalThis.__arondightWalkMode.position}));await t.touchEnd();report.walkMoved=Math.hypot(after.x-before.x,after.y-before.y);report.walkSprint=await page.$eval("#viewport",v=>v.dataset.walkTouchSprint);});
+  // Walkable building interiors: door, lobby, stairwell, upper storey, roof.
+  report.interior=await page.evaluate(()=>globalThis.__buildingInteriors?.activateNearest?.()||null).catch(e=>({error:String(e.message||e)}));
+  for(const where of["door","inside","stairs","upper","roof"])await step(`interior-${where}`,async()=>{const r=await page.evaluate(w=>globalThis.__buildingInteriors?.placePlayer?.(w),where);(report.interiorPoses??={})[where]=r;await pause(1200);const z=await page.evaluate(()=>globalThis.__arondightWalkMode?.position?.z);report.interiorPoses[where]={...(r||{}),eyeZ:z};});
+  await page.evaluate(()=>globalThis.__arondightWalkMode?.setMode?.("drone",{persist:false,reason:"diag"}));await pause(1500);
+  await page.evaluate(()=>{globalThis.__arondightDroneDamageModel?.reset?.();globalThis.__arondightDroneWeapons?.setMode?.("nuke");});
+  report.arm=await armDroneAtomically().catch(e=>({error:String(e.message||e).slice(0,200)}));
+  // A real tap-fired nuke lands close (drone sits in its crater); for a
+  // readable view of the cloud the diagnostic also drops one 450 m ahead
+  // through the multiplayer entry point (exercises the remote path too).
+  // which materials compile their shader only when the nuke hits (stutter source)
+  await page.evaluate(()=>{const r=globalThis.__arondightRealWorld?.threeRenderer;globalThis.__diagProgramsBefore=new Set(r?.info?.programs||[]);});
+  const newPrograms=async()=>page.evaluate(()=>{const b=globalThis.__arondightRealWorld,r=b?.threeRenderer,before=globalThis.__diagProgramsBefore;if(!r||!before)return null;const out={};
+    b.threeScene.traverse(n=>{const mats=Array.isArray(n.material)?n.material:n.material?[n.material]:[];for(const m of mats){const prog=r.properties.get(m)?.currentProgram;if(!prog||before.has(prog))continue;let top=n;while(top.parent&&top.parent!==b.threeScene)top=top.parent;const key=`${top.name||top.type}/${n.name||n.type}|${m.type}|t${m.transparent?1:0}|b${m.blending}|vc${m.vertexColors?1:0}|s${m.side}|fog${m.fog?1:0}|inst${n.isInstancedMesh?1:0}|${(r.properties.get(m)?.currentProgram?.cacheKey||"").length}`;out[key]=(out[key]||0)+1;}});return out;});
+  await step("nuke-fired",async()=>{report.nukeRemote=await page.evaluate(()=>{const c=globalThis.__arondightRealWorld?.threeCamera;if(!c)return null;const d=c.getWorldDirection(c.position.clone());d.z=0;d.normalize();const p=[c.position.x+d.x*450,c.position.y+d.y*450,0];window.dispatchEvent(new CustomEvent("arondight:remote-nuke",{detail:{position:p}}));return p;});await pause(1500);});
+  await cpuProfile("nuke-0-4s",4000);
+  await step("nuke-3s",()=>pause(200));
+  report.nukeNewPrograms3s=await newPrograms().catch(e=>String(e));
+  await step("nuke-8s",()=>pause(5000));
+  report.nukeNewPrograms8s=await newPrograms().catch(e=>String(e));
+  await step("nuke-16s",()=>pause(8000));
+  await step("nuke-30s",()=>pause(14000));
+}finally{
+  await writeFile(`${OUT}/diag.json`,JSON.stringify(report,null,1));console.log(JSON.stringify(report,null,1).slice(0,6000));await browser.close();
+}
