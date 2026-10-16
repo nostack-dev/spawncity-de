@@ -1,20 +1,19 @@
 // SpawnCity public-site settings. One place for the product name and the live host.
 //
 // This repository is the GitHub Pages site for spawncity.de. pagesHost must match
-// the single line in ./CNAME. kurzlernen.de stays on nostack-dev/kurzlernen-de;
-// do not put spawncity.de in that repo's CNAME.
+// the single line in ./CNAME.
 //
-// multiplayerAppId is the Trystero room key, not a brand string. Renaming it
-// would split players who still have the previous build open.
+// multiplayerAppId is the Trystero room key. Simulator and controller are both
+// bundled from this file, so they switch rooms in the same deploy. Changing it
+// splits players from anyone who still has an older build open until they reload.
 
 export const SITE=Object.freeze({
   productName:"SpawnCity",
   productHost:"spawncity.de",
-  legacyHost:"kurzlernen.de",
   pagesHost:"spawncity.de",
   gamePath:"/drone_simulator.html",
   controllerPath:"/drone_controller.html",
-  multiplayerAppId:"arondight45-kurzlernen-vs-v3"
+  multiplayerAppId:"arondight45-spawncity-vs-v1"
 });
 
 export function pagesOrigin(){return `https://${SITE.pagesHost}`;}

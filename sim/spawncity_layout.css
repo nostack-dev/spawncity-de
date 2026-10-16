@@ -1,0 +1,43 @@
+/* SpawnCity layout fixes. The deploy workflow inlines this file into drone_simulator.html
+   right before </head>, so it wins over the game's own menu rules. */
+
+/* Start menu: never crop. Flex `center` pushes overflow off the top edge where it can't be
+   scrolled to; `safe center` + auto margins keep the top reachable and scroll the rest. */
+#gameMenu{overflow-x:hidden;overflow-y:auto;align-items:safe center;justify-content:safe center;-webkit-overflow-scrolling:touch}
+#gameMenu>#gameMenuBg{position:fixed}
+#gameMenu .gm-center{margin:auto;box-sizing:border-box;max-width:100%;
+  padding:calc(max(12px,env(safe-area-inset-top)) + 44px) max(16px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+
+/* Phones held sideways: title on the left, buttons on the right, everything on one screen. */
+@media (orientation:landscape) and (max-height:560px){
+  #gameMenu .gm-center{display:grid;grid-template-columns:minmax(0,auto) minmax(240px,340px);grid-auto-rows:auto;
+    column-gap:clamp(24px,6vw,72px);row-gap:clamp(6px,1.8vh,10px);align-items:center;justify-items:center;
+    padding-top:calc(max(10px,env(safe-area-inset-top)) + 44px)}
+  #gameMenu .gm-title{grid-column:1;grid-row:1 / span 4;align-self:end;font-size:clamp(40px,min(22vh,10vw),104px)}
+  #gameMenu .gm-sub{grid-column:1;grid-row:5 / span 2;align-self:start;font-size:clamp(10px,1.5vw,13px);letter-spacing:.34em}
+  #gameMenu .gm-center>:not(.gm-title):not(.gm-sub){grid-column:2;width:100%;min-width:0;box-sizing:border-box}
+  #gameMenu #gameMenuStart{margin-top:0;min-width:0;padding-top:clamp(9px,2.6vh,15px);padding-bottom:clamp(9px,2.6vh,15px)}
+  #gameMenu #gameMenuWorld,#gameMenu #gameMenuChangelog{min-height:0;padding-top:clamp(7px,2vh,12px)!important;padding-bottom:clamp(7px,2vh,12px)!important}
+  #gameMenu #gameMenuStatus{min-height:1em;margin:0}
+  #gameMenu #startPlaceButton{margin-top:0}
+}
+@media (orientation:landscape) and (max-height:360px){
+  #gameMenu .gm-center{padding-top:calc(max(6px,env(safe-area-inset-top)) + 40px);row-gap:5px}
+  #gameMenu #gameMenuStatus{display:none}
+}
+
+/* Top-right toggles keep one size in the menu and in play (the in-game HUD sets 40x36),
+   so moving them into the game view never makes them grow or shrink. */
+#soundSwitch,#musicSwitch{height:36px;transition:none!important;animation:none!important}
+
+/* Fallback EXIT (sim/spawncity_exit_guard.js): only shown when the HUD's own EXIT is missing. */
+#scExit{position:fixed;z-index:2147483000;left:max(8px,env(safe-area-inset-left));top:max(8px,env(safe-area-inset-top));
+  height:36px;padding:0 12px;display:flex;align-items:center;gap:6px;border-radius:10px;border:1.5px solid #ff8a6a99;
+  background:#2a1410e6;color:#ffe2d8;font:900 11px/1 system-ui,-apple-system,sans-serif;letter-spacing:.12em;cursor:pointer;touch-action:manipulation}
+#scExit[hidden]{display:none!important}
+#scExitAsk{position:fixed;inset:0;z-index:2147483001;display:flex;align-items:center;justify-content:center;background:#000a}
+#scExitAsk[hidden]{display:none!important}
+#scExitAsk .box{background:#12161c;border:1px solid #ffffff2a;border-radius:14px;padding:18px 20px;color:#eef0f2;text-align:center;font:800 13px/1.3 system-ui,sans-serif;letter-spacing:.06em;min-width:240px}
+#scExitAsk .row{display:flex;gap:10px;justify-content:center;margin-top:14px}
+#scExitAsk button{min-width:96px;height:42px;border-radius:10px;border:1px solid #ffffff33;background:#1d232b;color:#fff;font:800 13px system-ui,sans-serif;letter-spacing:.1em}
+#scExitAsk button[data-yes]{background:linear-gradient(180deg,#ffb02e,#ff7a1a);color:#16120c;border:0}
