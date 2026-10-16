@@ -47,8 +47,11 @@ let wantMenu=false;
 function openMenu(){const d=document.querySelector("dialog.phone-settings-dialog");if(d?.open)return;wantMenu=true;if(locked())document.exitPointerLock?.();(document.querySelector("#soloTopbar .phone-settings-button")||document.querySelector(".phone-settings-button"))?.click();}
 function requestLock(){
   const v=viewport();if(!v?.requestPointerLock)return;
-  // the OS pointer speed curve stays on (like the desktop cursor the player is used to): raw counts felt dead on small, slow moves
-  try{/* raw mouse like CoD on PC: no OS pointer acceleration where the browser offers it */const p=v.requestPointerLock({unadjustedMovement:true});if(p?.catch)p.catch(()=>{try{const q=v.requestPointerLock();if(q?.catch)q.catch(()=>{});}catch{}});}catch{try{const q=v.requestPointerLock();if(q?.catch)q.catch(()=>{});}catch{}}
+  // Default (OS-adjusted) movement is important for laptop precision touchpads.
+  // Windows raw WM_INPUT / unadjustedMovement can intermittently report no
+  // trackpad deltas even while pointer lock is active. The same lock still
+  // supports a physical mouse; game sensitivity remains user-adjustable.
+  try{const p=v.requestPointerLock();if(p?.catch)p.catch(()=>{});}catch{}
 }
 
 // head look (car, drone with RMB): the shared world look, snapping back when idle
@@ -119,10 +122,21 @@ function onPointerUp(event){
   if(locked()&&gameMode()!=="foot")consume(event);
 }
 function onPointerMove(event){
+  // Pointer Events are only for identifying the current input device.
+  // Precision touchpads can keep generating mousemove while pointermove stalls
+  // or reports another pointer type under lock; do not drive the camera here.
   if(event.pointerType==="mouse"&&(event.movementX||event.movementY)&&!locked()&&!desktop&&mouseMeansDesktop()&&!(event.target instanceof Element&&event.target.closest(UI_SELECTOR)))setDesktop(true);
-  if(!locked()||event.pointerType!=="mouse")return;
-  let dx=Number(event.movementX)||0,dy=Number(event.movementY)||0;
-  if(Math.abs(dx)>MAX_EVENT_PX||Math.abs(dy)>MAX_EVENT_PX){consume(event);return;} // pointer-lock entry spikes
+}
+function onMouseMove(event){
+  // Pointer Lock specifies movementX/Y on MouseEvent ("mousemove"). Use one
+  // authoritative movement stream: processing both events doubles sensitivity.
+  if(!locked())return;
+  const rawX=Number(event.movementX),rawY=Number(event.movementY);
+  if(!Number.isFinite(rawX)||!Number.isFinite(rawY))return;
+  // A fast trackpad gesture can coalesce into a large delta. Limit the spike,
+  // but NEVER discard the whole event and make mouselook appear frozen.
+  let dx=clamp(rawX,-MAX_EVENT_PX,MAX_EVENT_PX);
+  let dy=clamp(rawY,-MAX_EVENT_PX,MAX_EVENT_PX);
   [dx,dy]=scaleMouseDelta(dx,dy); // SETTINGS: mouse sensitivity / invert Y
   const mode=gameMode();
   if(mode==="foot")walk()?.applyMouseLook?.({dx,dy});
@@ -236,6 +250,7 @@ export function installDesktopControls(){
   window.addEventListener("mouseup",onMouseUp,{capture:true,passive:false});
   window.addEventListener("pointerup",onPointerUp,{capture:true,passive:false});
   window.addEventListener("pointermove",onPointerMove,{capture:true,passive:false});
+  window.addEventListener("mousemove",onMouseMove,{capture:true,passive:false});
   window.addEventListener("wheel",onWheel,{capture:true,passive:false});
   window.addEventListener("keydown",onKeyDown);window.addEventListener("keyup",onKeyUp);
   window.addEventListener("contextmenu",event=>{if(locked()||(desktop&&gameplayTarget(event.target)))event.preventDefault();},{capture:true});
@@ -248,7 +263,7 @@ export function installDesktopControls(){
   window.addEventListener("blur",releaseAll);
   /* death keeps the mouse captured: R / Enter (or Ⓐ) respawns after the countdown, no cursor in the picture */
   globalThis.__arondightDesktopDroneInput=droneSample;
-  globalThis.__arondightDesktopInput={get active(){return desktop;},get locked(){return locked();},get mode(){return gameMode();},get lmb(){return lmb;},get rmb(){return rmb;},keys,takeMouseDelta(){const d={x:jetDelta.x,y:jetDelta.y};jetDelta.x=jetDelta.y=0;return d;},version:"desktop-rmb-first-pointerlock-v3"};
+  globalThis.__arondightDesktopInput={get active(){return desktop;},get locked(){return locked();},get mode(){return gameMode();},get lmb(){return lmb;},get rmb(){return rmb;},keys,takeMouseDelta(){const d={x:jetDelta.x,y:jetDelta.y};jetDelta.x=jetDelta.y=0;return d;},version:"desktop-touchpad-mousemove-lock-v4"};
   setInterval(tick,16);
 }
 installDesktopControls();
