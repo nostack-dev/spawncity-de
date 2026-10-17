@@ -57,6 +57,21 @@ if(!(world.renderer.eye[0]>1.8&&world.renderer.eye[2]>10.7))
  throw Error("Native third camera did not follow Box3D airframe");
 world.setCamera({eye:[33,-75,40],target:[0,0,3],fov:1,near:.1,far:700});
 world.draw(performance.now()+420);
+// Full-screen PWA drawing MUST preserve physical pixel density. CSS touch
+// positions must map into the same raster used by the camera ray projection.
+const originalDpr=Object.getOwnPropertyDescriptor(globalThis,"devicePixelRatio");
+Object.defineProperty(globalThis,"devicePixelRatio",{configurable:true,value:2});
+const hidpi=world.draw(performance.now()+430);
+if(hidpi.drawingWidth!==1920||hidpi.drawingHeight!==1080||hidpi.drawingDpr!==2)
+ throw Error("native HiDPI PWA was rendered at an artificially reduced resolution");
+const cssCenter=world.pick(480,270),gpuCenter=world.renderer.pick(960,540);
+if(cssCenter.hit?.id!==gpuCenter.hit?.id||Math.abs((cssCenter.hit?.distance||0)-(gpuCenter.hit?.distance||0))>1e-5)
+ throw Error("touch target differs from actual GPU center ray at DPR=2");
+if(originalDpr)Object.defineProperty(globalThis,"devicePixelRatio",originalDpr);
+else delete globalThis.devicePixelRatio;
+const normalDpr=world.draw(performance.now()+431);
+if(normalDpr.drawingWidth!==960||normalDpr.drawingHeight!==540)
+ throw Error("native renderer failed to restore normal PWA backbuffer resolution");
 const gl=world.renderer.gl;
 gl.finish();
 const pixels=new Uint8Array(canvas.width*canvas.height*4);
@@ -86,6 +101,7 @@ globalThis.__nativeWorldProof={
  renderer:"webgl2-only",sources:{box3d:2,flight:1,buildings:16,terrain:world.terrain.stats.chunks,roads:world.roads.live.size,people:world.people?.update().visible},
  drawCalls:firstDraws,shadowDrawCalls:first.gpu.shadowDrawCalls,updatedDrawCalls:next.gpu.drawCalls,drawnTriangles:first.gpu.triangles,
  nonBlank,glError,contextLossExtension:Boolean(contextExtension),contextRestored,shadowRestored:Boolean(world.renderer.shadow?.depth),hasThreeImport:false,
+ hiDpiVerified:true,touchPickingVerified:true,
  context:String(gl.getParameter(gl.RENDERER))
 };
 world.dispose();
