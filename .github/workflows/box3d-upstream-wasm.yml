@@ -32,7 +32,7 @@ jobs:
         run: |
           node tests/box3d_upstream_contract_test.mjs artifacts/box3d-upstream-wasm
           node tests/physics_validation_test.mjs
-          node tests/world_building_collision_physics_test.mjs
+          node tests/world_building_collision_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
       - name: Upload compiled native + inline WASM and SHA-256 provenance
         if: always()
         uses: actions/upload-artifact@v4
