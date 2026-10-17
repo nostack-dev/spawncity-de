@@ -58,7 +58,8 @@ export class NativeCitySlice {
     for(let col=0;col<4;col++)for(let row=0;row<4;row++)
       m[col*4+row]=a[row]*b[col*4]+a[row+4]*b[col*4+1]+a[row+8]*b[col*4+2]+a[row+12]*b[col*4+3];
     this.native.resize(gl.drawingBufferWidth,gl.drawingBufferHeight);
-    const fog=renderer.getClearColor?.(),world=globalThis.__arondightRealWorld;
+    const world=globalThis.__arondightRealWorld;
+    const fog=world?.threeScene?.fog?.color||world?.threeScene?.background||null;
     const sun=world?.threeScene?.getObjectByName?.("REAL_SUN"),sunDir=sun?.position?[sun.position.x,sun.position.y,sun.position.z]:[-.45,-.52,.72];
     let result;
     try{
