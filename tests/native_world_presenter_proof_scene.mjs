@@ -17,7 +17,7 @@ const playerFlight={p:{span:.25,propD:.11},motorOmega:[140,142,138,140],
 const population={people:()=>[{id:"npc1",x:-5,y:1,z:1.1,yaw:.7},{id:"npc2",x:1,y:12,z:1.3,yaw:1.2}]};
 const world=new NativeWorldPresenter(canvas,{
  physics,population,flight:playerFlight,heightAt:(x,y)=>Math.sin(x/14)*.32+Math.cos(y/20)*.48,
- rendererOptions:{width:960,height:540},
+ rendererOptions:{width:960,height:540,shadows:{resolution:256,extent:130}},
  terrainOptions:{radius:100,maxTiles:4,cells:16,step:5,listenPhysics:false,uploadsPerFrame:2},
  cityOptions:{buildingsPerStep:2,chunkSize:100}
 });
@@ -84,8 +84,8 @@ if(contextExtension){
 let nonBlank=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>25||pixels[i+1]>25||pixels[i+2]>40)nonBlank++;
 globalThis.__nativeWorldProof={
  renderer:"webgl2-only",sources:{box3d:2,flight:1,buildings:16,terrain:world.terrain.stats.chunks,roads:world.roads.live.size,people:world.people?.update().visible},
- drawCalls:firstDraws,updatedDrawCalls:next.gpu.drawCalls,drawnTriangles:first.gpu.triangles,
- nonBlank,glError,contextLossExtension:Boolean(contextExtension),contextRestored,hasThreeImport:false,
+ drawCalls:firstDraws,shadowDrawCalls:first.gpu.shadowDrawCalls,updatedDrawCalls:next.gpu.drawCalls,drawnTriangles:first.gpu.triangles,
+ nonBlank,glError,contextLossExtension:Boolean(contextExtension),contextRestored,shadowRestored:Boolean(world.renderer.shadow?.depth),hasThreeImport:false,
  context:String(gl.getParameter(gl.RENDERER))
 };
 world.dispose();
