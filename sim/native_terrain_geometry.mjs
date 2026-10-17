@@ -37,8 +37,9 @@ export function buildNativeTerrainTile({x0,y0,step=5,cells=32,heightAt,albedoAt=
  return {id:id||"terrain:"+x0+","+y0,positions,normals,colors,uvs,indices,
   triangles:indices.length/3,vertexCount:vertices,cells,step,x0,y0,minHeight,maxHeight};
 }
-export function* nativeTerrainTileSteps({center=[0,0],radius=420,step=5,cells=32,maxTiles=121,heightAt,albedoAt}={}){
- if(typeof heightAt!=="function"||!(radius>0)||!Number.isInteger(maxTiles)||maxTiles<1)throw Error("invalid native terrain tile streaming");
+export function nativeTerrainTileCoordinates({center=[0,0],radius=420,step=5,cells=32,maxTiles=121}={}){
+ if(!(radius>0)||!(step>0)||!Number.isInteger(cells)||cells<1||!Number.isInteger(maxTiles)||maxTiles<1)
+  throw Error("invalid native terrain tile streaming");
  const tileM=cells*step,cx=Number(center[0]),cy=Number(center[1]);
  if(!Number.isFinite(cx)||!Number.isFinite(cy))throw Error("non-finite tile center");
  const ix=Math.floor(cx/tileM),iy=Math.floor(cy/tileM),r=Math.ceil(radius/tileM);
@@ -47,9 +48,13 @@ export function* nativeTerrainTileSteps({center=[0,0],radius=420,step=5,cells=32
   const nearX=Math.max(x*tileM,Math.min(cx,(x+1)*tileM));
   const nearY=Math.max(y*tileM,Math.min(cy,(y+1)*tileM));
   const dist=Math.hypot(nearX-cx,nearY-cy);
-  if(dist<=radius)coords.push({x,y,dist});
+  if(dist<=radius)coords.push({id:"terrain:"+x*tileM+","+y*tileM,x0:x*tileM,y0:y*tileM,dist});
  }
- coords.sort((a,b)=>a.dist-b.dist||a.y-b.y||a.x-b.x);
- const chosen=coords.slice(0,maxTiles);
- for(const {x,y} of chosen)yield buildNativeTerrainTile({x0:x*tileM,y0:y*tileM,step,cells,heightAt,albedoAt});
+ coords.sort((a,b)=>a.dist-b.dist||a.y0-b.y0||a.x0-b.x0);
+ return coords.slice(0,maxTiles);
+}
+export function* nativeTerrainTileSteps({heightAt,albedoAt,...options}={}){
+ if(typeof heightAt!=="function")throw Error("native terrain height sampler required");
+ for(const {id,x0,y0} of nativeTerrainTileCoordinates(options))
+  yield buildNativeTerrainTile({id,x0,y0,step:options.step||5,cells:options.cells||32,heightAt,albedoAt});
 }
