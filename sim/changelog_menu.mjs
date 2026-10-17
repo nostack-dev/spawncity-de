@@ -5,6 +5,10 @@
 // Mouse, touch, keyboard (Esc closes) and the pad (pad_actions.mjs: up/down scroll, B closes).
 export const CHANGELOG_MENU_VERSION="title-changelog-v1";
 export const CHANGELOG=Object.freeze([
+  {date:"2026-10-17",time:"13:20",title:"Jet-HUD und Laufstil verbessert",items:[
+    "EJECT sitzt jetzt links oben und verdeckt die Minimap nicht mehr.",
+    "Bei Kopftreffern gibt es weder HEADSHOT-Schrift noch Ansager – nur ein kurzes neutrales Knacken.",
+    "Rennende Passanten und Jogger lehnen sich wieder deutlich zurück und strecken die Füße nach vorne."]},
   {date:"2026-10-17",time:"11:44",title:"Vollbild und klassische Hände zurück",items:[
     "Vollbild startet wieder wie vor der App-Umstellung; die Steuerung bleibt in normaler Ansicht und Vollbild nutzbar.",
     "In der Ego-Ansicht sind die Hände und Waffen wieder kompakt wie vor den neuen großen Handschuh-Armen."]},
