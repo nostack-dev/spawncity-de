@@ -63,10 +63,13 @@ export class NativeRoadStream{
   return {roads:result.value.roads,triangles:result.value.triangles,
     uploaded,removed,chunks:this.live.size,bytesSaved,bytesUploaded,unchanged:false};
  }
- dispose(){
-  if(this.disposed)return;
+ clear(){
   this.generation++;
   for(const key of this.live.keys())this.renderer.remove(key);
-  this.live.clear();this.disposed=true;
+  this.live.clear();this.lastRevision=null;this.lastCenter=null;this.dirty=true;
+ }
+ dispose(){
+  if(this.disposed)return;
+  this.clear();this.disposed=true;
  }
 }
