@@ -83,7 +83,7 @@ export class NativeWorldPresenter{
     ...this.flightCameraSettings
    });
    if(this.flightCameraActive)this.camera={eye:frame.eye,target:frame.target,up:frame.up,
-     fov:this.renderer.fov,near:this.flightCameraMode==="fpv"?.02:.06,far:1500};
+     fov:frame.fov,near:frame.near,far:frame.far};
   }
   this.lastFrameAt=now;
   if(!this.camera)throw Error("native world requires camera before rendering");
