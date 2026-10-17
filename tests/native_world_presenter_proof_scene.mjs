@@ -47,10 +47,12 @@ const fpv=world.draw(performance.now()+400);
 if(!world.renderer.meshes.has("flight/airframe")||!world.renderer.meshes.has("flight/rotors"))
  throw Error("Box3D flight pose did not create native drone/rotor GPU geometry");
 const fpvEye=world.renderer.eye;
+if(Math.abs(world.renderer.fov-105*Math.PI/180)>1e-6||Math.abs(world.renderer.near-.02)>1e-7)throw Error("Native FPV lens silently overwritten by world presenter");
 if(Math.abs(fpvEye[0]+.102)>1e-5||Math.abs(fpvEye[1]+20)>1e-5||Math.abs(fpvEye[2]-10.028)>1e-5)
  throw Error("Native FPV optical mount drifted from simulator contract: "+fpvEye);
 world.setFlightCameraMode("third",{thirdDistanceM:2.48});
 const third=world.draw(performance.now()+410);
+if(Math.abs(world.renderer.fov-62*Math.PI/180)>1e-6||Math.abs(world.renderer.near-.06)>1e-7)throw Error("Native third camera FOV/near silently overwritten");
 if(!(world.renderer.eye[0]>1.8&&world.renderer.eye[2]>10.7))
  throw Error("Native third camera did not follow Box3D airframe");
 world.setCamera({eye:[33,-75,40],target:[0,0,3],fov:1,near:.1,far:700});
