@@ -6,6 +6,7 @@
 import {multiply4,lookAt,perspective,identity4,normalMatrix3} from "./native_render_math.mjs";
 import {extractFrustumPlanes,sphereVisible,geometryBoundingSphere,instancedBoundingSphere} from "./native_render_culling.mjs";
 import {screenRay,pickNativeMeshes} from "./native_scene_picking.mjs";
+import {nativeBuildBvh} from "./native_scene_bvh.mjs";
 export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-culled-v5";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
@@ -193,6 +194,11 @@ export class NativeSceneRenderer{
   const old=this.meshes.get(id);if(old)this.free(old);
   const m={id,data:validate(input),material:{color:[1,1,1,1],alphaMode:"opaque",unlit:false,doubleSided:false,...input.material},texture:input.texture||null,visible:input.visible!==false};
   m.localBounds=geometryBoundingSphere(m.data.p);
+  // Static world-space indexed tiles are already in absolute Box3D metres.
+  // Build a BVH once; moving/animated meshes keep the exact brute-force path.
+  const isIdentity=m.data.count===1&&m.data.transforms.every((x,i)=>x===((i%5===0)?1:0));
+  const triangleCount=(m.data.indices?.length||m.data.p.length/3)/3;
+  m.bvh=isIdentity&&!m.data.skin&&triangleCount>=36?nativeBuildBvh(m.data.p,m.data.indices):null;
   m.worldBounds=instancedBoundingSphere(m.localBounds,m.data.transforms);
   this.meshes.set(id,m);if(!this.lost)this.upload(m);return m;
  }
