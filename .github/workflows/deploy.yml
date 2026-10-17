@@ -11,38 +11,12 @@ concurrency:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Ensure GitHub Pages custom domain
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          api() {
-            curl -sS -o /tmp/pages-body.json -w "%{http_code}" \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "$@"
-          }
-          code="$(api -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" -d '{"build_type":"workflow"}')"
-          echo "create pages HTTP ${code}"
-          cat /tmp/pages-body.json; echo
-          code="$(api -X PUT "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" -d '{"build_type":"workflow","cname":"spawncity.de","https_enforced":true}')"
-          echo "cname+https HTTP ${code}"
-          cat /tmp/pages-body.json; echo
-          if [ "${code}" != "200" ] && [ "${code}" != "201" ]; then
-            code="$(api -X PUT "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" -d '{"build_type":"workflow","cname":"spawncity.de"}')"
-            echo "cname HTTP ${code}"
-            cat /tmp/pages-body.json; echo
-          fi
 
       - name: Check standalone SpawnCity sources
         run: |
@@ -169,73 +143,30 @@ jobs:
           # checks, so only the inlined validated WASM ships in Pages.
           sudo rm -rf -- artifacts/box3d-upstream-wasm
 
-      - name: Publish SpawnCity
+      - name: Publish built site to the sole canonical repository
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
+          # GitHub Pages is configured ONCE in this repository's Settings >
+          # Pages > Deploy from a branch > gh-pages /root.
+          # GitHub's default GITHUB_TOKEN cannot enable Pages or move a custom
+          # domain (the old workflow's Pages REST calls always returned 403).
+          # No cross-repo mirror, no PAT and no separate hosting repository.
           printf 'spawncity.de\n' > CNAME
           touch .nojekyll
-          api() {
-            curl -sS -o /tmp/pages-body.json -w "%{http_code}" \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "$@"
-          }
-          code="$(api -X PUT "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" -d '{"build_type":"workflow","cname":"spawncity.de","https_enforced":true}')"
-          echo "workflow+https HTTP ${code}"
-          cat /tmp/pages-body.json; echo
-          if [ "${code}" != "200" ] && [ "${code}" != "201" ]; then
-            code="$(api -X PUT "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" -d '{"build_type":"workflow","cname":"spawncity.de"}')"
-            echo "workflow HTTP ${code}"
-            cat /tmp/pages-body.json; echo
-          fi
-          if [ "${code}" = "200" ] || [ "${code}" = "201" ]; then
-            echo "WORKFLOW_PAGES=1" >> "$GITHUB_ENV"
-          else
-            echo "WORKFLOW_PAGES=0" >> "$GITHUB_ENV"
-            rm -rf /tmp/spawncity-publish
-            mkdir -p /tmp/spawncity-publish
-            tar --exclude .git --exclude node_modules -cf - . | tar -C /tmp/spawncity-publish -xf -
-            cd /tmp/spawncity-publish
-            git init
-            git checkout -b gh-pages
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git config user.name "github-actions[bot]"
-            git add -A
-            git commit -m "Publish SpawnCity"
-            git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
-          fi
-      - name: Configure Pages
-        if: env.WORKFLOW_PAGES == '1'
-        uses: actions/configure-pages@v5
-      - name: Upload Pages artifact
-        if: env.WORKFLOW_PAGES == '1'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-      - name: Wait for Pages artifact visibility
-        if: env.WORKFLOW_PAGES == '1'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          GH_RUN_ID: ${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 30); do
-            count="$(curl -fsSL -H "Accept: application/vnd.github+json" -H "Authorization: Bearer ${GH_TOKEN}" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GH_REPO}/actions/runs/${GH_RUN_ID}/artifacts?per_page=100" | jq '[.artifacts[] | select(.name=="github-pages" and .expired==false)] | length')"
-            if [ "${count}" -ge 1 ]; then
-              echo "github-pages artifact is visible"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "github-pages artifact never became visible" >&2
-          exit 1
-      - id: deployment
-        if: env.WORKFLOW_PAGES == '1'
-        uses: actions/deploy-pages@v4
+          rm -rf /tmp/spawncity-publish
+          mkdir -p /tmp/spawncity-publish
+          tar --exclude .git --exclude node_modules -cf - . | tar -C /tmp/spawncity-publish -xf -
+          cd /tmp/spawncity-publish
+          git init -q
+          git checkout -qb gh-pages
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -A
+          git commit -qm "Publish canonical SpawnCity from ${GITHUB_SHA}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
+          echo "One-repo build published to ${GITHUB_REPOSITORY}:gh-pages"
 
   live-e2e:
     needs: deploy
