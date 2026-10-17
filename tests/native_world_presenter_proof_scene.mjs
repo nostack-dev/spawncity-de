@@ -10,8 +10,9 @@ const bodies=[
  {id:"police-drone",kind:"drone",halfExtents:[.8,.8,.22],drone:true}
 ];
 const physics={bodies:()=>bodies,renderPose:id=>p.get(id)};
+const population={people:()=>[{id:"npc1",x:-5,y:1,z:1.1,yaw:.7},{id:"npc2",x:1,y:12,z:1.3,yaw:1.2}]};
 const world=new NativeWorldPresenter(canvas,{
- physics,heightAt:(x,y)=>Math.sin(x/14)*.32+Math.cos(y/20)*.48,
+ physics,population,heightAt:(x,y)=>Math.sin(x/14)*.32+Math.cos(y/20)*.48,
  rendererOptions:{width:960,height:540},
  terrainOptions:{radius:100,maxTiles:4,cells:16,step:5,listenPhysics:false,uploadsPerFrame:2},
  cityOptions:{buildingsPerStep:2,chunkSize:100}
@@ -42,7 +43,7 @@ gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
 const glError=gl.getError();
 let nonBlank=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>25||pixels[i+1]>25||pixels[i+2]>40)nonBlank++;
 globalThis.__nativeWorldProof={
- renderer:"webgl2-only",sources:{box3d:2,buildings:16,terrain:world.terrain.stats.chunks,roads:world.roads.live.size},
+ renderer:"webgl2-only",sources:{box3d:2,buildings:16,terrain:world.terrain.stats.chunks,roads:world.roads.live.size,people:world.people?.update().visible},
  drawCalls:firstDraws,updatedDrawCalls:next.gpu.drawCalls,drawnTriangles:first.gpu.triangles,
  nonBlank,glError,hasThreeImport:false,
  context:String(gl.getParameter(gl.RENDERER))
