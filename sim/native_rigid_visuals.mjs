@@ -58,15 +58,15 @@ export class NativeRigidVisuals{
  constructor(renderer,physics,{maxBodies=1500}={}){
   if(!renderer?.upsert||!renderer?.updateInstances||!renderer?.remove||!physics?.bodies||!physics?.renderPose)
    throw Error("native rigid visuals require native renderer and authoritative Box3D bodies/poses");
-  this.renderer=renderer;this.physics=physics;this.maxBodies=maxBodies;this.active=new Set();this.disposed=false;
+  this.renderer=renderer;this.physics=physics;this.maxBodies=maxBodies;this.active=new Set();this.instanceIds=new Map();this.disposed=false;
   this.frame=0;this.snapshot={bodies:0,wheels:0,groups:0,skipped:0,triangles:0};
  }
  update(){
   if(this.disposed)throw Error("native rigid visuals disposed");
   const bodies=this.physics.bodies();
   if(!Array.isArray(bodies))throw Error("invalid Box3D bodies list");
-  const grouped=new Map(CATEGORIES.map(k=>[k,{transforms:[],tints:[]}]));
-  const wheels={transforms:[],tints:[]};let count=0,skipped=0;
+  const grouped=new Map(CATEGORIES.map(k=>[k,{transforms:[],tints:[],ids:[]}]));
+  const wheels={transforms:[],tints:[],ids:[]};let count=0,skipped=0;
   for(const body of bodies.slice(0,this.maxBodies)){
    if(!saneExtents(body.halfExtents)){skipped++;continue;}
    const pose=this.physics.renderPose(body.id);
@@ -76,7 +76,7 @@ export class NativeRigidVisuals{
    const half=body.halfExtents;
    // Box3D stores half-extents, whereas native unit geometry is ±0.5.
    group.transforms.push(...fromTRS(pose.position,pose.rotation,half.map(v=>2*v)));
-   const color=RGB[kind];group.tints.push(...color);
+   const color=RGB[kind];group.tints.push(...color);group.ids.push(String(body.id));
    count++;
    if(Array.isArray(pose.wheels))for(const wheel of pose.wheels){
     if(!validPose(wheel))continue;
@@ -84,14 +84,15 @@ export class NativeRigidVisuals{
     // wheel independently of Box3D's authoritative joint/axle transforms.
     const r=Math.max(.1,Math.min(1,Number(wheel.radius)||.32));
     wheels.transforms.push(...fromTRS(wheel.position,wheel.rotation,[r*2,r*.55,r*2]));
-    wheels.tints.push(...RGB.wheel);
+    wheels.tints.push(...RGB.wheel);wheels.ids.push(String(body.id));
    }
   }
   let groups=0,triangles=0;
   const send=(kind,batch,geometry)=>{
    const name=NAME[kind],count=batch.transforms.length/16;
-   if(!count){if(this.active.delete(name))this.renderer.remove(name);return;}
+   if(!count){this.instanceIds.delete(name);if(this.active.delete(name))this.renderer.remove(name);return;}
    const instances={transforms:new Float32Array(batch.transforms),tints:new Float32Array(batch.tints)};
+   this.instanceIds.set(name,batch.ids);
    if(this.active.has(name))this.renderer.updateInstances(name,instances);
    else{this.renderer.upsert(name,{...geometry,instances,material:{doubleSided:true}});this.active.add(name);}
    groups++;triangles+=geometry.positions.length/9*count;
@@ -102,9 +103,13 @@ export class NativeRigidVisuals{
   this.snapshot={bodies:count,wheels:wheels.transforms.length/16,groups,skipped,triangles,frame:this.frame};
   return this.snapshot;
  }
+ bodyIdForHit(hit){
+  const ids=this.instanceIds.get(hit?.id),index=hit?.instance;
+  return Number.isInteger(index)&&index>=0?ids?.[index]??null:null;
+ }
  dispose(){
   if(this.disposed)return;
   for(const id of this.active)this.renderer.remove(id);
-  this.active.clear();this.disposed=true;
+  this.active.clear();this.instanceIds.clear();this.disposed=true;
  }
 }
