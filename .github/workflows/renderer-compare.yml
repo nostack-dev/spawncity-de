@@ -62,6 +62,7 @@ jobs:
           node tests/native_instance_upload_atomic_test.mjs
           node tests/native_airframe_presentation_test.mjs
           node tests/native_gameplay_camera_test.mjs
+          node tests/native_scene_graph_test.mjs
           node tests/native_gameplay_visibility_test.mjs
           node tests/native_rigid_visuals_test.mjs
           node tests/native_world_physics_view_test.mjs
