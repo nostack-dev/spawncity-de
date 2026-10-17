@@ -51,6 +51,7 @@ jobs:
       - name: Verify independent native scene graph math and code
         run: |
           node tests/native_render_math_test.mjs
+          node tests/native_render_culling_test.mjs
           node tests/native_city_geometry_test.mjs
           node --check sim/native_scene_renderer.mjs
           node --check tests/native_scene_renderer_proof.mjs
