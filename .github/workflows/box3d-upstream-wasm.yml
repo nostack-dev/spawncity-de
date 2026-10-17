@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/box3d-upstream-wasm.yml"
       - "tools/build_box3d_upstream_wasm.sh"
+      - "tools/patch_box3d_upstream_bindings.mjs"
       - "tests/box3d_upstream_contract_test.mjs"
       - "tests/control_semantics_test.mjs"
       - "docs/box3d-upstream-wasm.md"
@@ -33,6 +34,9 @@ jobs:
           node tests/box3d_upstream_contract_test.mjs artifacts/box3d-upstream-wasm
           node tests/physics_validation_test.mjs
           node tests/world_building_collision_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
+          node tests/blast_physics_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
+          node tests/jet_flight_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
+          node tests/ragdoll_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
       - name: Upload compiled native + inline WASM and SHA-256 provenance
         if: always()
         uses: actions/upload-artifact@v4
