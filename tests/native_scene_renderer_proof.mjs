@@ -17,6 +17,6 @@ try{
  await writeFile(out+"/native-scene.png",png);
  await writeFile(out+"/metrics.json",JSON.stringify(data,null,2)+"\n");
  console.log("NATIVE_SCENE_GPU_PROOF "+JSON.stringify(data));
- if(errors.length||data.glError!==0||data.drawCalls!==3||data.instances!==936||data.triangles<10000||data.nonBackgroundPixels<6000)process.exitCode=1;
+ if(errors.length||data.glError!==0||data.drawCalls!==4||data.instances!==937||data.triangles<10000||data.nonBackgroundPixels<6000)process.exitCode=1;
 }catch(error){console.error("NATIVE_SCENE_GPU_ERROR",error);process.exitCode=1;}
 finally{await browser.close();}
