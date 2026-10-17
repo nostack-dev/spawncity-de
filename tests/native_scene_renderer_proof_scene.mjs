@@ -1,5 +1,7 @@
 import {NativeSceneRenderer} from "../sim/native_scene_renderer.mjs";
 import {fromTRS} from "../sim/native_render_math.mjs";
+import {buildNativeCityGeometry} from "../sim/native_city_geometry.mjs";
+import {buildingFootprintsFromFeatures} from "../sim/world_building_collisions.mjs";
 
 // Non-production GPU proof of the standalone native scene engine.
 // No Three.js or old renderer is imported by this test or the engine.
@@ -50,6 +52,26 @@ renderer.upsert("glass",{
 });
 // A separate two-bone native skinned actor; moving its upper joint requires
 // only a bone uniform update, not a vertex-buffer rebuild.
+// Real-game GeoJSON footprint format -> the new native city triangles -> GPU.
+// Courtyard and concave buildings exercise the production OSM mesh contract.
+const geoFeatures=[
+ {id:"courtyard",properties:{height:28},geometry:{type:"Polygon",coordinates:[
+   [[-103,-101],[-76,-101],[-76,-72],[-103,-72],[-103,-101]],
+   [[-95,-93],[-95,-82],[-85,-82],[-85,-93],[-95,-93]]
+ ]}},
+ {id:"L-block",properties:{height:17,min_height:2},geometry:{type:"Polygon",coordinates:[
+   [[-106,26],[-63,26],[-63,34],[-92,34],[-92,58],[-106,58],[-106,26]]
+ ]}}
+];
+const buildingFootprints=buildingFootprintsFromFeatures(geoFeatures,{center:[-85,-50],radiusM:500});
+const nativeCity=buildNativeCityGeometry(buildingFootprints,{chunkSize:400});
+if(nativeCity.built!==2||nativeCity.skipped.length)throw Error("real OSM city geometry conversion failed");
+for(const part of nativeCity.chunks){
+ renderer.upsert("osm-"+part.id,{
+   positions:part.positions,normals:part.normals,colors:part.colors,uvs:part.uvs,
+   material:{facade:true,doubleSided:false,color:[1,1,1,1]}
+ });
+}
 const actorJoints=new Float32Array(p.length/3*4),actorWeights=new Float32Array(p.length/3*4);
 for(let i=0;i<p.length/3;i++){const j=p[i*3+2]>.5?1:0;actorJoints[i*4]=j;actorWeights[i*4]=1;}
 const actorBones=new Float32Array(32);actorBones.set(fromTRS([0,0,0]),0);actorBones.set(fromTRS([0,0,0]),16);
@@ -81,6 +103,7 @@ context.putImageData(image,0,0);
 times.sort((a,b)=>a-b);
 globalThis.__nativeSceneProof={
   schema:"native-webgl2-scene-nonproduction-proof-v1",
+  osmBuildingFootprints:nativeCity.built,osmCityChunks:nativeCity.chunks.length,
   kind:"new-native-engine-only-not-game-migration",count,backend:"native-webgl2",
   drawCalls:stats.drawCalls,triangles:stats.triangles,instances:stats.instances,
   cpuFrameMs:stats.cpuMs,gpuTimeMs:stats.gpuMs,
