@@ -4,7 +4,7 @@ import {NativeWorldPresenter} from "../sim/native_world_presenter.mjs";
 // Exercise the scheduling lifecycle without instantiating a GPU context.
 function presenterWith(draw) {
  const owner=Object.create(NativeWorldPresenter.prototype);
- owner.running=false;owner.disposed=false;owner.draw=draw;
+ owner.running=false;owner.disposed=false;owner.frameEpoch=0;owner.draw=draw;
  return owner;
 }
 {
@@ -44,3 +44,21 @@ function presenterWith(draw) {
  assert.equal(callbacks.length,0);
 }
 console.log("native presenter frame lifecycle: ok");
+
+{
+ const callbacks=[];
+ let draws=0;
+ const owner=presenterWith(()=>{draws++;});
+ const schedule=cb=>callbacks.push(cb);
+ owner.start({requestFrame:schedule});
+ const stale=callbacks.shift();
+ owner.stop();
+ owner.start({requestFrame:schedule});
+ stale(100);
+ assert.equal(draws,0,"callback from previous run must not render after restart");
+ assert.equal(callbacks.length,1,"stale callback must not schedule a second loop");
+ callbacks.shift()(116);
+ assert.equal(draws,1);
+ assert.equal(callbacks.length,1);
+ owner.stop();
+}
