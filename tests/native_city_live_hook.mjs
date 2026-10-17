@@ -12,11 +12,11 @@ globalThis.__installNativeCityTrial=()=>{
     renderer.render=function(targetScene,camera){
       if(targetScene!==scene)return oldRender.call(renderer,targetScene,camera);
       let n=0;
-      try{n=pass.prepare(targetScene)||0;}catch(e){info.errors.push(String(e));pass.restore();}
+      try{n=pass.prepare(targetScene)||0;}catch(e){info.errors.push(String(e?.stack||e).slice(0,1200));pass.restore();}
       try{oldRender.call(renderer,targetScene,camera);}finally{pass.restore();}
       if(n)try{const stat=pass.draw(camera);info.passes++;info.draws+=Number(stat?.drawCalls)||0;
         const v=document.getElementById("viewport");if(v)v.dataset.nativeCityTrialCalls=String(stat?.drawCalls||0);
-      }catch(e){info.errors.push(String(e));oldRender.call(renderer,targetScene,camera);}
+      }catch(e){info.errors.push(String(e?.stack||e).slice(0,1200));oldRender.call(renderer,targetScene,camera);}
     };
     try{return previous.apply(this,args);}finally{renderer.render=oldRender;}
   };
