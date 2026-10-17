@@ -20,7 +20,7 @@ function cubeGeometry(kind){
  const p=[],n=[],c=[],uv=[];
  const base=RGB[kind],add=(a,b,d,e,color,normal)=>{
   const vertices=[a,b,d,a,d,e],uvs=[[0,0],[1,0],[1,1],[0,0],[1,1],[0,1]];
-  vertices.forEach((v,i)=>{p.push(...v);n.push(...normal);c.push(...color);uv.push(...uvs[i]);});
+  vertices.forEach((v,i)=>{p.push(...v);n.push(...normal);c.push(color[0],color[1],color[2]);uv.push(...uvs[i]);});
  };
  const prism=(lo,hi,color)=>{
   const [x,y,z]=lo,[X,Y,Z]=hi;
