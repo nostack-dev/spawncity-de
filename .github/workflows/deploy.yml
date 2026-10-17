@@ -179,6 +179,13 @@ jobs:
           GH_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # Fail immediately with a useful action instead of polling for a
+          # custom domain that has not been moved to the canonical repo yet.
+          repo_pages="$(curl -fsSL --retry 2 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${GITHUB_REPOSITORY}" | jq -r '.has_pages')"
+          if [ "$repo_pages" != "true" ]; then
+            echo "::error::Canonical repository Pages disabled. Set Settings > Pages > Deploy from branch > gh-pages /root; then transfer spawncity.de from the old Pages repo."
+            exit 1
+          fi
           origin="$(node tools/public_site.mjs origin)"
           for attempt in $(seq 1 75); do
             if curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H "Cache-Control: no-cache" \
