@@ -3,8 +3,8 @@
 // alpha sorting, fog, asynchronous GPU timers and loss/recovery.
 // TODO for full game release: skinned rigs, shadows, effects, picking and every
 // gameplay scene producer; native-only release gate remains closed.
-import {multiply4,lookAt,perspective,identity4} from "./native_render_math.mjs";
-export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-facades-v2";
+import {multiply4,lookAt,perspective,identity4,normalMatrix3} from "./native_render_math.mjs";
+export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-facades-v3";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
 "layout(location=0) in vec3 aPosition;",
@@ -16,6 +16,9 @@ const VERT="#version 300 es\n"+[
 "layout(location=6) in vec4 iModel2;",
 "layout(location=7) in vec4 iModel3;",
 "layout(location=8) in vec4 iTint;",
+"layout(location=9) in vec3 iNormal0;",
+"layout(location=10) in vec3 iNormal1;",
+"layout(location=11) in vec3 iNormal2;",
 "uniform mat4 uViewProjection;",
 "out vec3 vWorld,vNormal,vColor;",
 "out vec2 vUV,vWallUV;out float vOpacity;",
@@ -23,7 +26,7 @@ const VERT="#version 300 es\n"+[
 "  mat4 model=mat4(iModel0,iModel1,iModel2,iModel3);",
 "  vec4 p=model*vec4(aPosition,1.0);",
 "  vWorld=p.xyz;",
-"  vNormal=normalize(mat3(model)*aNormal);",
+"  vNormal=normalize(mat3(iNormal0,iNormal1,iNormal2)*aNormal);",
 "  vColor=aColor*iTint.rgb;vOpacity=iTint.a;vUV=aUV;",
 "  float wallSpan=abs(aNormal.x)>0.5?length(iModel1.xyz):length(iModel0.xyz);",
 "  vWallUV=vec2(aUV.x*wallSpan,aUV.y*length(iModel2.xyz));",
@@ -76,7 +79,12 @@ function instances(input){
  const tints=input?.tints??new Float32Array(count*4).fill(1);
  typed("tints",tints,4);
  if(tints.length!==count*4)throw Error("tint count mismatch");
- return {transforms,tints,count};
+ const normals=new Float32Array(count*9);
+ for(let k=0;k<count;k++){
+   const mat=transforms.subarray(k*16,k*16+16),normal=normalMatrix3(mat);
+   normals.set(normal,k*9);
+ }
+ return {transforms,tints,normals,count};
 }
 function validate(input){
  const p=typed("positions",input.positions,3),count=p.length/3;
@@ -168,7 +176,9 @@ export class NativeSceneRenderer{
   for(let i=0;i<4;i++){const loc=4+i;gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,4,gl.FLOAT,false,64,i*16);gl.vertexAttribDivisor(loc,1);}
   const tint=gl.createBuffer();m.buffers.push(tint);gl.bindBuffer(gl.ARRAY_BUFFER,tint);gl.bufferData(gl.ARRAY_BUFFER,d.tints,gl.DYNAMIC_DRAW);
   gl.enableVertexAttribArray(8);gl.vertexAttribPointer(8,4,gl.FLOAT,false,0,0);gl.vertexAttribDivisor(8,1);
-  m.capTransforms=d.transforms.length;m.capTints=d.tints.length;
+  const normal=gl.createBuffer();m.buffers.push(normal);gl.bindBuffer(gl.ARRAY_BUFFER,normal);gl.bufferData(gl.ARRAY_BUFFER,d.normals,gl.DYNAMIC_DRAW);
+  for(let i=0;i<3;i++){const loc=9+i;gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,36,i*12);gl.vertexAttribDivisor(loc,1);}
+  m.capTransforms=d.transforms.length;m.capTints=d.tints.length;m.capNormals=d.normals.length;
   if(d.indices){
    m.element=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,m.element);
    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,d.indices,gl.STATIC_DRAW);
@@ -181,7 +191,7 @@ export class NativeSceneRenderer{
   const next=instances(newInstances);Object.assign(m.data,next);
   if(this.lost)return;
   const gl=this.gl;
-  for(const [slot,data,cap] of [[4,next.transforms,"capTransforms"],[5,next.tints,"capTints"]]){
+  for(const [slot,data,cap] of [[4,next.transforms,"capTransforms"],[5,next.tints,"capTints"],[6,next.normals,"capNormals"]]){
    gl.bindBuffer(gl.ARRAY_BUFFER,m.buffers[slot]);
    if(data.length!==m[cap])gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
    else gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
