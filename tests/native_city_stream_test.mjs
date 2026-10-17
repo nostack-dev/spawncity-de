@@ -22,7 +22,7 @@ const height=changed.uploaded&&writes.at(-1).mesh.positions.filter((v,i)=>i%3===
 assert.ok(Math.max(...height)<=11.001,"crater cap affects actual GPU mesh");
 const gone=await stream.ingestFootprints([b]);assert.equal(gone.removed,1);
 assert.ok(removed.some(id=>id.includes("0,0")),"old chunk must be evicted after streaming");
-stream.dispose();assert.throws(()=>stream.ingestFootprints([]),/disposed/);
+stream.dispose();await assert.rejects(stream.ingestFootprints([]),/disposed/);
 const asyncStream=new NativeCityStream(scene,{chunkSize:100,buildingsPerStep:1});
 let release;
 const stalled=new Promise(resolve=>{release=resolve});
