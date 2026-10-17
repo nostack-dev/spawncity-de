@@ -1,4 +1,5 @@
 import {NativeWorldPresenter} from "../sim/native_world_presenter.mjs";
+import {WorldRigidBodyPhysics} from "../sim/world_rigid_body_physics.mjs";
 import {VsPoseTimeline} from "../sim/vs_pose_sync.mjs";
 (async()=>{
 const canvas=document.getElementById("native-world");
@@ -10,17 +11,30 @@ const bodies=[
  {id:"taxi",kind:"car",halfExtents:[2,.85,.6]},
  {id:"police-drone",kind:"drone",halfExtents:[.8,.8,.22],drone:true}
 ];
-const physics={bodies:()=>bodies,renderPose:id=>p.get(id)};
-const playerFlight={p:{span:.25,propD:.11},motorOmega:[140,142,138,140],
- presentationPose:()=>({position:{x:0,y:-20,z:10},
- quaternion:{x:0,y:0,z:0,w:1},velocity:{x:0,y:0,z:0}})};
+// Real production WorldRigidBodyPhysics methods, with only C-WASM reads
+// backed by this deterministic pose fixture. This tests the actual interface.
+const worldPhysics=Object.create(WorldRigidBodyPhysics.prototype);
+worldPhysics.records=new Map(bodies.map(body=>[body.id,{...body,body:body.id}]));
+worldPhysics.b3={
+ b3Body_IsValid:id=>p.has(id),
+ b3Body_GetPosition:(out,id)=>{out.splice(0,3,...p.get(id).position);return out;},
+ b3Body_GetRotation:(out,id)=>{out.splice(0,4,...p.get(id).rotation);return out;},
+ b3Body_GetLinearVelocity:out=>{out.splice(0,3,0,0,0);return out;},
+ b3Body_GetAngularVelocity:out=>{out.splice(0,3,0,0,0);return out;}
+};
+const flightPhysics={
+ p:{span:.25,propD:.11},motorOmega:[140,142,138,140],
+ renderPreviousPosition:[0,-20,10],renderCurrentPosition:[0,-20,10],
+ renderPreviousRotation:[0,0,0,1],renderCurrentRotation:[0,0,0,1],
+ renderPreviousVelocity:[0,0,0],renderCurrentVelocity:[0,0,0]
+};
 
 const population={people:()=>[{id:"npc1",x:-5,y:1,z:1.1,yaw:.7},{id:"npc2",x:1,y:12,z:1.3,yaw:1.2}]};
 const timeline=new VsPoseTimeline({delayMs:0});
 const peerNow=performance.now();
 timeline.push({p:[5,2,8],q:[0,0,0,1],v:[0,0,0],t:peerNow},peerNow);
 const world=new NativeWorldPresenter(canvas,{
- physics,population,flight:playerFlight,peer:{timeline,connected:()=>true,mode:()=>"drone"},heightAt:(x,y)=>Math.sin(x/14)*.32+Math.cos(y/20)*.48,
+ worldPhysics,flightPhysics,population,peer:{timeline,connected:()=>true,mode:()=>"drone"},heightAt:(x,y)=>Math.sin(x/14)*.32+Math.cos(y/20)*.48,
  rendererOptions:{width:960,height:540,shadows:{resolution:256,extent:130}},
  terrainOptions:{radius:100,maxTiles:4,cells:16,step:5,listenPhysics:false,uploadsPerFrame:2},
  cityOptions:{buildingsPerStep:2,chunkSize:100}
