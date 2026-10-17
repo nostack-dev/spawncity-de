@@ -9,6 +9,8 @@ on:
       - "tests/box3d_upstream_contract_test.mjs"
       - "tests/control_semantics_test.mjs"
       - "docs/box3d-upstream-wasm.md"
+      - ".github/workflows/deploy.yml"
+      - "tests/production_box3d_bundle_contract_test.mjs"
   workflow_dispatch:
 permissions:
   contents: read
@@ -37,6 +39,18 @@ jobs:
           node tests/blast_physics_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
           node tests/jet_flight_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
           node tests/ragdoll_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
+          for test in \
+            ground_safety_net_box3d \
+            terrain_tiles_box3d \
+            terrain_underground_rescue_box3d \
+            vehicle_steering_box3d \
+            world_building_incremental_box3d \
+            world_rigid_body_physics_box3d \
+            world_vehicle_dynamics_box3d; do
+            node "tests/${test}_test.mjs" artifacts/box3d-upstream-wasm/box3d.inline.mjs
+          done
+          (cd artifacts/box3d-upstream-wasm && sha256sum -c SHA256SUMS.txt)
+          node tests/production_box3d_deploy_source_test.mjs
       - name: Upload compiled native + inline WASM and SHA-256 provenance
         if: always()
         uses: actions/upload-artifact@v4
