@@ -46,6 +46,13 @@ globalThis.__runNativeRealCityProof=async function({width=960,height=540,maxChun
     const mesh=new THREE.Mesh(geo,material);mesh.frustumCulled=false;mesh.matrixAutoUpdate=false;scene.add(mesh);
     native.add(p,cl);
   }
+  // Exercise a LIVE-mesh mutation: the native VBO must update without losing
+  // the VAO/program, just as SpawnCity's crater/sway/nuke updates the chunk.
+  if(chunks[0]?.p.length>=9){
+    for(const vertexZ of [2,5,8])chunks[0].p[vertexZ]-=.35;
+    scene.children[0].geometry.attributes.position.needsUpdate=true;
+    native.update(native.batches[0],chunks[0].p,chunks[0].cl);
+  }
   const matrix=new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
   const mvp=new Float32Array(matrix.elements);
   const three=()=>{reference.render(scene,camera);reference.getContext().finish();};
@@ -73,7 +80,7 @@ globalThis.__runNativeRealCityProof=async function({width=960,height=540,maxChun
     visible++;error+=d;if(d>20)large++;
   }
   const info={kind:"actual-streamed-city-geometry-unlit-only-not-production-materials",realCityChunks:candidates.length,comparedChunks:chunks.length,
-    triangles,drawCalls:chunks.length,width,height,three:duration.three,native:duration.native,
+    triangles,drawCalls:chunks.length,width,height,dynamicNativeVboUpdated:true,three:duration.three,native:duration.native,
     rgbMeanAbsoluteDifference:visible?+(error/visible).toFixed(3):null,
     pixelsDifferentOver20:visible?+(100*large/visible).toFixed(3):null,
     gpu:String(nativeGL.getParameter(nativeGL.getExtension("WEBGL_debug_renderer_info")?.UNMASKED_RENDERER_WEBGL||nativeGL.RENDERER)),
