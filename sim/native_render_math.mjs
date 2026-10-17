@@ -44,7 +44,7 @@ export function normalMatrix3(m){
   if(Math.abs(det)<1e-10)throw Error("singular world transform");
   const inv=1/det;
   // Transposed inverse, column-major output.
-  return new Float32Array([A*inv,B*inv,C*inv,(c*h-b*i)*inv,(a*i-c*g)*inv,(b*g-a*h)*inv,(b*f-c*e)*inv,(c*d-a*f)*inv,(a*e-b*d)*inv]);
+  return new Float32Array([A*inv,(c*h-b*i)*inv,(b*f-c*e)*inv,B*inv,(a*i-c*g)*inv,(c*d-a*f)*inv,C*inv,(b*g-a*h)*inv,(a*e-b*d)*inv]);
 }
 export function worldMatrix(node){
   if(node.world?.length===16)return node.world;
