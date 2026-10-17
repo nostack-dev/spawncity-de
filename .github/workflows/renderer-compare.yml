@@ -56,6 +56,7 @@ jobs:
           node tests/native_render_culling_test.mjs
           node tests/native_scene_picking_test.mjs
           node tests/native_scene_bvh_test.mjs
+          node tests/native_presenter_lifecycle_test.mjs
           node tests/native_airframe_presentation_test.mjs
           node tests/native_rigid_visuals_test.mjs
           node tests/native_road_geometry_test.mjs
