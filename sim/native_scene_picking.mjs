@@ -3,6 +3,7 @@
 // renderer draws. No THREE.Raycaster, no second graphics backend.
 // Intended for user-triggered hit tests, not every frame on all world meshes.
 import {multiply4,perspective,lookAt} from "./native_render_math.mjs";
+import {nativeBvhTriangles} from "./native_scene_bvh.mjs";
 export const NATIVE_PICKING_VERSION="native-only-screen-ray-triangle-v1";
 const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
@@ -87,9 +88,13 @@ export function pickNativeMeshes(meshes,ray,{maxDistance=1500,includeInvisible=f
   const indices=d.indices,faceCount=(indices?indices.length:d.p.length/3)/3,instanceCount=d.count??d.transforms.length/16;
   for(let instance=0;instance<instanceCount;instance++){
    const matrix=d.transforms.subarray(instance*16,instance*16+16);
-   for(let f=0;f<faceCount;f++){
+   const candidates=node.bvh&&instance===0
+     ?nativeBvhTriangles(node.bvh,origin,direction,nearest?.distance??maxDistance)
+     :null;
+   const faces=candidates||Array.from({length:faceCount},(_,face)=>({face}));
+   for(const {face:f,ids} of faces){
     const k=f*3;
-    const ia=indices?indices[k]:k,ib=indices?indices[k+1]:k+1,ic=indices?indices[k+2]:k+2;
+    const ia=ids?ids[0]:indices?indices[k]:k,ib=ids?ids[1]:indices?indices[k+1]:k+1,ic=ids?ids[2]:indices?indices[k+2]:k+2;
     const a=worldVertex(posedVertex(d,ia),matrix),b=worldVertex(posedVertex(d,ib),matrix),
      c=worldVertex(posedVertex(d,ic),matrix);
     trianglesExamined++;
