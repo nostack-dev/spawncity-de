@@ -22,3 +22,4 @@ jobs:
           node tests/touchpad_pointerlock_contract_test.mjs
           node tests/fullscreen_classic_hands_regression_test.mjs
           node tests/site_config_test.mjs
+          node tests/render_stability_test.mjs
