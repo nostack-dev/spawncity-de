@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {nativeCurrentGameMode,nativeGameplayCamera} from "../sim/native_gameplay_camera.mjs";
+import {nativeCurrentGameMode,nativeGameplayCamera,nativeLiveGameplayState} from "../sim/native_gameplay_camera.mjs";
 import {VsPoseTimeline} from "../sim/vs_pose_sync.mjs";
 
 const near=(a,b,why)=>assert.ok(Math.abs(a-b)<1e-4,`${why||"mismatch"}: ${a} vs ${b}`);
@@ -69,3 +69,35 @@ assert.throws(()=>nativeGameplayCamera({...world,mode:"jet"}),/__jetMode/);
 assert.throws(()=>nativeGameplayCamera({...world,mode:"multiplayer"},{aspect:0}),/viewport/);
 assert.throws(()=>nativeGameplayCamera({...world,mode:"foot",walk:{...walk,mode:"foot",position:{x:NaN,y:0,z:0}}}),/finite XYZ/);
 console.log("native full-game cameras: drone, foot, physical car/cockpit, jet/passenger/parachute, network spectator – real states and mode precedence");
+
+{
+ const runtime={
+  __arondightWalkMode:{mode:"foot",position:{x:0,y:2,z:1.68},yaw:0,pitch:0},
+  __arondightVehicleDrive:{active:false},
+  __jetMode:{active:false},
+  __arondightRealWorld:{vsPeerTimeline:timeline,lookYawDeg:0,lookPitchDeg:0},
+  __arondightAds:{zoom:1}
+ };
+ let spectator=false;
+ const live=nativeLiveGameplayState(runtime,{spectate:()=>spectator});
+ assert.ok(Object.isFrozen(live));
+ assert.equal(nativeCurrentGameMode(live),"foot");
+ near(nativeGameplayCamera(live,{aspect:1,now:1200}).camera.eye[1],2,"reads actual live walker getter");
+ runtime.__arondightWalkMode.position.y=12;
+ near(nativeGameplayCamera(live,{aspect:1,now:1220}).camera.eye[1],12,
+  "live native camera must observe original mutable input/physics source; never snapshot it");
+ runtime.__arondightVehicleDrive={active:true,
+  pose:{position:[1,2,1],rotation:[0,0,0,1]},speedMps:0};
+ assert.equal(nativeCurrentGameMode(live),"car");
+ runtime.__jetMode={active:true,cockpit:true,pose:{x:0,y:0,z:100,q:[0,0,0,1]}};
+ assert.equal(nativeCurrentGameMode(live),"jet");
+ spectator=true;
+ assert.equal(nativeCurrentGameMode(live),"multiplayer");
+ assert.ok(nativeGameplayCamera(live,{now:1200}).camera.eye.every(Number.isFinite));
+ spectator=false;
+ runtime.__jetMode=null;runtime.__arondightVehicleDrive=null;
+ runtime.__arondightWalkMode.mode="drone";
+ assert.equal(nativeCurrentGameMode(live),"drone");
+ assert.equal(nativeGameplayCamera(live,{now:1230}).camera,null);
+ assert.throws(()=>nativeLiveGameplayState(null),/runtime/);
+}
