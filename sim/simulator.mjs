@@ -18,6 +18,7 @@ import {findXboxGamepad,isXboxCompatibleGamepad,sampleXboxGamepad} from "./xbox_
 import {StabilizedExternalCameraRig,externalCameraFrame} from "./camera_stabilization.mjs";
 import {StabilizedExternalAirframeVisual,EXTERNAL_AIRFRAME_VISUAL_PROFILES} from "./visual_pose_stabilization.mjs";
 import {renderPlatformProfile,quantizedViewportSize,viewportSizeChanged} from "./render_stability.mjs";
+import {shouldRequestGameFullscreen} from "./pwa_fullscreen_policy.mjs";
 import {normalizeBuildingCollisionSnapshot,createWorldBuildingCollisionBodies,destroyWorldBuildingCollisionBodies,updateWorldBuildingCollisionBodies,findClearBuildingLaunchPoint,resolveBox3dCameraPath} from "./world_building_collision_physics.mjs";
 import {Box3dColliderDebugDraw} from "./box3d_collider_debug.mjs";
 import {TerrainTiles} from "./terrain_tiles.mjs";
@@ -728,7 +729,7 @@ const soloStyle=document.createElement("style");soloStyle.textContent=`
   body.solo-flight dialog input,body.solo-flight dialog textarea{-webkit-user-select:text!important;user-select:text!important;-webkit-touch-callout:default!important}
   body.solo-flight .panel,body.solo-flight .telemetry{display:none!important}
   body.solo-flight #viewport{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;min-height:0!important;max-height:none!important;margin:0!important;z-index:50!important;overflow:hidden!important;transform:none!important;transform-origin:0 0!important;--solo-safe-top:env(safe-area-inset-top,0px);--solo-safe-right:env(safe-area-inset-right,0px);--solo-safe-bottom:env(safe-area-inset-bottom,0px);--solo-safe-left:env(safe-area-inset-left,0px)}
-  html.android-stable-webgl body.solo-flight #viewport{height:100svh!important}
+  html.android-stable-webgl body.solo-flight #viewport{height:100dvh!important}
   body.solo-flight #cameraModes{top:max(8px,var(--solo-safe-top))!important;left:50%!important}
   #soloHud{position:absolute;inset:0;z-index:8;pointer-events:none;font-family:system-ui,-apple-system,sans-serif;color:#fff;touch-action:none;user-select:none;-webkit-user-select:none}
   #soloHud[hidden]{display:none!important}
@@ -763,7 +764,7 @@ const soloStyle=document.createElement("style");soloStyle.textContent=`
      simulator as a deterministic fallback so the flight UI is always landscape. */
   @media(orientation:portrait){
     body.solo-flight #viewport{inset:0 auto auto 100vw!important;width:100dvh!important;height:100vw!important;transform:rotate(90deg)!important;--solo-safe-top:env(safe-area-inset-right,0px);--solo-safe-right:env(safe-area-inset-bottom,0px);--solo-safe-bottom:env(safe-area-inset-left,0px);--solo-safe-left:env(safe-area-inset-top,0px)}
-    html.android-stable-webgl body.solo-flight #viewport{width:100svh!important;height:100vw!important}
+    html.android-stable-webgl body.solo-flight #viewport{width:100dvh!important;height:100vw!important}
     body.solo-flight dialog[open]{transform:rotate(90deg);transform-origin:50% 50%}
   }
   @media(max-height:430px){.solo-stick{width:min(30vw,180px)}.solo-action{width:76px;height:46px}}
@@ -898,7 +899,7 @@ function pollDesktopDrone(){
 globalThis.setInterval(()=>{if(soloMode){const now=performance.now();pollXboxGamepad(now);pollDesktopDrone(now);}},16);$("viewport").dataset.gamepadPollLoop="dedicated-60hz-v1";
 async function enterSolo(){
   soloMode=true;resetPresentationTiming();soloPreviousInputSource=inputSource;phoneSettings=loadPhoneControlSettings();soloGroundClearance=phoneSettings.defaultHoverAgl;setSoloHeightAxis(0);soloControls=neutralSoloControls();updateSoloSticks();raceTrack.reset();raceTrack.setVisible(true);document.body.classList.add("solo-flight");syncSoloPresentationOrientation();/* touch mapping needs the orientation now, not at the next resize */soloHud.hidden=false;setXboxControlPreference(phoneSettings.xboxControllerEnabled);inputSource="local";ui.inputSource.value="local";localArm=false;arm=false;localThrottle=0;updateRemoteUI();resize();
-  try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen({navigationUI:"hide"});}catch{}
+  try{if(shouldRequestGameFullscreen({displayModeFullscreen:matchMedia("(display-mode: fullscreen)").matches,displayModeStandalone:matchMedia("(display-mode: standalone)").matches,iosStandalone:navigator.standalone===true,alreadyFullscreen:Boolean(document.fullscreenElement),apiAvailable:Boolean(document.documentElement.requestFullscreen)}))await document.documentElement.requestFullscreen({navigationUI:"hide"});}catch{}
   try{await screen.orientation?.lock?.("landscape");}catch{}
   resize();
   if(mode==="sim"&&backend&&!running)startRun();
