@@ -163,7 +163,11 @@ jobs:
           grep -q 'id="spawncityExitGuard"' drone_simulator.html
           node tools/public_site.mjs build-json "$GITHUB_SHA" > build.json
           grep -q "$GITHUB_SHA" build.json
-          rm -rf generated node_modules artifacts/box3d-upstream-wasm
+          rm -rf generated node_modules
+          # The pinned Emscripten container compiles as root and owns the
+          # mounted artifact directory. Remove it with runner sudo after
+          # checks, so only the inlined validated WASM ships in Pages.
+          sudo rm -rf -- artifacts/box3d-upstream-wasm
 
       - name: Publish SpawnCity
         env:
