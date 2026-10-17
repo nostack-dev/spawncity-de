@@ -91,9 +91,9 @@ export function pickNativeMeshes(meshes,ray,{maxDistance=1500,includeInvisible=f
    const candidates=node.bvh&&instance===0
      ?nativeBvhTriangles(node.bvh,origin,direction,nearest?.distance??maxDistance)
      :null;
-   const faces=candidates||Array.from({length:faceCount},(_,face)=>({face}));
-   for(const {face:f,ids} of faces){
-    const k=f*3;
+   const limit=candidates?candidates.length:faceCount;
+   for(let n=0;n<limit;n++){
+    const f=candidates?candidates[n].face:n,ids=candidates?candidates[n].ids:null,k=f*3;
     const ia=ids?ids[0]:indices?indices[k]:k,ib=ids?ids[1]:indices?indices[k+1]:k+1,ic=ids?ids[2]:indices?indices[k+2]:k+2;
     const a=worldVertex(posedVertex(d,ia),matrix),b=worldVertex(posedVertex(d,ib),matrix),
      c=worldVertex(posedVertex(d,ic),matrix);
