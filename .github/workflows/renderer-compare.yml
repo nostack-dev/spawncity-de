@@ -52,6 +52,7 @@ jobs:
         run: |
           node tests/native_render_math_test.mjs
           node tests/native_render_culling_test.mjs
+          node tests/native_scene_picking_test.mjs
           node tests/native_city_geometry_test.mjs
           node tests/native_city_stream_test.mjs
           node tests/native_city_indexed_test.mjs
