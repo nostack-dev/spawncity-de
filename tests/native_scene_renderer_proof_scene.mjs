@@ -8,7 +8,7 @@ import {buildingFootprintsFromFeatures} from "../sim/world_building_collisions.m
 // Non-production GPU proof of the standalone native scene engine.
 // No Three.js or old renderer is imported by this test or the engine.
 const canvas=document.getElementById("native-scene"),width=960,height=540;
-const renderer=new NativeSceneRenderer(canvas,{width,height});
+const renderer=new NativeSceneRenderer(canvas,{width,height,shadows:{resolution:256,extent:160}});
 renderer.setCamera({eye:[95,-122,115],target:[0,0,13],near:.3,far:1000,fov:Math.PI/2.9});
 renderer.setLighting({sunDirection:[-.4,-.6,.8],skyColor:[.53,.63,.74],groundColor:[.27,.33,.27],exposure:1.15,fogDensity:.0005});
 const p=[],colors=[],uvs=[];
@@ -124,7 +124,7 @@ globalThis.__nativeSceneProof={
   terrainTriangles:nativeTerrain.triangles,terrainVertices:nativeTerrain.vertexCount,terrainIndexed:nativeTerrain.indices.length>0,
   indexedCityChunks,sourceCityGpuBytes,savedCityGpuBytes,
   kind:"new-native-engine-only-not-game-migration",count,backend:"native-webgl2",
-  drawCalls:stats.drawCalls,triangles:stats.triangles,instances:stats.instances,culledMeshes:stats.culledMeshes,
+  drawCalls:stats.drawCalls,shadowDrawCalls:stats.shadowDrawCalls,shadowResolution:stats.shadowResolution,triangles:stats.triangles,instances:stats.instances,culledMeshes:stats.culledMeshes,
   cpuFrameMs:stats.cpuMs,gpuTimeMs:stats.gpuMs,
   finishP50Ms:+times[Math.floor(times.length*.5)].toFixed(3),
   finishP95Ms:+times[Math.floor(times.length*.95)].toFixed(3),
