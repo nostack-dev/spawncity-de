@@ -103,3 +103,21 @@ export function nativeGameplayCamera(state,{aspect=16/9,now=performance.now()}={
  const eye=add(add(p,forward,-5),[0,0,2]);
  return {mode,camera:camera(eye,add(p,forward,2),{fovDeg:72,near:.1,far:5000})};
 }
+
+// Read the ACTUAL existing product surfaces lazily. This is a pure state view
+// used only by the native entrypoint; it never starts legacy Three graphics,
+// changes input ownership or initializes additional simulation/GL contexts.
+export function nativeLiveGameplayState(scope=globalThis,{spectate=()=>false}={}){
+ if(!scope||typeof scope!=="object"||typeof spectate!=="function")
+  throw Error("native live mode binding needs existing game runtime");
+ return Object.freeze({
+  get mode(){return spectate()?"multiplayer":"auto";},
+  get walk(){return scope.__arondightWalkMode??null;},
+  get car(){return scope.__arondightVehicleDrive??null;},
+  get jet(){return scope.__jetMode??null;},
+  get peerTimeline(){return scope.__arondightRealWorld?.vsPeerTimeline??null;},
+  get look(){const b=scope.__arondightRealWorld;
+   return {yawDeg:b?.lookYawDeg??0,pitchDeg:b?.lookPitchDeg??0};},
+  get adsZoom(){return scope.__arondightAds?.zoom??1;}
+ });
+}
