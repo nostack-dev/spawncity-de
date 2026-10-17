@@ -29,7 +29,7 @@ export class NativeWorldPresenter{
   this.lastFrameAt=null;
   this.camera=null;this.running=false;this.disposed=false;this.lastTerrainAt=-Infinity;
   this.terrainPromise=null;this.pendingCity=null;this.error=null;this.frameNumber=0;
-  this.drawStats=null;this.requestFrame=null;this.onError=null;
+  this.drawStats=null;this.requestFrame=null;this.onError=null;this.frameEpoch=0;
  }
  setFlightCameraMode(mode,settings={}){
   if(!this.airframe)throw Error("native drone flight not configured");
@@ -66,10 +66,11 @@ export class NativeWorldPresenter{
   if(this.running)return false;
   if(typeof requestFrame!=="function")throw Error("browser animation frame required");
   this.running=true;this.requestFrame=requestFrame;this.onError=onError;
+  const epoch=++this.frameEpoch;
   const frame=now=>{
-   if(!this.running||this.disposed)return;
+   if(!this.running||this.disposed||epoch!==this.frameEpoch)return;
    try{this.draw(now);}catch(error){this.error=error;this.running=false;this.onError?.(error);return;}
-   if(this.running&&!this.disposed)this.requestFrame(frame);
+   if(this.running&&!this.disposed&&epoch===this.frameEpoch)this.requestFrame(frame);
   };
   try{this.requestFrame(frame);}catch(error){this.running=false;throw error;}
   return true;
@@ -119,7 +120,7 @@ export class NativeWorldPresenter{
   const pixel=nativePointerToDrawingPixels(this.renderer.canvas,x,y,this.renderer.width,this.renderer.height);
   return this.renderer.pick(pixel.x,pixel.y,options);
  }
- stop(){const was=this.running;this.running=false;return was;}
+ stop(){const was=this.running;this.running=false;this.frameEpoch++;return was;}
  dispose(){
   if(this.disposed)return;
   this.stop();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
