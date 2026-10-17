@@ -26,24 +26,3 @@ Aktive Qualitätssicherung:
 **Temporärer Pages-Transport:** Aktuell ist `spawncity.de` weiterhin dem persönlichen Repository `ChristianHohlfeld/spawncity-de` zugeordnet. Dessen Action erstellt keinen eigenen Game-Build mehr, sondern kopiert die fertig gebauten Dateien aus **diesem** `gh-pages` alle fünf Minuten in den live bedienten `gh-pages`-Branch. Der Spielcode bleibt ausschließlich in diesem Repo. Ein künftiger Umzug der Pages-Domain in GitHub Settings kann die Spiegelung entfernen. Bis dahin die persönliche Publishing-Action nicht wieder auf eigenständige alte Game-Builds umstellen.
 
 Bei Änderungen am Spiel die Changelog-Einträge in `sim/changelog_menu.mjs` ergänzen (neuester Zeitpunkt zuerst); Built-Artifact und Live-Version müssen mit `build.json` dieselbe Commit-SHA nachweisen. Ein reiner Erfolg des Artifact-Pushs genügt **nicht** als Live-Nachweis.
-
-## WebGL performance comparison
-
-The production game **already uses WebGL** via Three.js WebGLRenderer. Removing
-Three.js is a complete rewrite of scene/geometry/shader/camera/material APIs,
-not a change of graphics API. Do not remove it before measured parity.
-
-The opt-in `?render=fast` starts WebGL with a fixed 1.0 maximum device pixel
-ratio (instead of up to 1.5 on high-DPI devices). It reduces fragment work,
-but can soften outlines and fine details; default `?render=quality` is unchanged.
-No mid-flight canvas or bloom-buffer resizing is used.
-
-For repeatable browser screenshots and render timings, run the
-**SpawnCity WebGL visual and performance A/B** workflow. It visits the original
-at `?render=quality` and the candidate at `?render=fast`, holds desktop/mobile
-viewports and Berlin GPS constant, and uploads `comparison.html`,
-four screenshots and `metrics.json`. Inspect images and FPS together.
-The standard CI runner uses SwiftShader: **its FPS does not establish hardware
-speedups**. Test real Chrome/Android/iPhone Safari before enabling any new
-renderer by default. Animations, weather and streamed map tiles make automatic
-pixel-exact image equality inappropriate.
