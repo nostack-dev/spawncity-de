@@ -36,6 +36,8 @@ jobs:
           node --check sim/changelog_menu.mjs
           node tests/standalone_source_test.mjs
           node tests/touchpad_pointerlock_contract_test.mjs
+          node tests/live_deploy_auth_contract_test.mjs
+          node tests/renderer_exclusive_release_contract_test.mjs
 
       - name: Check SpawnCity site config
         run: node tests/site_config_test.mjs
@@ -177,20 +179,29 @@ jobs:
         timeout-minutes: 16
         env:
           GH_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Fail immediately with a useful action instead of polling for a
-          # custom domain that has not been moved to the canonical repo yet.
-          repo_pages="$(curl -fsSL --retry 2 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${GITHUB_REPOSITORY}" | jq -r '.has_pages')"
+          # The runner's unauthenticated GitHub API request returned HTTP 403
+          # after publication (2026-10-17, #7). Auth with the built-in,
+          # read-scoped Actions token. Keep it out of stdout and target files.
+          repo_pages="$(curl -fsSL --retry 2 \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}" | jq -r '.has_pages')"
           if [ "$repo_pages" != "true" ]; then
             echo "::error::Canonical repository Pages disabled. Set Settings > Pages > Deploy from branch > gh-pages /root; then transfer spawncity.de from the old Pages repo."
             exit 1
           fi
           origin="$(node tools/public_site.mjs origin)"
+          # A successful Pages sync must carry the REAL renderer identity,
+          # not claim a native cutover just because native modules exist in git.
+          expected_renderer="$(node tools/public_site.mjs build-json "$GH_SHA" | jq -er '.renderer')"
           for attempt in $(seq 1 75); do
             if curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H "Cache-Control: no-cache" \
                 "$origin/build.json?sha=${GH_SHA}-${attempt}" -o /tmp/spawncity-build.json \
-              && node -e 'const p=require("/tmp/spawncity-build.json");if(p.sha!==process.argv[1])process.exit(1)' "$GH_SHA" \
+              && node -e 'const p=require("/tmp/spawncity-build.json");if(p.sha!==process.argv[1]||p.renderer!==process.argv[2]||p.nativeReleaseVerified!==(p.renderer==="native-webgl2"))process.exit(1)' "$GH_SHA" "$expected_renderer" \
               && curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H "Cache-Control: no-cache" \
                 "$origin/drone_simulator.html?ci=${GH_SHA}-${attempt}" -o /tmp/spawncity-live.html \
               && grep -q "ARONDIGHT45_BUILD_SHA:${GH_SHA}" /tmp/spawncity-live.html \
