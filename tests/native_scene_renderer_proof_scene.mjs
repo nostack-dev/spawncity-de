@@ -1,6 +1,7 @@
 import {NativeSceneRenderer} from "../sim/native_scene_renderer.mjs";
 import {fromTRS} from "../sim/native_render_math.mjs";
 import {buildNativeCityGeometry} from "../sim/native_city_geometry.mjs";
+import {packCityMesh} from "../sim/native_city_indexed.mjs";
 import {buildingFootprintsFromFeatures} from "../sim/world_building_collisions.mjs";
 
 // Non-production GPU proof of the standalone native scene engine.
@@ -72,9 +73,15 @@ const geoFeatures=[
 const buildingFootprints=buildingFootprintsFromFeatures(geoFeatures,{center:[-85,-50],radiusM:500});
 const nativeCity=buildNativeCityGeometry(buildingFootprints,{chunkSize:400});
 if(nativeCity.built!==2||nativeCity.skipped.length)throw Error("real OSM city geometry conversion failed");
+let savedCityGpuBytes=0,indexedCityChunks=0,sourceCityGpuBytes=0;
 for(const part of nativeCity.chunks){
+ const compact=packCityMesh(part);
+ sourceCityGpuBytes+=compact.bytesBefore;
+ savedCityGpuBytes+=compact.bytesBefore-compact.bytesAfter;
+ if(compact.indexed)indexedCityChunks++;
+ const mesh=compact.mesh;
  renderer.upsert("osm-"+part.id,{
-   positions:part.positions,normals:part.normals,colors:part.colors,uvs:part.uvs,
+   positions:mesh.positions,normals:mesh.normals,colors:mesh.colors,uvs:mesh.uvs,indices:mesh.indices,
    material:{facade:true,doubleSided:false,color:[1,1,1,1]}
  });
 }
@@ -110,6 +117,7 @@ times.sort((a,b)=>a-b);
 globalThis.__nativeSceneProof={
   schema:"native-webgl2-scene-nonproduction-proof-v1",
   osmBuildingFootprints:nativeCity.built,osmCityChunks:nativeCity.chunks.length,
+  indexedCityChunks,sourceCityGpuBytes,savedCityGpuBytes,
   kind:"new-native-engine-only-not-game-migration",count,backend:"native-webgl2",
   drawCalls:stats.drawCalls,triangles:stats.triangles,instances:stats.instances,culledMeshes:stats.culledMeshes,
   cpuFrameMs:stats.cpuMs,gpuTimeMs:stats.gpuMs,
