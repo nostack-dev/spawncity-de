@@ -19,6 +19,7 @@ jobs:
           set -euo pipefail
           node tests/standalone_source_test.mjs
           node tests/touchpad_pointerlock_contract_test.mjs
+          node tests/fullscreen_classic_hands_regression_test.mjs
           for test in \
             tests/fps_control_test.mjs \
             tests/desktop_mouse_chord_contract_test.mjs \
