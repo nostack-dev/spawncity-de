@@ -275,9 +275,13 @@ export class NativeSceneRenderer{
   const gl=this.gl;
   for(const [slot,data,cap] of [[4,next.transforms,"capTransforms"],[5,next.tints,"capTints"],[6,next.normals,"capNormals"]]){
    gl.bindBuffer(gl.ARRAY_BUFFER,m.buffers[slot]);
-   if(data.length!==m[cap])gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
-   else gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
-   m[cap]=data.length;
+   // Keep spare GPU instance capacity: crowds/traffic constantly fluctuate.
+   // Reallocation on every shrink/grow forces driver stalls and VAO churn.
+   if(data.length>m[cap]){
+    m[cap]=Math.max(data.length,(m[cap]||0)*2);
+    gl.bufferData(gl.ARRAY_BUFFER,m[cap]*Float32Array.BYTES_PER_ELEMENT,gl.DYNAMIC_DRAW);
+   }
+   gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
   }
   gl.bindBuffer(gl.ARRAY_BUFFER,null);
  }
