@@ -12,19 +12,19 @@
 - `sim/site_config.mjs` ist die zentrale Website-/Raum-Konfiguration.
 - `.github/workflows/deploy.yml` baut ausschließlich aus diesem Repository und importiert **nicht** mehr aus Kurzlernen.
 - `node tests/site_config_test.mjs` und `node tests/standalone_source_test.mjs` schützen Host, Multiplayer-Raum, Dateivollständigkeit und Changelog.
-- Die Veröffentlichung baut WebAssembly, bundelt Simulator und Controller selbstenthaltend und veröffentlicht auf `gh-pages`, wenn die Pages-API die Workflow-Veröffentlichung nicht erlaubt.
+- Die Veröffentlichung baut WebAssembly, bundelt Simulator und Controller selbstenthaltend und veröffentlicht **ausschließlich in den `gh-pages`-Branch dieses einen Repositories**. Kein zweites Publikationsrepo, kein paralleler Actions-Pages-Weg und kein Mirror.
 
 ## Seiten und Domain
 - Game: `https://spawncity.de/drone_simulator.html`
 - Einstieg `/`: `index.html` führt zum Game.
 - Remote: `https://spawncity.de/drone_controller.html`
 - `CNAME` ist `spawncity.de`.
-- Die GitHub-Pages-Einstellung muss auf die tatsächliche Veröffentlichungsmethode (`gh-pages` oder Actions) zeigen.
+- GitHub Pages muss **im selben Repository** auf `Deploy from a branch → gh-pages → /(root)` aktiviert werden. Die Domain wird dort einmalig zugewiesen; siehe `docs/ONE_REPO_PAGES_CUTOVER.md`.
 - Multiplayer-ID: `arondight45-spawncity-vs-v1`. Ändert man sie, müssen alle offenen Clients neu laden.
 - `kurzlernen.de` bleibt **eine eigenständige Website**. Weder die gesamte Domain noch ihre fremden Inhalte pauschal umleiten.
 
 ## DNS (nur bei einer tatsächlichen Umstellung prüfen)
-Die aktuellen GitHub-Pages-IP-Adressen und Domainverifikation unbedingt anhand der offiziellen GitHub-Pages-Dokumentation prüfen, bevor DNS geändert wird. Dieser Repository-Umzug benötigt **keine** DNS-Änderung.
+Die aktuellen GitHub-Pages-IP-Adressen und Domainverifikation unbedingt anhand der offiziellen GitHub-Pages-Dokumentation prüfen, bevor DNS geändert wird. Der direkte Wechsel des Pages-Eigentümers kann bei unveränderten GitHub-Pages-A-Records ohne DNS-Änderung funktionieren. DNS und Domainbesitz müssen vor dem Entfernen des alten Pages-Ziels überprüft werden.
 
 ## Regel für zukünftige Bots
 Bei Feature-Arbeiten am Spiel ausschließlich `nostack-dev/spawncity-de` ändern. Niemals den alten Kurzlernen-Simulator aktualisieren oder über einen Fetch aus Kurzlernen wieder zum Build-Input machen.
