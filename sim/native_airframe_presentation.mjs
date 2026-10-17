@@ -124,3 +124,6 @@ export class NativeAirframePresentation{
  }
  dispose(){if(this.renderer){this.renderer.remove("flight/airframe");this.renderer.remove("flight/rotors");this.renderer=null;}}
 }
+
+// Share the exact airframe mesh with native multiplayer peer presentation.
+export {bodyGeometry as nativeAirframeBodyGeometry,rotorGeometry as nativeAirframeRotorGeometry};
