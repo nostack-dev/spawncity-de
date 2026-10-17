@@ -214,7 +214,9 @@ export class NativeSceneRenderer{
  upsert(id,input){
   if(this.disposed)throw Error("disposed");
   if(typeof id!=="string"||!id.trim())throw Error("mesh needs ID");
-  const old=this.meshes.get(id);if(old)this.free(old);
+  // Stage the replacement completely before touching the live GPU object.
+  // An invalid geometry, bad bounds or allocation failure must not erase a
+  // previously rendered city tile/vehicle or leave a freed VAO in the scene.
   const m={id,data:validate(input),material:{color:[1,1,1,1],alphaMode:"opaque",unlit:false,doubleSided:false,...input.material},texture:input.texture||null,visible:input.visible!==false};
   m.localBounds=geometryBoundingSphere(m.data.p);
   // Static world-space indexed tiles are already in absolute Box3D metres.
@@ -223,7 +225,13 @@ export class NativeSceneRenderer{
   const triangleCount=(m.data.indices?.length||m.data.p.length/3)/3;
   m.bvh=isIdentity&&!m.data.skin&&triangleCount>=36?nativeBuildBvh(m.data.p,m.data.indices):null;
   m.worldBounds=instancedBoundingSphere(m.localBounds,m.data.transforms);
-  this.meshes.set(id,m);this.sceneRevision++;if(!this.lost)this.upload(m);return m;
+  if(!this.lost){
+   try{this.upload(m);}
+   catch(error){this.free(m);throw error;}
+  }
+  const old=this.meshes.get(id);
+  if(old)this.free(old);
+  this.meshes.set(id,m);this.sceneRevision++;return m;
  }
  upload(m){
   const gl=this.gl,d=m.data,vao=gl.createVertexArray();gl.bindVertexArray(vao);m.vao=vao;m.buffers=[];
