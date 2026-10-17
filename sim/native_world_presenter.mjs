@@ -8,7 +8,7 @@ import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
 import {nativeWorldPhysicsView,nativeRigidRuntimeView} from "./native_world_physics_view.mjs";
 import {nativeFlightPoseView} from "./native_flight_pose_view.mjs";
-import {nativeGameplayCamera} from "./native_gameplay_camera.mjs";
+import {nativeGameplayCamera,nativeLiveGameplayState} from "./native_gameplay_camera.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
@@ -41,7 +41,7 @@ export class NativeWorldPresenter{
   this.flight=flightSource;
   this.airframe=flightSource?new NativeAirframePresentation(this.renderer,{span:flightSource.p?.span??.25,propD:flightSource.p?.propD??.11}):null;
   this.flightCameraMode="follow";this.flightCameraSettings={};this.flightCameraActive=Boolean(flightSource);
-  this.gameplayState=gameplayState;this.gameMode=null;
+  this.gameplayState=gameplayState==="live"?nativeLiveGameplayState():gameplayState;this.gameMode=null;
   this.lastFrameAt=null;
   this.camera=null;this.running=false;this.disposed=false;this.lastTerrainAt=-Infinity;
   this.terrainPromise=null;this.pendingCity=null;this.error=null;this.frameNumber=0;
