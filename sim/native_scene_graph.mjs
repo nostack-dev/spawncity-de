@@ -15,6 +15,11 @@ export class NativeSceneGraph{
   if(this.closed)throw Error("native scene graph disposed");
   if(typeof id!=="string"||!id.trim()||this.nodes.has(id))throw Error("native node ID must be unique");
   if(parent!==null)this.require(parent);
+  if(meshId!==null){
+   if(typeof meshId!=="string"||!meshId.trim())throw Error("invalid native GPU mesh ID");
+   if([...this.nodes.values()].some(node=>node.meshId===meshId))
+    throw Error("native GPU mesh already owned by another scene node");
+  }
   const node={id,parent,children:new Set(),meshId,position:vec(position,3,"position"),
    rotation:vec(rotation,4,"rotation"),scale:vec(scale,3,"scale"),visible:Boolean(visible),
    effectiveVisible:false,world:identity4(),dirty:true,updated:false};
