@@ -4,7 +4,8 @@
 // TODO for full game release: shadow maps, effects, picking and every
 // gameplay scene producer; native-only release gate remains closed.
 import {multiply4,lookAt,perspective,identity4,normalMatrix3} from "./native_render_math.mjs";
-export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-skinned-v4";
+import {extractFrustumPlanes,sphereVisible,geometryBoundingSphere,instancedBoundingSphere} from "./native_render_culling.mjs";
+export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-culled-v5";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
 "layout(location=0) in vec3 aPosition;",
@@ -184,6 +185,8 @@ export class NativeSceneRenderer{
   if(typeof id!=="string"||!id.trim())throw Error("mesh needs ID");
   const old=this.meshes.get(id);if(old)this.free(old);
   const m={id,data:validate(input),material:{color:[1,1,1,1],alphaMode:"opaque",unlit:false,doubleSided:false,...input.material},texture:input.texture||null,visible:input.visible!==false};
+  m.localBounds=geometryBoundingSphere(m.data.p);
+  m.worldBounds=instancedBoundingSphere(m.localBounds,m.data.transforms);
   this.meshes.set(id,m);if(!this.lost)this.upload(m);return m;
  }
  upload(m){
@@ -217,6 +220,7 @@ export class NativeSceneRenderer{
  updateInstances(id,newInstances){
   const m=this.meshes.get(id);if(!m)throw Error("unknown mesh "+id);
   const next=instances(newInstances);Object.assign(m.data,next);
+  m.worldBounds=instancedBoundingSphere(m.localBounds,next.transforms);
   if(this.lost)return;
   const gl=this.gl;
   for(const [slot,data,cap] of [[4,next.transforms,"capTransforms"],[5,next.tints,"capTints"],[6,next.normals,"capNormals"]]){
@@ -262,14 +266,15 @@ export class NativeSceneRenderer{
   for(const key of ["sunDirection","sunColor","skyColor","groundColor","fogColor","eye"])
    gl.uniform3fv(u["u"+key[0].toUpperCase()+key.slice(1)],new Float32Array(this[key]));
   gl.uniform1f(u.uFogDensity,this.fogDensity);gl.uniform1f(u.uExposure,this.exposure);gl.uniform1i(u.uTexture,0);
-  const meshes=[...this.meshes.values()].filter(m=>m.visible);
+  const planes=extractFrustumPlanes(camera);
+  const meshes=[...this.meshes.values()].filter(m=>m.visible&&(m.data.skin||m.material.frustumCulled===false||sphereVisible(planes,m.worldBounds.center,m.worldBounds.radius)));
   const opaque=meshes.filter(m=>m.material.alphaMode!=="blend");
   const transparent=meshes.filter(m=>m.material.alphaMode==="blend");
   transparent.sort((a,b)=>{
    const x=a.data.transforms,y=b.data.transforms;
    return Math.hypot(y[12]-this.eye[0],y[13]-this.eye[1],y[14]-this.eye[2])-Math.hypot(x[12]-this.eye[0],x[13]-this.eye[1],x[14]-this.eye[2]);
   });
-  const stats={drawCalls:0,triangles:0,instances:0,cpuMs:0,gpuMs:this.lastGpuMs};
+  const stats={drawCalls:0,triangles:0,instances:0,culledMeshes:this.meshes.size-meshes.length,cpuMs:0,gpuMs:this.lastGpuMs};
   const draw=m=>{
    const d=m.data,mat=m.material;
    gl.uniform4fv(u.uMaterial,new Float32Array(mat.color));
