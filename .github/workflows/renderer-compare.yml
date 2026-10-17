@@ -4,12 +4,10 @@ on:
     inputs:
       baseline_url:
         description: Published baseline game URL
-        required: true
-        default: https://spawncity.de/drone_simulator.html
+        required: false
       candidate_url:
         description: Published candidate game URL (or same URL with fast preset)
-        required: true
-        default: https://spawncity.de/drone_simulator.html
+        required: false
 permissions:
   contents: read
 jobs:
@@ -33,7 +31,8 @@ jobs:
         run: |
           set -euo pipefail
           CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
-          CHROME_BIN="$CHROME_BIN" node tests/renderer_ab_compare.mjs "$BASELINE" "$CANDIDATE"
+          ORIGIN="$(node tools/public_site.mjs origin)"
+          CHROME_BIN="$CHROME_BIN" node tests/renderer_ab_compare.mjs "${BASELINE:-$ORIGIN/drone_simulator.html}" "${CANDIDATE:-$ORIGIN/drone_simulator.html}"
       - name: Save images and metrics for actual visual review
         if: always()
         uses: actions/upload-artifact@v4
