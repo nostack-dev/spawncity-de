@@ -99,6 +99,9 @@ function typed(name,data,n){
  if(!(data instanceof Float32Array)||data.length%n)throw Error(name+" requires Float32Array / "+n);
  return data;
 }
+function castsShadow(m){
+ return m.material?.castShadow!==false&&m.material?.alphaMode!=="blend"&&m.material?.alphaMode!=="mask";
+}
 function instances(input){
  const transforms=input?.transforms??identity4();
  typed("transforms",transforms,16);
@@ -171,7 +174,7 @@ export class NativeSceneRenderer{
   this.skyColor=[.48,.58,.7];this.groundColor=[.26,.27,.26];this.fogColor=[.68,.8,.88];
   this.fogDensity=.00085;this.exposure=1;this.stats=null;
   this.shadow=null;this.shadowConfig=shadows&&shadows!==false?{...shadows}:null;
-  this.sceneRevision=0;this.shadowCache=null;
+  this.sceneRevision=0;this.shadowRevision=0;this.shadowCache=null;
   this.onLost=e=>{e.preventDefault();this.lost=true;this.shadow?.dispose({contextLost:true});this.shadow=null;this.shadowCache=null;};
   this.onRestored=()=>{this.lost=false;this.init();for(const m of this.meshes.values())this.upload(m);};
   canvas.addEventListener?.("webglcontextlost",this.onLost,false);
@@ -231,7 +234,9 @@ export class NativeSceneRenderer{
   }
   const old=this.meshes.get(id);
   if(old)this.free(old);
-  this.meshes.set(id,m);this.sceneRevision++;return m;
+  this.meshes.set(id,m);this.sceneRevision++;
+  if(castsShadow(m)||(old&&castsShadow(old)))this.shadowRevision++;
+  return m;
  }
  upload(m){
   const gl=this.gl,d=m.data,vao=gl.createVertexArray();gl.bindVertexArray(vao);m.vao=vao;m.buffers=[];
@@ -268,6 +273,7 @@ export class NativeSceneRenderer{
   const same=(a,b)=>a!==b&&a.length===b.length&&a.every((value,i)=>value===b[i]);
   if(same(prev.transforms,next.transforms)&&same(prev.tints,next.tints))return false;
   Object.assign(m.data,next);this.sceneRevision++;
+  if(castsShadow(m))this.shadowRevision++;
   // A changed transform invalidates the static-world BVH assumption.
   m.bvh=null;
   m.worldBounds=instancedBoundingSphere(m.localBounds,next.transforms);
@@ -290,12 +296,13 @@ export class NativeSceneRenderer{
   typed("skin bones",bones,16);
   if(bones.length!==m.data.skin.bones.length)throw Error("joint count cannot change without rebuilding mesh");
   m.data.skin.bones=bones;this.sceneRevision++;
+  if(castsShadow(m))this.shadowRevision++;
  }
  free(m){
   if(!this.lost){if(m.vao)this.gl.deleteVertexArray(m.vao);for(const b of m.buffers||[])this.gl.deleteBuffer(b);if(m.element)this.gl.deleteBuffer(m.element);}
   m.vao=null;m.buffers=[];m.element=null;
  }
- remove(id){const m=this.meshes.get(id);if(!m)return false;this.free(m);this.meshes.delete(id);this.sceneRevision++;return true;}
+ remove(id){const m=this.meshes.get(id);if(!m)return false;this.free(m);this.meshes.delete(id);this.sceneRevision++;if(castsShadow(m))this.shadowRevision++;return true;}
  pollGpu(){
   if(!this.timer)return;
   const gl=this.gl,rest=[];
@@ -315,7 +322,7 @@ export class NativeSceneRenderer{
   if(this.timer&&this.pending.length<4){timerQuery=gl.createQuery();gl.beginQuery(this.timer.TIME_ELAPSED_EXT,timerQuery);}
   let shadowStats=null;
   if(this.shadow){
-   const key=this.sceneRevision+"|"+this.target.join(",")+"|"+this.sunDirection.join(",");
+   const key=this.shadowRevision+"|"+this.target.join(",")+"|"+this.sunDirection.join(",");
    if(this.shadowCache?.key===key)shadowStats={drawCalls:0,resolution:this.shadow.resolution,reused:true};
    else{shadowStats=this.shadow.draw(this.meshes.values(),{focus:this.target,sunDirection:this.sunDirection});this.shadowCache={key};}
   }
