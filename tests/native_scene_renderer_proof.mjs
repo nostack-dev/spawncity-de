@@ -10,7 +10,7 @@ try{
  await page.setViewport({width:960,height:540,deviceScaleFactor:1});
  await page.setContent('<!doctype html><meta charset="utf-8"><canvas id="native-scene" width="960" height="540"></canvas>');
  await page.addScriptTag({path:process.env.NATIVE_SCENE_BUNDLE||"/tmp/native-scene.bundle.js"});
- await page.waitForFunction(()=>Boolean(globalThis.__nativeSceneProof),{timeout:45000});
+ try{await page.waitForFunction(()=>Boolean(globalThis.__nativeSceneProof),{timeout:45000});}catch(error){throw Error("Native shadow/scene browser wait failed: "+String(error)+"; page errors="+errors.join(" | "));}
  const data=await page.evaluate(()=>globalThis.__nativeSceneProof);
  const png=Buffer.from(data.imageDataUri.split(",")[1],"base64");delete data.imageDataUri;
  data.errors=errors;
