@@ -50,6 +50,7 @@ const VERT="#version 300 es\n"+[
 "}"].join("\n");
 const FRAG="#version 300 es\n"+[
 "precision highp float;",
+"precision highp sampler2DShadow;",
 "in vec3 vWorld,vNormal,vColor;in vec2 vUV,vWallUV;in float vOpacity;",
 "uniform vec4 uMaterial;",
 "uniform vec3 uSunDirection,uSunColor,uSkyColor,uGroundColor,uEye,uFogColor;",
