@@ -62,11 +62,28 @@ gl.finish();
 const pixels=new Uint8Array(canvas.width*canvas.height*4);
 gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
 const glError=gl.getError();
+// A lost phone GPU context is NOT a reason to switch back to Three or
+// permanently stop rendering: the same native WebGL2 presenter must resume.
+const contextExtension=gl.getExtension("WEBGL_lose_context");
+let contextRestored=false;
+if(contextExtension){
+ const eventWithin=(name)=>new Promise((resolve,reject)=>{
+   const timeout=setTimeout(()=>reject(new Error("Timed out: "+name)),3000);
+   canvas.addEventListener(name,()=>{clearTimeout(timeout);resolve();},{once:true});
+ });
+ const lost=eventWithin("webglcontextlost");contextExtension.loseContext();await lost;
+ const paused=world.draw(performance.now()+435);
+ if(!paused.paused||paused.renderer!=="native-webgl2-only")throw Error("Native GPU context loss must pause without fallback or halt");
+ const restored=eventWithin("webglcontextrestored");contextExtension.restoreContext();await restored;
+ const resumed=world.draw(performance.now()+455);
+ if(resumed.paused||resumed.gpu?.drawCalls<5)throw Error("Native GPU scene failed to recover its VAOs after context restore");
+ contextRestored=true;
+}
 let nonBlank=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>25||pixels[i+1]>25||pixels[i+2]>40)nonBlank++;
 globalThis.__nativeWorldProof={
  renderer:"webgl2-only",sources:{box3d:2,flight:1,buildings:16,terrain:world.terrain.stats.chunks,roads:world.roads.live.size,people:world.people?.update().visible},
  drawCalls:firstDraws,updatedDrawCalls:next.gpu.drawCalls,drawnTriangles:first.gpu.triangles,
- nonBlank,glError,hasThreeImport:false,
+ nonBlank,glError,contextLossExtension:Boolean(contextExtension),contextRestored,hasThreeImport:false,
  context:String(gl.getParameter(gl.RENDERER))
 };
 world.dispose();
