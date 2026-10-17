@@ -41,3 +41,32 @@ statistics must not be sold as actual gaming FPS.
 PR #7 stays a **draft, deliberately failing the full-engine gate** until these
 changes and real device evidence are delivered. Any proposed partial
 native/Three migration must be rejected.
+
+
+## New renderer implementation (this branch, not shipped)
+
+The experimental **native-only scene renderer** is in `sim/native_scene_renderer.mjs`
+with independent `sim/native_render_math.mjs`. This is production-oriented
+renderer infrastructure, **not** a finished SpawnCity integration:
+
+- Column-major Z-up camera, projection, TRS, correct inverse-transpose normals.
+- Real WebGL2 GLSL300 shader, diffuse sun/hemisphere lighting, simple filmic
+  response, exponential fog, texture/alpha-mask/transparency support.
+- GPU hardware instancing with dynamic model matrices, per-instance tints and
+  per-instance normal matrices; bufferSubData updates do not reallocate VAOs.
+- Procedural anti-aliased facade window grid without a texture download.
+- GPU skeletal skinning, up to 32 bones per skinned mesh; animated bone matrices
+  update uniforms rather than rebuilding all vertex buffers.
+- Explicit WebGL context loss/recovery, resource deletion, optional async
+  EXT_disjoint_timer_query_webgl2 GPU frame timing (returns null if unsupported).
+- A real Chromium WebGL2 smoke test draws 900 building instances plus one
+  skinned actor: 937 total instances, 4 draws, 11,234 triangles, no GL errors.
+  This uses **software SwiftShader** and deliberately does **not** assert real
+  device FPS gains or full-scene visual equivalence.
+
+This implementation still lacks a complete native world/character asset
+pipeline, full skinned rig behavior, cascaded sun shadow mapping, sky/weather,
+post-FX, projectile/particle VFX, game-world ray picking, vehicles/terrain,
+interiors and the production renderer hookup. The player cannot use it yet.
+
+**Do not merge this branch until the complete release gate is green.**
