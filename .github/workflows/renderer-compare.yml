@@ -38,6 +38,38 @@ jobs:
           name: native-only-renderer-isolated-proof
           path: artifacts/native-webgl-proof/
           if-no-files-found: warn
+  native-scene-proof:
+    # Standalone real raw-WebGL2 renderer with sun/fog/alpha/instancing.
+    # This is NOT equivalent to the full game and never deployed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify independent native scene graph math and code
+        run: |
+          node tests/native_render_math_test.mjs
+          node --check sim/native_scene_renderer.mjs
+          node --check tests/native_scene_renderer_proof.mjs
+      - name: Bundle real standalone WebGL2 backend (no Three imports)
+        run: |
+          npm install --prefix /tmp/native-scene-proof --ignore-scripts --no-audit --no-fund esbuild@0.25.8 puppeteer-core@24.16.0
+          ln -s /tmp/native-scene-proof/node_modules node_modules
+          ./node_modules/.bin/esbuild tests/native_scene_renderer_proof_scene.mjs --bundle --format=iife --platform=browser --target=es2022 --outfile=/tmp/native-scene.bundle.js
+          if grep -E 'three/src/|three\\.module\\.js|three/three' /tmp/native-scene.bundle.js; then echo "Three accidentally included"; exit 1; fi
+      - name: Render 900 instanced real WebGL2 buildings, test alpha and GPU
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_scene_renderer_proof.mjs
+      - name: Upload raw native-only screenshot and frame timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-new-native-webgl2-scene
+          path: artifacts/native-scene/
+          if-no-files-found: warn
   full-native-release-gate:
     # Intentionally FAILS until ALL in-game Three dependencies have been
     # replaced and desktop, Android Chrome and iPhone Safari device GPU
