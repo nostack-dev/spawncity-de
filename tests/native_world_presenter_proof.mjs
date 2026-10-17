@@ -15,6 +15,6 @@ try{
  data.errors=errors;
  await writeFile(out+"/metrics.json",JSON.stringify(data,null,2)+"\n");
  console.log("NATIVE_WORLD_PROOF "+JSON.stringify(data));
- if(data.error||errors.length||data.glError!==0||data.sources?.box3d!==2||data.sources?.buildings!==16||data.sources?.terrain<1||data.sources?.roads<1||data.sources?.people!==2||data.drawCalls<5||data.drawnTriangles<50||data.nonBlank<3000)process.exitCode=1;
+ if(data.error||errors.length||data.glError!==0||data.sources?.box3d!==2||data.sources?.flight!==1||data.sources?.buildings!==16||data.sources?.terrain<1||data.sources?.roads<1||data.sources?.people!==2||data.drawCalls<5||data.drawnTriangles<50||data.nonBlank<3000)process.exitCode=1;
 }catch(error){console.error("NATIVE_WORLD_ERROR",error);process.exitCode=1;}
 finally{await browser.close();}
