@@ -1,6 +1,7 @@
 import {NativeWorldPresenter} from "../sim/native_world_presenter.mjs";
 import {WorldRigidBodyPhysics} from "../sim/world_rigid_body_physics.mjs";
 import {nativePopulationSnapshot} from "../sim/native_population_view.mjs";
+import {nativeLiveGameplayState} from "../sim/native_gameplay_camera.mjs";
 import {VsPoseTimeline} from "../sim/vs_pose_sync.mjs";
 (async()=>{
 const canvas=document.getElementById("native-world");
@@ -104,6 +105,48 @@ else delete globalThis.devicePixelRatio;
 const normalDpr=world.draw(performance.now()+431);
 if(normalDpr.drawingWidth!==960||normalDpr.drawingHeight!==540)
  throw Error("native renderer failed to restore normal PWA backbuffer resolution");
+// The SAME compositor must draw and change camera for every shipped gameplay
+// mode. These are the exact public state fields used by the original
+// __arondightWalkMode, __arondightVehicleDrive and __jetMode interfaces.
+const initialNativeContext=world.renderer.gl;
+const walk={mode:"foot",position:{x:2,y:-10,z:1.68},yaw:0,pitch:0};
+const car={active:false,pose:{position:[15,-4,1],rotation:[0,0,0,1],yaw:0},speedMps:8};
+const jet={active:false,cockpit:true,pose:{x:-6,y:-11,z:40,q:[0,0,0,1]}};
+// Bind the exact global surfaces present in the shipped game, not an
+// invented alternate state/renderer contract.
+globalThis.__arondightWalkMode=walk;
+globalThis.__arondightVehicleDrive=car;
+globalThis.__jetMode=jet;
+globalThis.__arondightRealWorld={vsPeerTimeline:timeline,lookYawDeg:0,lookPitchDeg:0};
+let spectating=false;
+const gameplayState=nativeLiveGameplayState(globalThis,{spectate:()=>spectating});
+world.gameplayState=gameplayState;
+const footFrame=world.draw(performance.now()+432);
+if(footFrame.gameMode!=="foot"||Math.abs(world.renderer.eye[0]-2)>1e-4
+ ||world.renderer.meshes.get("flight/airframe").visible)
+ throw Error("on-foot gameplay did not take over sole native GPU camera / hide drone");
+car.active=true;
+const carFrame=world.draw(performance.now()+433);
+if(carFrame.gameMode!=="car"||Math.abs(world.renderer.eye[0]-11.05)>1e-4)
+ throw Error("Box3D car did not take over sole native GPU camera");
+jet.active=true;
+const jetFrame=world.draw(performance.now()+434);
+if(jetFrame.gameMode!=="jet"||Math.abs(world.renderer.eye[2]-41.42)>1e-3)
+ throw Error("jet cockpit did not use existing +Y forward native projection");
+spectating=true;
+const mateFrame=world.draw(performance.now()+435);
+if(mateFrame.gameMode!=="multiplayer"||world.renderer.meshes.get("flight/airframe").visible)
+ throw Error("multiplayer spectator failed to use authoritative VsPoseTimeline");
+spectating=false;jet.active=false;car.active=false;walk.mode="drone";
+world.setFlightCameraMode("fpv",{fpvFovDeg:105,fpvTiltDeg:0});
+const droneFrame=world.draw(performance.now()+436);
+if(droneFrame.gameMode!=="drone"||!world.renderer.meshes.get("flight/airframe").visible
+ ||Math.abs(world.renderer.near-.02)>1e-7)
+ throw Error("native drone FPV did not restore the same GPU airframe camera");
+if(world.renderer.gl!==initialNativeContext)throw Error("game modes silently created another GL context");
+world.gameplayState=null;
+world.setCamera({eye:[33,-75,40],target:[0,0,3],fov:1,near:.1,far:700});
+world.draw(performance.now()+437);
 const gl=world.renderer.gl;
 gl.finish();
 const pixels=new Uint8Array(canvas.width*canvas.height*4);
@@ -134,6 +177,7 @@ globalThis.__nativeWorldProof={
  drawCalls:firstDraws,shadowDrawCalls:first.gpu.shadowDrawCalls,updatedDrawCalls:next.gpu.drawCalls,drawnTriangles:first.gpu.triangles,
  nonBlank,glError,contextLossExtension:Boolean(contextExtension),contextRestored,shadowRestored:Boolean(world.renderer.shadow?.depth),hasThreeImport:false,
  hiDpiVerified:true,touchPickingVerified:true,
+ modesVerified:5,singleContextAllModes:true,
  context:String(gl.getParameter(gl.RENDERER))
 };
 world.dispose();

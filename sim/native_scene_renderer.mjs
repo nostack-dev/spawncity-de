@@ -272,24 +272,48 @@ export class NativeSceneRenderer{
   const prev=m.data;
   const same=(a,b)=>a!==b&&a.length===b.length&&a.every((value,i)=>value===b[i]);
   if(same(prev.transforms,next.transforms)&&same(prev.tints,next.tints))return false;
-  Object.assign(m.data,next);this.sceneRevision++;
-  if(castsShadow(m))this.shadowRevision++;
-  // A changed transform invalidates the static-world BVH assumption.
-  m.bvh=null;
-  m.worldBounds=instancedBoundingSphere(m.localBounds,next.transforms);
-  if(this.lost)return;
-  const gl=this.gl;
-  for(const [slot,data,cap] of [[4,next.transforms,"capTransforms"],[5,next.tints,"capTints"],[6,next.normals,"capNormals"]]){
-   gl.bindBuffer(gl.ARRAY_BUFFER,m.buffers[slot]);
-   // Keep spare GPU instance capacity: crowds/traffic constantly fluctuate.
-   // Reallocation on every shrink/grow forces driver stalls and VAO churn.
-   if(data.length>m[cap]){
-    m[cap]=Math.max(data.length,(m[cap]||0)*2);
-    gl.bufferData(gl.ARRAY_BUFFER,m[cap]*Float32Array.BYTES_PER_ELEMENT,gl.DYNAMIC_DRAW);
+  // Validate all world bounds before touching any of the GPU buffers.
+  // Failed uploads must not advance the CPU scene revision, hit indices, or
+  // stale shadow geometry while the renderer still draws the old instances.
+  const nextBounds=instancedBoundingSphere(m.localBounds,next.transforms);
+  if(!this.lost){
+   const gl=this.gl,slots=[
+    [4,next.transforms,prev.transforms,"capTransforms"],
+    [5,next.tints,prev.tints,"capTints"],
+    [6,next.normals,prev.normals,"capNormals"]
+   ];
+   try{
+    for(const [slot,data,,cap] of slots){
+     gl.bindBuffer(gl.ARRAY_BUFFER,m.buffers[slot]);
+     // Geometric capacity avoids reallocating when traffic count oscillates.
+     if(data.length>m[cap]){
+      m[cap]=Math.max(data.length,(m[cap]||0)*2);
+      gl.bufferData(gl.ARRAY_BUFFER,m[cap]*Float32Array.BYTES_PER_ELEMENT,gl.DYNAMIC_DRAW);
+     }
+     gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
+    }
+   }catch(error){
+    // Exceptional slow path only: restore all old GPU contents and capacities
+    // after a partial driver upload. Without this, a failed car reorder can
+    // make the displayed instance differ from the authoritative Box3D hit ID.
+    try{
+     for(const [slot,,previous,cap] of slots){
+      gl.bindBuffer(gl.ARRAY_BUFFER,m.buffers[slot]);
+      gl.bufferData(gl.ARRAY_BUFFER,previous,gl.DYNAMIC_DRAW);
+      m[cap]=previous.length;
+     }
+    }catch(restoreError){
+     throw new Error("native GPU instance rollback failed; stop presentation",{cause:restoreError});
+    }
+    throw error;
+   }finally{
+    gl.bindBuffer(gl.ARRAY_BUFFER,null);
    }
-   gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
   }
-  gl.bindBuffer(gl.ARRAY_BUFFER,null);
+  Object.assign(m.data,next);
+  m.worldBounds=nextBounds;m.bvh=null;this.sceneRevision++;
+  if(castsShadow(m))this.shadowRevision++;
+  return true;
  }
  updateBones(id,bones){
   const m=this.meshes.get(id);if(!m?.data.skin)throw Error("not a skinned mesh "+id);
@@ -301,6 +325,16 @@ export class NativeSceneRenderer{
  free(m){
   if(!this.lost){if(m.vao)this.gl.deleteVertexArray(m.vao);for(const b of m.buffers||[])this.gl.deleteBuffer(b);if(m.element)this.gl.deleteBuffer(m.element);}
   m.vao=null;m.buffers=[];m.element=null;
+ }
+ setVisible(id,visible){
+  const m=this.meshes.get(id);
+  if(!m)return false;
+  const requested=visible!==false;
+  if(m.visible===requested)return false;
+  m.visible=requested;
+  this.sceneRevision++;
+  if(castsShadow(m))this.shadowRevision++;
+  return true;
  }
  remove(id){const m=this.meshes.get(id);if(!m)return false;this.free(m);this.meshes.delete(id);this.sceneRevision++;if(castsShadow(m))this.shadowRevision++;return true;}
  pollGpu(){

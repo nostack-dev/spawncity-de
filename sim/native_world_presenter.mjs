@@ -8,6 +8,7 @@ import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
 import {nativeWorldPhysicsView,nativeRigidRuntimeView} from "./native_world_physics_view.mjs";
 import {nativeFlightPoseView} from "./native_flight_pose_view.mjs";
+import {nativeGameplayCamera,nativeLiveGameplayState} from "./native_gameplay_camera.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
@@ -18,7 +19,7 @@ export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
 export class NativeWorldPresenter{
- constructor(canvas,{physics=null,worldPhysics=null,rigidRuntime=null,interpolationAlpha=()=>1,population=null,flight=null,flightPhysics=null,peer=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
+ constructor(canvas,{physics=null,worldPhysics=null,rigidRuntime=null,interpolationAlpha=()=>1,population=null,flight=null,flightPhysics=null,peer=null,gameplayState=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
   if([physics,worldPhysics,rigidRuntime].filter(Boolean).length!==1)throw Error("native world requires exactly one Box3D pose authority");
   const poseSource=rigidRuntime?nativeRigidRuntimeView(rigidRuntime)
     :worldPhysics?nativeWorldPhysicsView(worldPhysics,{alpha:interpolationAlpha}):physics;
@@ -39,7 +40,8 @@ export class NativeWorldPresenter{
   if(flightSource&&typeof flightSource.presentationPose!=="function")throw Error("native flight must expose authoritative Box3D presentationPose()");
   this.flight=flightSource;
   this.airframe=flightSource?new NativeAirframePresentation(this.renderer,{span:flightSource.p?.span??.25,propD:flightSource.p?.propD??.11}):null;
-  this.flightCameraMode="follow";this.flightCameraSettings={};this.flightCameraActive=Boolean(flight);
+  this.flightCameraMode="follow";this.flightCameraSettings={};this.flightCameraActive=Boolean(flightSource);
+  this.gameplayState=gameplayState==="live"?nativeLiveGameplayState():gameplayState;this.gameMode=null;
   this.lastFrameAt=null;
   this.camera=null;this.running=false;this.disposed=false;this.lastTerrainAt=-Infinity;
   this.terrainPromise=null;this.pendingCity=null;this.error=null;this.frameNumber=0;
@@ -114,23 +116,37 @@ export class NativeWorldPresenter{
   // Pause only presentation until the SAME native WebGL2 context restores;
   // never initialize Three.js or terminate the only rendering loop.
   if(this.renderer.lost){this.lastFrameAt=now;return {paused:true,reason:"native-webgl2-context-lost",renderer:"native-webgl2-only"};}
+  // The document owns layout; one native canvas owns the actual backbuffer.
+  // Read viewport aspect BEFORE deriving the on-foot 90-degree horizontal FOV.
+  const canvas=this.renderer.canvas,viewport=nativeDrawingBufferSize(canvas);
   // The *same* Box3D presentationPose used by the original simulator now
   // feeds only the native GPU meshes; no parallel visual physics or Three.
+  let flightFrame=null;
   if(this.airframe){
    const dt=this.lastFrameAt===null?1/60:Math.min(.1,Math.max(0,(now-this.lastFrameAt)/1000));
-   const frame=this.airframe.update(this.flight.presentationPose(),{
+   flightFrame=this.airframe.update(this.flight.presentationPose(),{
     dt,mode:this.flightCameraMode,motors:this.flight.motorOmega,
     ...this.flightCameraSettings
    });
-   if(this.flightCameraActive)this.camera={eye:frame.eye,target:frame.target,up:frame.up,
-     fov:frame.fov,near:frame.near,far:frame.far};
+   if(this.flightCameraActive)this.camera={eye:flightFrame.eye,target:flightFrame.target,up:flightFrame.up,
+     fov:flightFrame.fov,near:flightFrame.near,far:flightFrame.far};
+  }
+  if(this.gameplayState){
+   const selected=nativeGameplayCamera(this.gameplayState,{aspect:viewport.width/viewport.height,now});
+   this.gameMode=selected.mode;
+   if(selected.camera)this.camera=selected.camera;
+   else if(flightFrame)this.camera={eye:flightFrame.eye,target:flightFrame.target,up:flightFrame.up,
+      fov:flightFrame.fov,near:flightFrame.near,far:flightFrame.far};
+   else throw Error("native drone mode requires live flight presentation");
+   // Avoid drawing the quad body/rotors during on-foot, car, jet or spectator
+   // modes. Keep one WebGL2 context and keep the actual physics ticking.
+   if(this.airframe){
+    this.renderer.setVisible("flight/airframe",selected.mode==="drone");
+    this.renderer.setVisible("flight/rotors",selected.mode==="drone");
+   }
   }
   this.lastFrameAt=now;
   if(!this.camera)throw Error("native world requires camera before rendering");
-  const canvas=this.renderer.canvas;
-  // The document/layout owns CSS dimensions. The sole native canvas owns
-  // backbuffer size. Do not force requestFullscreen or reinitialize GL.
-  const viewport=nativeDrawingBufferSize(canvas);
   this.renderer.resize(viewport.width,viewport.height);
   this.renderer.setCamera(this.camera);
   const physics=this.rigids.update(),people=this.people?.update()||null,peer=this.peer?.update(now)||null;
@@ -146,7 +162,8 @@ export class NativeWorldPresenter{
   this.frameNumber++;
   this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,
     terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,
-    drawingWidth:viewport.width,drawingHeight:viewport.height,drawingDpr:viewport.pixelRatio,renderer:"native-webgl2-only"};
+    drawingWidth:viewport.width,drawingHeight:viewport.height,drawingDpr:viewport.pixelRatio,
+    gameMode:this.gameMode,renderer:"native-webgl2-only"};
   return this.drawStats;
  }
  pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");
