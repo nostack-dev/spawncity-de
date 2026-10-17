@@ -85,3 +85,28 @@ jobs:
           name: spawncity-native-webgl-proof
           path: artifacts/native-webgl-proof/
           if-no-files-found: warn
+
+  complete-engine-gate:
+    # This check stays RED until both the entire game is Three-free and
+    # 15 real-device/mode visual+GPU parity scenarios pass. No automatic
+    # renderer rollout merely because the isolated WebGL2 proof is faster.
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate acceptance logic, reject fake DPR/performance wins
+        run: |
+          node --check tests/renderer_acceptance_gate.mjs
+          node tests/renderer_acceptance_selftest.mjs
+      - name: Require all native renderer API, pixel and on-device GPU acceptance gates
+        run: node tests/renderer_acceptance_gate.mjs --gate
+      - name: Preserve measured migration blockers and missing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-native-engine-release-gate
+          path: artifacts/renderer-gate/readiness.json
+          if-no-files-found: warn
