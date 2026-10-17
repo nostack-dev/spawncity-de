@@ -50,6 +50,12 @@ renderer.upsert("glass",{
   instances:{transforms:new Float32Array(glassInstances)},
   material:{color:[.11,.42,.73,.19],alphaMode:"blend",doubleSided:true,unlit:true}
 });
+// Prove a deliberately distant native mesh is eliminated BEFORE GPU draw.
+renderer.upsert("fully-outside-camera",{
+  positions:new Float32Array(p),
+  instances:{transforms:fromTRS([9000,9000,9000])},
+  material:{color:[1,0,0,1],doubleSided:true}
+});
 // A separate two-bone native skinned actor; moving its upper joint requires
 // only a bone uniform update, not a vertex-buffer rebuild.
 // Real-game GeoJSON footprint format -> the new native city triangles -> GPU.
@@ -105,7 +111,7 @@ globalThis.__nativeSceneProof={
   schema:"native-webgl2-scene-nonproduction-proof-v1",
   osmBuildingFootprints:nativeCity.built,osmCityChunks:nativeCity.chunks.length,
   kind:"new-native-engine-only-not-game-migration",count,backend:"native-webgl2",
-  drawCalls:stats.drawCalls,triangles:stats.triangles,instances:stats.instances,
+  drawCalls:stats.drawCalls,triangles:stats.triangles,instances:stats.instances,culledMeshes:stats.culledMeshes,
   cpuFrameMs:stats.cpuMs,gpuTimeMs:stats.gpuMs,
   finishP50Ms:+times[Math.floor(times.length*.5)].toFixed(3),
   finishP95Ms:+times[Math.floor(times.length*.95)].toFixed(3),
