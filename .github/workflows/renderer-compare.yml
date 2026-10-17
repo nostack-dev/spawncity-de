@@ -1,0 +1,43 @@
+name: SpawnCity WebGL visual and performance A/B
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_url:
+        description: Published baseline game URL
+        required: true
+        default: https://spawncity.de/drone_simulator.html
+      candidate_url:
+        description: Published candidate game URL (or same URL with fast preset)
+        required: true
+        default: https://spawncity.de/drone_simulator.html
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install visual comparison runner
+        run: |
+          npm install --prefix /tmp/webgl-ab --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+          ln -s /tmp/webgl-ab/node_modules node_modules
+          node --check tests/renderer_ab_compare.mjs
+      - name: Compare desktop and mobile under identical GPS and browser settings
+        env:
+          BASELINE: ${{ inputs.baseline_url }}
+          CANDIDATE: ${{ inputs.candidate_url }}
+        run: |
+          set -euo pipefail
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/renderer_ab_compare.mjs "$BASELINE" "$CANDIDATE"
+      - name: Save images and metrics for actual visual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-webgl-ab
+          path: artifacts/renderer-ab/
+          if-no-files-found: warn
