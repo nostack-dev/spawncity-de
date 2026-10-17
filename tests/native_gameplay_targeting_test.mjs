@@ -15,6 +15,18 @@ visuals.update();
 assert.equal(visuals.bodyIdForHit({id:"box3d/car",instance:0}),"taxi-1");
 assert.equal(visuals.bodyIdForHit({id:"box3d/car",instance:1}),"taxi-2");
 assert.equal(visuals.bodyIdForHit({id:"box3d/car",instance:3}),null);
+gpu.updateInstances=()=>{throw Error("GPU buffer upload failed");};
+bodies.reverse();
+assert.throws(()=>visuals.update(),/GPU buffer upload failed/);
+assert.equal(visuals.bodyIdForHit({id:"box3d/car",instance:0}),"taxi-1",
+ "failed GPU update must retain previous live body ID order");
+assert.equal(visuals.bodyIdForHit({id:"box3d/car",instance:1}),"taxi-2");
+gpu.updateInstances=()=>{};
+visuals.update();
+assert.equal(visuals.bodyIdForHit({id:"box3d/car",instance:0}),"taxi-2",
+ "successful GPU reorder must atomically update hit-ID mapping");
+bodies.reverse();
+visuals.update();
 assert.equal(visuals.bodyIdForHit({id:"osm/roads:0,0",instance:0}),null);
 
 const physics=Object.create(WorldRigidBodyPhysics.prototype);
