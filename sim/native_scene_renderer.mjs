@@ -233,6 +233,8 @@ export class NativeSceneRenderer{
  updateInstances(id,newInstances){
   const m=this.meshes.get(id);if(!m)throw Error("unknown mesh "+id);
   const next=instances(newInstances);Object.assign(m.data,next);
+  // A changed transform invalidates the static-world BVH assumption.
+  m.bvh=null;
   m.worldBounds=instancedBoundingSphere(m.localBounds,next.transforms);
   if(this.lost)return;
   const gl=this.gl;
