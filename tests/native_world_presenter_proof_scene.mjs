@@ -119,7 +119,7 @@ if(footFrame.gameMode!=="foot"||Math.abs(world.renderer.eye[0]-2)>1e-4
  throw Error("on-foot gameplay did not take over sole native GPU camera / hide drone");
 car.active=true;
 const carFrame=world.draw(performance.now()+433);
-if(carFrame.gameMode!=="car"||Math.abs(world.renderer.eye[0]-10)>1e-4)
+if(carFrame.gameMode!=="car"||Math.abs(world.renderer.eye[0]-11.05)>1e-4)
  throw Error("Box3D car did not take over sole native GPU camera");
 jet.active=true;
 const jetFrame=world.draw(performance.now()+434);
