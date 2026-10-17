@@ -154,3 +154,52 @@ does **not** make the game production-native. The actual player/jet/drone
 weapon systems still use Three objects; the renderer cutover remains
 blocked on a complete port and true hardware measurements. Do not merge
 just the proof or weaken the acceptance gate.
+
+
+## 17 October: One composed native city/traffic/population draw path
+
+The experimental **sole** native game-world presenter now exists in
+`sim/native_world_presenter.mjs`. It owns one `NativeSceneRenderer` and
+composes live-data adapters without ever creating a Three.js renderer:
+
+- `native_rigid_visuals.mjs`: reads authoritative interpolated Box3D
+  `bodies()` / `renderPose(id)`, including car and bus hulls, drone and
+  jet hulls and per-wheel poses. The geometry is grouped by type so existing
+  GPU buffers can be updated with instance transforms without reallocation.
+  **No second physics simulation or fake derived pose exists.**
+- `native_road_geometry.mjs` and `native_road_stream.mjs`:
+  asphalt, curb sidewalks, road classes and center dashes from real OSM
+  transportation features, draped directly on the Box3D terrain height
+  callback, cached into indexed native GPU tiles. The terrain API retains
+  the authority for all heights; no separate map is introduced.
+- `native_pedestrian_visuals.mjs`: consumes the existing persistent
+  crowd-agent `people()` pose contract; one GPU draw for all pedestrians.
+  This adapter renders simple stylized humanoids, not yet the full old
+  character rigs, expressions, weapons or skeletal animations.
+- The composed Chromium proof imports **no Three.js** and draws the city,
+  four terrain tiles, four road chunks, two interpolated Box3D physics
+  vehicles/drones and two people through one native context. It reported
+  13 draw calls, 2,716 drawn triangles and zero WebGL errors on SwiftShader.
+
+This is a substantive **native game presentation composition milestone**.
+It is *not* the production game bootstrap and does not yet consume the
+complete player/drone/jet combat, multiplayer and camera update pipeline.
+Full-game performance on phones has not been measured. No new default
+renderer or fallback was shipped.
+
+### Next required engineering cutover
+
+1. Rewrite `sim/simulator.mjs` and `sim/real_world_bootstrap.mjs` to
+   inject the authoritative Box3D/flight-controller state into
+   `NativeWorldPresenter`, preserving the same run/pause/replay physics
+   steps, network and control IDs. The current simulator still imports
+   `THREE` and allocates `THREE.WebGLRenderer`.
+2. Remove remaining imported Three scene graph clients, including existing
+   player/jet models, weapons, crowds, props, effects, light/shadow and sky.
+   Compose their state-only sources into the native presenter; use the native
+   ray picking and bone palettes already tested.
+3. Verify full desktop and mobile presentation and touch/controller paths;
+   preserve headshots, guided-rocket targets and Box3D hit semantics.
+4. Only when production is 100% native run the existing 15 device-mode
+   appearance/frame-time checks and merge on a green gate. **No partial
+   legacy renderer remains in the eventual live bundle.**
