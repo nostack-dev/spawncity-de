@@ -1,10 +1,10 @@
 // Native-only WebGL2 scene renderer: never imports Three.js.
 // GPU instancing, mutable buffers, material/texture support, sky+sun lighting,
 // alpha sorting, fog, asynchronous GPU timers and loss/recovery.
-// TODO for full game release: skinned rigs, shadows, effects, picking and every
+// TODO for full game release: shadow maps, effects, picking and every
 // gameplay scene producer; native-only release gate remains closed.
 import {multiply4,lookAt,perspective,identity4,normalMatrix3} from "./native_render_math.mjs";
-export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-facades-v3";
+export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-skinned-v4";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
 "layout(location=0) in vec3 aPosition;",
@@ -19,14 +19,26 @@ const VERT="#version 300 es\n"+[
 "layout(location=9) in vec3 iNormal0;",
 "layout(location=10) in vec3 iNormal1;",
 "layout(location=11) in vec3 iNormal2;",
+"layout(location=12) in vec4 aJoints;",
+"layout(location=13) in vec4 aWeights;",
+"uniform int uSkinEnabled;",
+"uniform mat4 uBones[32];",
 "uniform mat4 uViewProjection;",
 "out vec3 vWorld,vNormal,vColor;",
 "out vec2 vUV,vWallUV;out float vOpacity;",
 "void main(){",
 "  mat4 model=mat4(iModel0,iModel1,iModel2,iModel3);",
-"  vec4 p=model*vec4(aPosition,1.0);",
+"  vec4 local=vec4(aPosition,1.0);",
+"  vec3 localNormal=aNormal;",
+"  if(uSkinEnabled==1){",
+"    mat4 skin=aWeights.x*uBones[int(aJoints.x)]+aWeights.y*uBones[int(aJoints.y)]",
+"      +aWeights.z*uBones[int(aJoints.z)]+aWeights.w*uBones[int(aJoints.w)];",
+"    local=skin*local;",
+"    localNormal=mat3(skin)*localNormal;",
+"  }",
+"  vec4 p=model*local;",
 "  vWorld=p.xyz;",
-"  vNormal=normalize(mat3(iNormal0,iNormal1,iNormal2)*aNormal);",
+"  vNormal=normalize(mat3(iNormal0,iNormal1,iNormal2)*localNormal);",
 "  vColor=aColor*iTint.rgb;vOpacity=iTint.a;vUV=aUV;",
 "  float wallSpan=abs(aNormal.x)>0.5?length(iModel1.xyz):length(iModel0.xyz);",
 "  vWallUV=vec2(aUV.x*wallSpan,aUV.y*length(iModel2.xyz));",
@@ -107,7 +119,16 @@ function validate(input){
  const uvs=input.uvs??new Float32Array(count*2);
  typed("normals",normals,3);typed("colors",colors,3);typed("uvs",uvs,2);
  if(normals.length!==p.length||colors.length!==p.length||uvs.length!==count*2)throw Error("geometry attribute count mismatch");
- return {p,normals,colors,uvs,indices,...instances(input.instances)};
+ let skin=null;
+ if(input.skin){
+  const joints=typed("skin joints",input.skin.joints,4),weights=typed("skin weights",input.skin.weights,4),bones=typed("skin bones",input.skin.bones,16);
+  if(joints.length!==count*4||weights.length!==count*4||!bones.length||bones.length>32*16)throw Error("invalid skin vertex/joint palette sizes");
+  const boneCount=bones.length/16;
+  for(let k=0;k<joints.length;k++)if(!Number.isInteger(joints[k])||joints[k]<0||joints[k]>=boneCount||weights[k]<0||weights[k]>1)throw Error("invalid skin joint/weight");
+  for(let k=0;k<weights.length;k+=4){const sum=weights[k]+weights[k+1]+weights[k+2]+weights[k+3];if(Math.abs(sum-1)>.001)throw Error("skin weights must sum to 1");}
+  skin={joints,weights,bones};
+ }
+ return {p,normals,colors,uvs,indices,skin,...instances(input.instances)};
 }
 function program(gl){
  const shader=(type,src)=>{
@@ -118,7 +139,7 @@ function program(gl){
  const v=shader(gl.VERTEX_SHADER,VERT),f=shader(gl.FRAGMENT_SHADER,FRAG),p=gl.createProgram();
  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){const e=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw Error("native program: "+e);}
- const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade"];
+ const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uSkinEnabled","uBones[0]"];
  return {handle:p,u:Object.fromEntries(uniforms.map(k=>[k,gl.getUniformLocation(p,k)]))};
 }
 export class NativeSceneRenderer{
@@ -179,6 +200,13 @@ export class NativeSceneRenderer{
   const normal=gl.createBuffer();m.buffers.push(normal);gl.bindBuffer(gl.ARRAY_BUFFER,normal);gl.bufferData(gl.ARRAY_BUFFER,d.normals,gl.DYNAMIC_DRAW);
   for(let i=0;i<3;i++){const loc=9+i;gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,36,i*12);gl.vertexAttribDivisor(loc,1);}
   m.capTransforms=d.transforms.length;m.capTints=d.tints.length;m.capNormals=d.normals.length;
+  if(d.skin){
+    for(const [loc,values]of [[12,d.skin.joints],[13,d.skin.weights]]){
+      const buffer=gl.createBuffer();m.buffers.push(buffer);gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+      gl.bufferData(gl.ARRAY_BUFFER,values,gl.STATIC_DRAW);gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc,4,gl.FLOAT,false,0,0);
+    }
+  }
   if(d.indices){
    m.element=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,m.element);
    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,d.indices,gl.STATIC_DRAW);
@@ -198,6 +226,12 @@ export class NativeSceneRenderer{
    m[cap]=data.length;
   }
   gl.bindBuffer(gl.ARRAY_BUFFER,null);
+ }
+ updateBones(id,bones){
+  const m=this.meshes.get(id);if(!m?.data.skin)throw Error("not a skinned mesh "+id);
+  typed("skin bones",bones,16);
+  if(bones.length!==m.data.skin.bones.length)throw Error("joint count cannot change without rebuilding mesh");
+  m.data.skin.bones=bones;
  }
  free(m){
   if(!this.lost){if(m.vao)this.gl.deleteVertexArray(m.vao);for(const b of m.buffers||[])this.gl.deleteBuffer(b);if(m.element)this.gl.deleteBuffer(m.element);}
@@ -241,6 +275,7 @@ export class NativeSceneRenderer{
    gl.uniform4fv(u.uMaterial,new Float32Array(mat.color));
    gl.uniform1f(u.uAlphaCutoff,mat.alphaMode==="mask"?(mat.alphaCutoff??.5):0);
    gl.uniform1i(u.uUnlit,mat.unlit?1:0);gl.uniform1i(u.uFacade,mat.facade?1:0);gl.uniform1i(u.uHasTexture,m.texture?1:0);
+   gl.uniform1i(u.uSkinEnabled,d.skin?1:0);if(d.skin)gl.uniformMatrix4fv(u["uBones[0]"],false,d.skin.bones);
    if(m.texture){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,m.texture);}
    if(mat.doubleSided)gl.disable(gl.CULL_FACE);else{gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);}
    gl.bindVertexArray(m.vao);
