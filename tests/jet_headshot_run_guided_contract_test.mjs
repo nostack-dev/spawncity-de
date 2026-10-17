@@ -39,6 +39,8 @@ assert.match(actor,/exaggeratedNpcRun\?-.28/);
 // steering with path collisions, and PvP splash capped / cooldown.
 assert.match(weapons,/droneWeapon==="missile"\?"guided":"gun"/);
 assert.match(weapons,/const guided=droneWeapon==="guided"/);
+assert.match(weapons,/__arondightExtendedMissileRouter:true/);
+assert.match(read("sim/direct_fire_missiles.mjs"),/if\(!api\.__arondightExtendedMissileRouter\)api\.fireMissile=fireMissile/);
 assert.match(weapons,/if\(!guided\)for\(let k=1;k<ROCKET_SALVO/);
 assert.match(weapons,/object:hit\?\.object\|\|null/);
 assert.match(weapons,/m\.object\.getWorldPosition\?\.\(m\.target\)/);
