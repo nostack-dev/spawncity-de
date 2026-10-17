@@ -22,6 +22,11 @@ const buildings=[];
 for(let i=0;i<16;i++)buildings.push({key:"building-"+i,center:[-34+(i%4)*19,10+Math.floor(i/4)*19],
  outer:ring(-34+(i%4)*19,10+Math.floor(i/4)*19),holes:[],base:0,top:8+i%5*3});
 await world.updateCityFootprints(buildings,{yieldFrame:()=>Promise.resolve()});
+const streets=[
+ {properties:{class:"primary"},geometry:{type:"LineString",coordinates:[[-55,1],[65,1]]}},
+ {properties:{class:"secondary"},geometry:{type:"LineString",coordinates:[[2,-55],[2,95]]}}
+];
+await world.updateRoadFeatures(streets,{center:[0,0],revision:"native-roads",yieldFrame:()=>Promise.resolve()});
 world.draw(performance.now());
 await world.terrainPromise;
 const first=world.draw(performance.now()+300);
@@ -37,7 +42,7 @@ gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
 const glError=gl.getError();
 let nonBlank=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>25||pixels[i+1]>25||pixels[i+2]>40)nonBlank++;
 globalThis.__nativeWorldProof={
- renderer:"webgl2-only",sources:{box3d:2,buildings:16,terrain:world.terrain.stats.chunks},
+ renderer:"webgl2-only",sources:{box3d:2,buildings:16,terrain:world.terrain.stats.chunks,roads:world.roads.live.size},
  drawCalls:firstDraws,updatedDrawCalls:next.gpu.drawCalls,drawnTriangles:first.gpu.triangles,
  nonBlank,glError,hasThreeImport:false,
  context:String(gl.getParameter(gl.RENDERER))
