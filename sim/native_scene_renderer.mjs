@@ -257,7 +257,7 @@ export class NativeSceneRenderer{
   const m=this.meshes.get(id);if(!m)throw Error("unknown mesh "+id);
   const next=instances(newInstances);
   const prev=m.data;
-  const same=(a,b)=>a.length===b.length&&a.every((value,i)=>value===b[i]);
+  const same=(a,b)=>a!==b&&a.length===b.length&&a.every((value,i)=>value===b[i]);
   if(same(prev.transforms,next.transforms)&&same(prev.tints,next.tints))return false;
   Object.assign(m.data,next);this.sceneRevision++;
   // A changed transform invalidates the static-world BVH assumption.
