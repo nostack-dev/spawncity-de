@@ -75,7 +75,7 @@ export class NativeAirframePresentation{
   this.mode="follow";this.phases=[0,0,0,0];this.initialized=false;
   renderer.upsert("flight/airframe",{...bodyGeometry(span),material:{color:[1,1,1,1],doubleSided:true}});
   renderer.upsert("flight/rotors",{...rotorGeometry(),instances:{transforms:new Float32Array([...identity4(),...identity4(),...identity4(),...identity4()])},
-    material:{color:[.85,.91,1,1],doubleSided:true}});
+    material:{color:[.85,.91,1,1],doubleSided:true,castShadow:false}});
  }
  update(pose,{dt=1/60,mode=this.mode,fpvTiltDeg=0,fpvFovDeg=105,thirdDistanceM=2.48,
    motors=null,collisionResolve=null}={}){
