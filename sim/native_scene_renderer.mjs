@@ -302,6 +302,16 @@ export class NativeSceneRenderer{
   if(!this.lost){if(m.vao)this.gl.deleteVertexArray(m.vao);for(const b of m.buffers||[])this.gl.deleteBuffer(b);if(m.element)this.gl.deleteBuffer(m.element);}
   m.vao=null;m.buffers=[];m.element=null;
  }
+ setVisible(id,visible){
+  const m=this.meshes.get(id);
+  if(!m)return false;
+  const requested=visible!==false;
+  if(m.visible===requested)return false;
+  m.visible=requested;
+  this.sceneRevision++;
+  if(castsShadow(m))this.shadowRevision++;
+  return true;
+ }
  remove(id){const m=this.meshes.get(id);if(!m)return false;this.free(m);this.meshes.delete(id);this.sceneRevision++;if(castsShadow(m))this.shadowRevision++;return true;}
  pollGpu(){
   if(!this.timer)return;
