@@ -17,6 +17,7 @@ import "./pad_actions.mjs";
 import "./settings_help.mjs";
 import "./foot_touch_controller.mjs";
 import * as THREE from "three";
+import {NativeCitySlice,NATIVE_CITY_SLICE_VERSION} from "./native_city_slice.mjs";
 import {Map as MapLibreMap,LngLat} from "maplibre-gl";
 import {CAMERA_SETTINGS_EVENT,loadCameraSettings,setCameraFovDeg} from "./camera_settings.mjs";
 import {FPS_WORLD_MAP_MAX_PITCH_DEG} from "./camera_pitch_contract.mjs";
@@ -533,7 +534,37 @@ class RealWorldBridge{
     if(!skipFreeLook)this.applyLookCamera(scene,camera);else this.stepLook(performance.now());this.syncMapCamera(camera,this.presentationFrameSerial,cameraMode);this.drawMinimap(performance.now());const renderer=this.threeRenderer;if(!renderer){camera.position.copy(basePosition);camera.quaternion.copy(baseQuaternion);camera.up.copy(baseUp);return;}
     this.savedBackground=scene.background;this.savedFog=scene.fog;this.hideTrainingWorld(scene);/* map is never drawn: keep the stylized sky background and fog */
     const clearAlpha=renderer.getClearAlpha();renderer.setClearAlpha(0);
-    try{this.runPreRenderHooks(scene,camera);renderer.render(scene,camera);this.realFrames++;const telemetryNow=performance.now();if(telemetryNow-this.lastThreeFrameTelemetryMs>=250){this.lastThreeFrameTelemetryMs=telemetryNow;const v=$("viewport");if(v){v.dataset.worldThreeFrames=String(this.realFrames);v.dataset.worldRenderTelemetry="250ms";}}}finally{renderer.setClearAlpha(clearAlpha);scene.background=this.savedBackground;scene.fog=this.savedFog;this.restoreTrainingWorld();camera.position.copy(basePosition);camera.quaternion.copy(baseQuaternion);camera.up.copy(baseUp);camera.updateMatrixWorld();}
+    try{
+      this.runPreRenderHooks(scene,camera);
+      // EXPERIMENTAL ONLY: same-resolution native WebGL2 live city via the
+      // existing depth buffer. Never enabled without an explicit query option;
+      // facades/PBR/shadows still require native equivalents. Preserve a full
+      // Three rendering fallback on any GL failure, never lose city solids.
+      const nativeCityRequested=new URLSearchParams(globalThis.location?.search||"").get("render")==="native-city";
+      let nativeCityCount=0,nativeCityError=null;
+      if(nativeCityRequested&&!this.nativeCityDisabled){
+        try{
+          if(!this.nativeCitySlice||this.nativeCitySlice.renderer!==renderer){
+            this.nativeCitySlice?.dispose();
+            this.nativeCitySlice=new NativeCitySlice(renderer);
+          }
+          nativeCityCount=this.nativeCitySlice.prepare(scene)||0;
+        }catch(error){
+          nativeCityError=error;this.nativeCityDisabled=true;
+          this.nativeCitySlice?.restore();
+        }
+      }
+      try{renderer.render(scene,camera);}
+      finally{if(nativeCityCount)this.nativeCitySlice.restore();}
+      if(nativeCityCount)try{
+        const stats=this.nativeCitySlice.draw(camera),v=$("viewport");
+        if(v&&stats){v.dataset.nativeCityDraws=String(stats.drawCalls);v.dataset.nativeCityTriangles=String(stats.triangles);v.dataset.nativeCityPath=NATIVE_CITY_SLICE_VERSION;}
+      }catch(error){
+        nativeCityError=error;this.nativeCityDisabled=true;
+        renderer.render(scene,camera);
+      }
+      if(nativeCityError){const v=$("viewport");if(v)v.dataset.nativeCityFallback="three";console.warn("Native city slice disabled; retained original game renderer",nativeCityError);}
+      this.realFrames++;const telemetryNow=performance.now();if(telemetryNow-this.lastThreeFrameTelemetryMs>=250){this.lastThreeFrameTelemetryMs=telemetryNow;const v=$("viewport");if(v){v.dataset.worldThreeFrames=String(this.realFrames);v.dataset.worldRenderTelemetry="250ms";}}}finally{renderer.setClearAlpha(clearAlpha);scene.background=this.savedBackground;scene.fog=this.savedFog;this.restoreTrainingWorld();camera.position.copy(basePosition);camera.quaternion.copy(baseQuaternion);camera.up.copy(baseUp);camera.updateMatrixWorld();}
   }
   renderFrame(renderer,scene,camera){
     this.attachThree(renderer,scene,camera);this.updateVsPose();
