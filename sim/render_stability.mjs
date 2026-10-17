@@ -3,12 +3,17 @@ const ANDROID_RE=/android/i;
 const HONOR_RE=/(?:\bhonor\b|\bhuawei\b|magicos)/i;
 const APPLE_MOBILE_RE=/(?:iphone|ipad|ipod)|(?:macintosh.*mobile)/i;
 
-export function renderPlatformProfile({userAgent="",devicePixelRatio=1,rendererName=""}={}){
+export function renderPlatformProfile({userAgent="",devicePixelRatio=1,rendererName="",search=String(globalThis.location?.search||"")}={}){
   const ua=String(userAgent||""),android=ANDROID_RE.test(ua),honor=HONOR_RE.test(ua),appleMobile=APPLE_MOBILE_RE.test(ua),software=SOFTWARE_RENDERER_RE.test(String(rendererName||""));
+  const fastWebGL=new URLSearchParams(String(search||"")).get("render")==="fast";
   const nativePixelRatio=Math.max(.25,Number(devicePixelRatio)||1);const hq=/[?&]hq=1/.test(String(globalThis.location?.search||""));let pixelRatioCeiling=software?Math.min(nativePixelRatio,hq?1:.30):android?Math.min(nativePixelRatio,1):Math.min(nativePixelRatio,1.25);
   // Sharper image on capable phones (1x on a 3x iPhone looked pixelated).
   if(!software&&android)pixelRatioCeiling=Math.min(nativePixelRatio,1.15);else if(!software&&appleMobile)pixelRatioCeiling=Math.min(nativePixelRatio,1.5);else if(!software)pixelRatioCeiling=Math.min(nativePixelRatio,1.5);
-  return Object.freeze({android,honor,appleMobile,software,pixelRatioCeiling,stableBackbuffer:android||honor,canvasDesynchronized:false});
+  // Fixed-at-start fast preset: no runtime backbuffer reallocations or shimmer.
+  // The graphics API is already WebGL; reducing fragment workload is measurable
+  // without replacing the scene graph or changing input/physics semantics.
+  if(fastWebGL&&!software)pixelRatioCeiling=Math.min(pixelRatioCeiling,1);
+  return Object.freeze({android,honor,appleMobile,software,fastWebGL,pixelRatioCeiling,stableBackbuffer:android||honor,canvasDesynchronized:false});
 }
 
 export function quantizedViewportSize(width,height){
