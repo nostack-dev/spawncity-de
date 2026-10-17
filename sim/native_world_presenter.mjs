@@ -8,11 +8,12 @@ import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
+import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
 export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
 export class NativeWorldPresenter{
- constructor(canvas,{physics,population=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
+ constructor(canvas,{physics,population=null,flight=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
   if(!physics?.bodies||!physics?.renderPose)throw Error("native world requires authoritative Box3D runtime");
   this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
   this.terrain=new NativeTerrainStream(this.renderer,{...terrainOptions,...(heightAt?{heightAt}:null)});
@@ -20,13 +21,24 @@ export class NativeWorldPresenter{
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
   this.rigids=new NativeRigidVisuals(this.renderer,physics);
   this.people=population?new NativePedestrianVisuals(this.renderer,population):null;
+  if(flight&&typeof flight.presentationPose!=="function")throw Error("native flight must expose authoritative Box3D presentationPose()");
+  this.flight=flight;
+  this.airframe=flight?new NativeAirframePresentation(this.renderer,{span:flight.p?.span??.25,propD:flight.p?.propD??.11}):null;
+  this.flightCameraMode="follow";this.flightCameraSettings={};this.flightCameraActive=Boolean(flight);
+  this.lastFrameAt=null;
   this.camera=null;this.running=false;this.disposed=false;this.lastTerrainAt=-Infinity;
   this.terrainPromise=null;this.pendingCity=null;this.error=null;this.frameNumber=0;
   this.drawStats=null;this.requestFrame=null;this.onError=null;
  }
+ setFlightCameraMode(mode,settings={}){
+  if(!this.airframe)throw Error("native drone flight not configured");
+  if(!["fpv","follow","third"].includes(mode))throw Error("invalid native drone camera mode");
+  this.flightCameraMode=mode;this.flightCameraSettings={...settings};this.flightCameraActive=true;
+ }
  setCamera(input){
   if(!finite3(input?.eye)||!finite3(input?.target)||!(input.fov>0&&input.fov<Math.PI)||!(input.far>input.near))
    throw Error("native game needs a valid authoritative camera");
+  this.flightCameraActive=false;
   this.camera={
     eye:Array.from(input.eye),target:Array.from(input.target),
     up:finite3(input.up)?Array.from(input.up):[0,0,1],
@@ -62,6 +74,18 @@ export class NativeWorldPresenter{
  }
  draw(now=performance.now()){
   if(this.disposed)throw Error("native world disposed");
+  // The *same* Box3D presentationPose used by the original simulator now
+  // feeds only the native GPU meshes; no parallel visual physics or Three.
+  if(this.airframe){
+   const dt=this.lastFrameAt===null?1/60:Math.min(.1,Math.max(0,(now-this.lastFrameAt)/1000));
+   const frame=this.airframe.update(this.flight.presentationPose(),{
+    dt,mode:this.flightCameraMode,motors:this.flight.motorOmega,
+    ...this.flightCameraSettings
+   });
+   if(this.flightCameraActive)this.camera={eye:frame.eye,target:frame.target,up:frame.up,
+     fov:this.renderer.fov,near:this.flightCameraMode==="fpv"?.02:.06,far:1500};
+  }
+  this.lastFrameAt=now;
   if(!this.camera)throw Error("native world requires camera before rendering");
   const canvas=this.renderer.canvas;
   // The document/layout owns CSS dimensions. The sole native canvas owns
@@ -88,7 +112,7 @@ export class NativeWorldPresenter{
  stop(){const was=this.running;this.running=false;return was;}
  dispose(){
   if(this.disposed)return;
-  this.stop();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();
+  this.stop();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
   this.renderer.dispose();this.disposed=true;
  }
 }
