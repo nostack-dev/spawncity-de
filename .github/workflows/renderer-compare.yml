@@ -139,3 +139,33 @@ jobs:
           name: spawncity-native-real-city-proof
           path: artifacts/native-real-city/
           if-no-files-found: warn
+
+  live-native-city-slice:
+    # Inject this PR's real raw WebGL2 city pass into the published game.
+    # Compare a complete gameplay frame before/after, without publishing the
+    # incomplete path or modifying the real host.
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Bundle candidate mixed-renderer live probe
+        run: |
+          npm install --prefix /tmp/native-city-live --ignore-scripts --no-audit --no-fund three@0.185.1 puppeteer-core@24.16.0 esbuild@0.25.8 pngjs@7.0.0
+          ln -s /tmp/native-city-live/node_modules node_modules
+          node --check tests/native_city_live_proof.mjs
+          ./node_modules/.bin/esbuild tests/native_city_live_hook.mjs --bundle --format=iife --platform=browser --target=es2022 --outfile=/tmp/native-city-live.bundle.js
+      - name: Compare full-frame real game against candidate opt-in city pass
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_city_live_proof.mjs "$(node tools/public_site.mjs origin)/drone_simulator.html"
+      - name: Save full-game visual differences and opt-in runtime benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-native-city-live-trial
+          path: artifacts/native-city-live/
+          if-no-files-found: warn
