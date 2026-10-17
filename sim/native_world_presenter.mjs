@@ -6,15 +6,17 @@ import {NativeSceneRenderer} from "./native_scene_renderer.mjs";
 import {NativeCityStream} from "./native_city_stream.mjs";
 import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
+import {NativeRoadStream} from "./native_road_stream.mjs";
 export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
 export class NativeWorldPresenter{
- constructor(canvas,{physics,heightAt,rendererOptions={},terrainOptions={},cityOptions={}}={}){
+ constructor(canvas,{physics,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
   if(!physics?.bodies||!physics?.renderPose)throw Error("native world requires authoritative Box3D runtime");
   this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
   this.terrain=new NativeTerrainStream(this.renderer,{...terrainOptions,...(heightAt?{heightAt}:null)});
   this.city=new NativeCityStream(this.renderer,cityOptions);
+  this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
   this.rigids=new NativeRigidVisuals(this.renderer,physics);
   this.camera=null;this.running=false;this.disposed=false;this.lastTerrainAt=-Infinity;
   this.terrainPromise=null;this.pendingCity=null;this.error=null;this.frameNumber=0;
@@ -29,6 +31,11 @@ export class NativeWorldPresenter{
     fov:input.fov,near:input.near,far:input.far
   };
  }
+ async updateRoadFeatures(features,options={}){
+  if(this.disposed)throw Error("native world disposed");
+  return this.roads.ingest(features,options);
+ }
+ invalidateRoads(){this.roads.invalidate();}
  async updateCityFootprints(footprints,options={}){
   if(this.disposed)throw Error("native world disposed");
   // All city geometry comes from the same Box3D building collision footprints.
@@ -72,14 +79,14 @@ export class NativeWorldPresenter{
   const gpu=this.renderer.render();
   this.frameNumber++;
   this.drawStats={frame:this.frameNumber,gpu,physics,
-    terrain:this.terrain.stats,city:this.city.lastStats,renderer:"native-webgl2-only"};
+    terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,renderer:"native-webgl2-only"};
   return this.drawStats;
  }
  pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");return this.renderer.pick(x,y,options);}
  stop(){const was=this.running;this.running=false;return was;}
  dispose(){
   if(this.disposed)return;
-  this.stop();this.city.dispose();this.terrain.dispose();this.rigids.dispose();
+  this.stop();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();
   this.renderer.dispose();this.disposed=true;
  }
 }
