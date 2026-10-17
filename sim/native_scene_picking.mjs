@@ -59,6 +59,19 @@ function triangleRay(origin,direction,a,b,c,maxDistance,doubleSided){
 }
 function readVertex(values,index){return [values[index*3],values[index*3+1],values[index*3+2]];}
 function worldVertex(local,m){const p=transformPoint(m,local);return [p[0],p[1],p[2]];}
+function posedVertex(data,vertex){
+ const local=readVertex(data.p,vertex),skin=data.skin;
+ if(!skin)return local;
+ const i=vertex*4,out=[0,0,0];
+ for(let k=0;k<4;k++){
+  const weight=skin.weights[i+k];if(weight===0)continue;
+  const joint=skin.joints[i+k],offset=joint*16;
+  const m=skin.bones.subarray(offset,offset+16);
+  const p=transformPoint(m,local);
+  for(let axis=0;axis<3;axis++)out[axis]+=p[axis]*weight;
+ }
+ return out;
+}
 export function pickNativeMeshes(meshes,ray,{maxDistance=1500,includeInvisible=false,ignoreId=null}={}){
  if(!ray||ray.origin?.length!==3||ray.direction?.length!==3||!(maxDistance>0))throw Error("invalid native pick ray");
  const direction=norm(ray.direction),origin=ray.origin;
@@ -68,18 +81,17 @@ export function pickNativeMeshes(meshes,ray,{maxDistance=1500,includeInvisible=f
   if(!node||(!includeInvisible&&node.visible===false)||node.id===ignoreId)continue;
   const d=node.data;
   if(!d?.p||!d?.transforms?.length)continue;
-  // CPU hit testing cannot guess a skinned pose: never return a stale or
-  // physically false triangle position for an animated character.
-  if(d.skin){skippedSkinned++;continue;}
-  if(!sphereIntersectsRay(origin,direction,node.worldBounds,maxDistance)){boundsRejected++;continue;}
+  // A skinned character's pose may exceed the undeformed mesh's bounds:
+  // never cull it from the static bounding sphere. Pick its CURRENT bones.
+  if(!d.skin&&!sphereIntersectsRay(origin,direction,node.worldBounds,maxDistance)){boundsRejected++;continue;}
   const indices=d.indices,faceCount=(indices?indices.length:d.p.length/3)/3,instanceCount=d.count??d.transforms.length/16;
   for(let instance=0;instance<instanceCount;instance++){
    const matrix=d.transforms.subarray(instance*16,instance*16+16);
    for(let f=0;f<faceCount;f++){
     const k=f*3;
     const ia=indices?indices[k]:k,ib=indices?indices[k+1]:k+1,ic=indices?indices[k+2]:k+2;
-    const a=worldVertex(readVertex(d.p,ia),matrix),b=worldVertex(readVertex(d.p,ib),matrix),
-     c=worldVertex(readVertex(d.p,ic),matrix);
+    const a=worldVertex(posedVertex(d,ia),matrix),b=worldVertex(posedVertex(d,ib),matrix),
+     c=worldVertex(posedVertex(d,ic),matrix);
     trianglesExamined++;
     const found=triangleRay(origin,direction,a,b,c,nearest?.distance??maxDistance,node.material?.doubleSided!==false);
     if(found)nearest={id:node.id,instance,triangle:f,...found,point:origin.map((v,i)=>v+found.distance*direction[i])};
