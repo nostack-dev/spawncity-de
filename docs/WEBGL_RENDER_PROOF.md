@@ -66,3 +66,31 @@ very close pixels and lower overhead in the CI software microbenchmark.
 It is **not yet technically proven** as a safe or faster complete replacement
 for the current SpawnCity renderer. Claims of production GPU speedup require
 real-device evidence.
+
+## Full-engine migration status (CI source audit, 2026-10-17)
+
+The source-level audit of the running project found **75 modules still importing
+Three.js**, **2,290 Three.js symbol calls**, **79 shader/material/renderer hooks**,
+one Three.js renderer constructor and the Three.js production bundle dependency.
+Those are actual current CI counts from the repository, not estimates.
+
+A first reusable **native WebGL2 static batch renderer** is now implemented in
+`sim/native_webgl2_static.mjs`; the identical geometry proof exercises this
+module directly. It has explicit buffer/program disposal and supports opaque
+vertex-color triangle batches with one camera matrix. It is not wired to the
+game's main presentation renderer and cannot render actors, PBR materials,
+shadows, sky, instanced scenery, missiles or postprocessing.
+
+`tests/renderer_acceptance_gate.mjs --gate` intentionally **fails CI** until
+Three.js is absent from the actual game build and 15 full-game real-device
+measurements demonstrate the same DPR and graphics quality, similar screenshots
+and >=15% faster GPU p95 under real iPhone Safari, Android Chrome and desktop
+at each of five game modes. The 1,024-building static proof and an opt-in DPR
+reduction cannot satisfy this gate. This prevents merging a false full migration.
+
+The work remaining is not a renderer constructor swap: scene graph/math and
+transform state, buffer/VAO lifecycle, per-material and custom shader parity,
+instancing/skin and actor rig matrices, lighting/shadow maps, fog/sky/tone
+mapping, post-processing, GPU picking / raycast integration, context loss,
+all three platforms, fullscreen, and PWA cache semantics require replacement
+with equivalent code and passing regression checks.
