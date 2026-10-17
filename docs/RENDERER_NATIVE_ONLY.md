@@ -59,12 +59,19 @@ renderer infrastructure, **not** a finished SpawnCity integration:
   update uniforms rather than rebuilding all vertex buffers.
 - Explicit WebGL context loss/recovery, resource deletion, optional async
   EXT_disjoint_timer_query_webgl2 GPU frame timing (returns null if unsupported).
+- Native building geometry generated from exactly the `outer`/`holes`/base/top
+  footprint structure shared with the existing OSM+Box3D system. New
+  `sim/native_city_geometry.mjs` exports time-sliced chunk builders with
+  wall-facing normals, metre-based procedural facade UVs, damaged roof heights,
+  concave roofs and real open courtyard holes. Roofs are triangulated by
+  vendored ISC Mapbox Earcut v3.0.2 (license preserved). Invalid roofs skip
+  the building instead of silently creating a nonphysical solid.
 - A real Chromium WebGL2 smoke test draws 900 building instances plus one
   skinned actor: 937 total instances, 4 draws, 11,234 triangles, no GL errors.
   This uses **software SwiftShader** and deliberately does **not** assert real
   device FPS gains or full-scene visual equivalence.
 
-This implementation still lacks a complete native world/character asset
+This implementation still lacks a full production native world/character asset
 pipeline, full skinned rig behavior, cascaded sun shadow mapping, sky/weather,
 post-FX, projectile/particle VFX, game-world ray picking, vehicles/terrain,
 interiors and the production renderer hookup. The player cannot use it yet.
