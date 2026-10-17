@@ -1,4 +1,5 @@
 import {NativeWorldPresenter} from "../sim/native_world_presenter.mjs";
+(async()=>{
 const canvas=document.getElementById("native-world");
 const p=new Map([
  ["taxi", {position:[8,-4,1],rotation:[0,0,0,1],wheels:[]}],
@@ -42,3 +43,5 @@ globalThis.__nativeWorldProof={
  context:String(gl.getParameter(gl.RENDERER))
 };
 world.dispose();
+
+})().catch(error=>{globalThis.__nativeWorldProof={error:String(error?.stack||error)};});
