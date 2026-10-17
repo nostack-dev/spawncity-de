@@ -40,6 +40,9 @@ world.draw(performance.now());
 await world.terrainPromise;
 const first=world.draw(performance.now()+300);
 const firstDraws=first.gpu.drawCalls;
+const stableSun=world.draw(performance.now()+325);
+if(!stableSun.gpu.shadowReused)
+ throw Error("rotor animation or unchanged crowds incorrectly invalidated expensive sunlight depth pass");
 if(!world.renderer.meshes.has("vs/airframe")||!world.renderer.meshes.has("vs/rotors"))
  throw Error("existing VsPoseTimeline did not reach sole native multiplayer GPU meshes");
 p.get("taxi").position[0]=15;
