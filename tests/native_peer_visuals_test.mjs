@@ -26,7 +26,8 @@ assert.equal(calls.filter(c=>c[0]==="upsert").length,2,"one-time meshes; no per-
 timeline.push({p:[5,6,9],q:[0,0,0,1],v:[0,0,0],t:1150},1150);
 state=peer.update(1200);
 assert.equal(state.visible,true);
-assert.equal(meshes.get("vs/airframe").instances.transforms[12],5);
+assert.ok(Math.abs(meshes.get("vs/airframe").instances.transforms[12]-timeline.sample(1200).p[0])<1e-5,
+ "native GPU must use the actual network-interpolated/extrapolated pose, not raw last-packet coordinates");
 assert.equal(calls.filter(c=>c[0]==="upsert").length,2,"existing GPU buffers reused for each packet");
 mode="foot";
 assert.equal(peer.update(1220).visible,false,"foot mode must not render a second drone");
