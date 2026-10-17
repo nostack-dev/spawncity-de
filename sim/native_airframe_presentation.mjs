@@ -2,7 +2,7 @@
 // Implements the CURRENT simulator's quad body axis (-X forward), its 4
 // motor spacing, FPV rigid optical mount, follow/third stabilized camera.
 // No THREE scene, no graphics fallback or secondary physics state.
-import {fromTRS,multiply4} from "./native_render_math.mjs";
+import {fromTRS,multiply4,identity4} from "./native_render_math.mjs";
 import {StabilizedExternalCameraRig,externalCameraFrame} from "./camera_stabilization.mjs";
 export const NATIVE_AIRFRAME_PRESENTATION_VERSION="box3d-native-airframe-v1";
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
@@ -74,10 +74,8 @@ export class NativeAirframePresentation{
   this.cameraRig=new StabilizedExternalCameraRig();
   this.mode="follow";this.phases=[0,0,0,0];this.initialized=false;
   renderer.upsert("flight/airframe",{...bodyGeometry(span),material:{color:[1,1,1,1],doubleSided:true}});
-  renderer.upsert("flight/rotors",{...rotorGeometry(),instances:{transforms:new Float32Array(4*16)},
+  renderer.upsert("flight/rotors",{...rotorGeometry(),instances:{transforms:new Float32Array([...identity4(),...identity4(),...identity4(),...identity4()])},
     material:{color:[.85,.91,1,1],doubleSided:true}});
-  // The zero transform above is singular; initialise the four rotor matrices
-  // to identity in upsert, then update to the live pose on the first frame.
  }
  update(pose,{dt=1/60,mode=this.mode,fpvTiltDeg=0,fpvFovDeg=105,thirdDistanceM=2.48,
    motors=null,collisionResolve=null}={}){
@@ -101,7 +99,7 @@ export class NativeAirframePresentation{
   let eye,target,cameraUp=[0,0,1],fov,near;
   if(mode==="fpv"){
    const tilt=clamp(fpvTiltDeg,-75,75)*Math.PI/180,cs=Math.cos(tilt),sn=Math.sin(tilt);
-   const dir=add(fwd,up,sn/cs),camUp=add(up,fwd,-sn/cs);
+   const dir=fwd.map((v,i)=>v*cs+up[i]*sn),camUp=up.map((v,i)=>v*cs-fwd[i]*sn);
    eye=add(add(position,fwd,.102),up,.028);
    target=add(eye,dir,4);cameraUp=camUp;
    this.cameraRig.invalidate();fov=clamp(fpvFovDeg,35,140);near=.02;
