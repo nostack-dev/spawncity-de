@@ -62,6 +62,7 @@ jobs:
           node tests/native_airframe_presentation_test.mjs
           node tests/native_rigid_visuals_test.mjs
           node tests/native_world_physics_view_test.mjs
+          node tests/native_world_runtime_view_test.mjs
           node tests/native_gameplay_targeting_test.mjs
           node tests/native_osm_world_integration_test.mjs
           node tests/native_flight_pose_view_test.mjs
