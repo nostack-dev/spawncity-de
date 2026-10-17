@@ -6,7 +6,7 @@ import {multiply4,perspective,lookAt} from "./native_render_math.mjs";
 export const NATIVE_PICKING_VERSION="native-only-screen-ray-triangle-v1";
 const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
-const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2]];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 const norm=x=>{const l=Math.hypot(...x);if(!Number.isFinite(l)||l<1e-12)throw Error("invalid ray direction");return x.map(v=>v/l);};
 function invert4(m){
  if(m?.length!==16)throw Error("inverse requires 4x4");
