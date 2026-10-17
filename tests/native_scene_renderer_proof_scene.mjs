@@ -7,10 +7,11 @@ const canvas=document.getElementById("native-scene"),width=960,height=540;
 const renderer=new NativeSceneRenderer(canvas,{width,height});
 renderer.setCamera({eye:[95,-122,115],target:[0,0,13],near:.3,far:1000,fov:Math.PI/2.9});
 renderer.setLighting({sunDirection:[-.4,-.6,.8],skyColor:[.53,.63,.74],groundColor:[.27,.33,.27],exposure:1.15,fogDensity:.0005});
-const p=[],colors=[];
+const p=[],colors=[],uvs=[];
 const face=(a,b,c,d,col)=>{
   for(const index of [0,1,2,0,2,3]){
     const v=[a,b,c,d][index];p.push(...v);colors.push(...col);
+    const tex=[[0,0],[1,0],[1,1],[0,1]][index];uvs.push(...tex);
   }
 };
 face([-.5,-.5,0],[.5,-.5,0],[.5,-.5,1],[-.5,-.5,1],[.85,.72,.6]);
@@ -31,8 +32,9 @@ for(let i=0;i<count;i++){
 renderer.upsert("city",{
   positions:new Float32Array(p),
   colors:new Float32Array(colors),
+  uvs:new Float32Array(uvs),
   instances:{transforms:new Float32Array(transforms),tints:new Float32Array(tints)},
-  material:{color:[1,1,1,1],alphaMode:"opaque",doubleSided:true}
+  material:{color:[1,1,1,1],alphaMode:"opaque",doubleSided:true,facade:true}
 });
 renderer.upsert("ground",{
   positions:new Float32Array([-110,-110,-.1,110,-110,-.1,110,110,-.1,-110,-110,-.1,110,110,-.1,-110,110,-.1]),
