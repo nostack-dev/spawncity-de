@@ -27,6 +27,7 @@ export class NativeWorldPresenter{
   this.city=new NativeCityStream(this.renderer,cityOptions);
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
   this.rigids=new NativeRigidVisuals(this.renderer,poseSource);
+  this.worldPhysics=worldPhysics;
   this.people=population?new NativePedestrianVisuals(this.renderer,population):null;
   this.peer=peer?new NativePeerVisuals(this.renderer,peer):null;
   if(flight&&flightPhysics)throw Error("native world requires exactly one 1 kHz flight pose authority");
@@ -146,7 +147,26 @@ export class NativeWorldPresenter{
  }
  pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");
   const pixel=nativePointerToDrawingPixels(this.renderer.canvas,x,y,this.renderer.width,this.renderer.height);
-  return this.renderer.pick(pixel.x,pixel.y,options);
+  const visual=this.renderer.pick(pixel.x,pixel.y,options);
+  if(visual.hit){
+   const bodyId=this.rigids.bodyIdForHit(visual.hit);
+   if(bodyId)visual.hit={...visual.hit,bodyId,source:"native-webgl2"};
+  }
+  return visual;
+ }
+ pickGameplay(x,y,{maxDistance=this.renderer.far,ignoreId=null}={}){
+  if(!this.camera)throw Error("native camera unavailable");
+  if(!this.worldPhysics||typeof this.worldPhysics.raycast!=="function")
+   throw Error("native game targeting requires authoritative Box3D raycast");
+  const pixel=nativePointerToDrawingPixels(this.renderer.canvas,x,y,this.renderer.width,this.renderer.height);
+  const ray=this.renderer.getScreenRay(pixel.x,pixel.y);
+  const physical=this.worldPhysics.raycast(ray.origin,ray.direction,maxDistance);
+  const visual=this.pick(x,y,{maxDistance,ignoreId});
+  // The Box3D result remains authoritative for gameplay damage, walls and
+  // occlusion. The native mesh hit is presentation-only and supplies a visual
+  // triangle/bone; never turn a decorative mesh into a fake damage collider.
+  return {hit:physical?{...physical,distance:physical.distanceM,source:"box3d"}:null,
+   visualHit:visual.hit||null,ray,trianglesExamined:visual.trianglesExamined};
  }
  stop(){const was=this.running;this.running=false;this.frameEpoch++;return was;}
  dispose(){
