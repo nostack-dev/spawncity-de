@@ -561,7 +561,7 @@ function forceMoveRelease(reason="recovery"){
   if(activeMovePointer===null||!activeMoveElement)return false;try{activeMoveElement.dispatchEvent(new PointerEvent("pointercancel",{bubbles:true,cancelable:true,pointerId:activeMovePointer,pointerType:"touch"}));}catch{}const knob=activeMoveElement.querySelector?.(".knob");if(knob){knob.style.left="50%";knob.style.top="50%";}activeMovePointer=null;activeMoveElement=null;const view=viewport();if(view){view.dataset.walkMoveStickRecovery=reason;view.dataset.walkMoveStickRecoveries=String((Number(view.dataset.walkMoveStickRecoveries)||0)+1);}return true;
 }
 function inputCapture(event){
-  if(event.type==="pointermove"&&isDrone()&&droneWeapon==="guided"&&!event.target?.closest?.("button,#worldLookHud,#gameMenu")){droneAim.x=event.clientX;droneAim.y=event.clientY;}
+  if(event.type==="pointermove"&&isDrone()&&droneWeapon==="guided"&&!event.target?.closest?.("button,#worldLookHud,#gameMenu,#soloLeft,#soloRight,#soloTopbar,#mobileGameplayDock,.solo-action")){droneAim.x=event.clientX;droneAim.y=event.clientY;}
   const target=event.target instanceof Element?event.target:null;if(event.type==="pointerdown"&&target?.closest("#footMove")){activeMovePointer=event.pointerId;activeMoveElement=target.closest("#footMove");}
   if((event.type==="pointerup"||event.type==="pointercancel")&&event.pointerId===activeMovePointer){activeMovePointer=null;activeMoveElement=null;}
   if(event.type==="pointerdown"&&isFoot()&&event.pointerType!=="mouse"&&target?.closest("#footLookZone")){tap={id:event.pointerId,x:event.clientX,y:event.clientY,lastX:event.clientX,lastY:event.clientY,at:performance.now(),moved:false};}
