@@ -60,7 +60,7 @@ export class NativePeerVisuals{
    this.renderer.upsert(BODY_ID,{...this.bodyGeometry,instances:{transforms:body},
      material:{color:[.85,1,1,1],doubleSided:true}});
    this.renderer.upsert(ROTOR_ID,{...this.rotorGeometry,instances:{transforms:rotors,tints},
-     material:{color:[1,1,1,1],doubleSided:true}});
+     material:{color:[1,1,1,1],doubleSided:true,castShadow:false}});
    this.live=true;
   }
   this.stats={visible:true,mode:sample.stale?"stale-hold":"network-interpolated",
