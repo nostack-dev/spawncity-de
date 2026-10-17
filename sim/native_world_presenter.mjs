@@ -8,6 +8,7 @@ import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
 import {nativeWorldPhysicsView} from "./native_world_physics_view.mjs";
 import {nativeFlightPoseView} from "./native_flight_pose_view.mjs";
+import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
@@ -37,6 +38,7 @@ export class NativeWorldPresenter{
   this.lastFrameAt=null;
   this.camera=null;this.running=false;this.disposed=false;this.lastTerrainAt=-Infinity;
   this.terrainPromise=null;this.pendingCity=null;this.error=null;this.frameNumber=0;
+  this.osmOriginKey=null;
   this.drawStats=null;this.requestFrame=null;this.onError=null;this.frameEpoch=0;
  }
  setFlightCameraMode(mode,settings={}){
@@ -68,6 +70,24 @@ export class NativeWorldPresenter{
  async updateCityFeatures(features,{project,center,radiusM,revision,damageTop}={}){
   if(this.disposed)throw Error("native world disposed");
   return this.city.ingestFeatures(features,{project,center,radiusM,revision,damageTop});
+ }
+ async updateOsmFeatures({origin,buildings=[],roads=[],center=[0,0],revision="",damageTop=null,yieldFrame}={}){
+  if(this.disposed)throw Error("native world disposed");
+  if(!Array.isArray(buildings)||!Array.isArray(roads)||center?.length!==2||!center.every(Number.isFinite))
+   throw Error("native OSM frame needs building/road features and Box3D metric camera center");
+  const {key,project}=nativeOsmProjector(origin);
+  // Changing GPS origin changes EVERY Box3D-relative metre coordinate:
+  // never render stale GPU tiles from a previous coordinate system.
+  if(this.osmOriginKey!==key){
+   this.city.clear();this.roads.clear();this.osmOriginKey=key;
+  }
+  this.roads.options.project=project;
+  const opts=yieldFrame?{yieldFrame}:{};
+  const [city,street]=await Promise.all([
+   this.city.ingestFeatures(buildings,{project,center,revision:key+"|"+revision,damageTop,...opts}),
+   this.roads.ingest(roads,{center,revision:key+"|"+revision,...opts})
+  ]);
+  return {origin:key,city,roads:street};
  }
  start({requestFrame=globalThis.requestAnimationFrame?.bind(globalThis),onError=null}={}){
   if(this.disposed)throw Error("native world disposed");
