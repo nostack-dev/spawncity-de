@@ -1,6 +1,7 @@
 import {NativeSceneRenderer} from "../sim/native_scene_renderer.mjs";
 import {fromTRS} from "../sim/native_render_math.mjs";
 import {buildNativeCityGeometry} from "../sim/native_city_geometry.mjs";
+import {buildNativeTerrainTile} from "../sim/native_terrain_geometry.mjs";
 import {packCityMesh} from "../sim/native_city_indexed.mjs";
 import {buildingFootprintsFromFeatures} from "../sim/world_building_collisions.mjs";
 
@@ -39,10 +40,13 @@ renderer.upsert("city",{
   instances:{transforms:new Float32Array(transforms),tints:new Float32Array(tints)},
   material:{color:[1,1,1,1],alphaMode:"opaque",doubleSided:true,facade:true}
 });
+// Native indexed 5 m terrain using exactly the Box3D SW-NE cell diagonal.
+const nativeTerrain=buildNativeTerrainTile({x0:-120,y0:-120,cells:48,step:5,
+ heightAt:(x,y)=>Math.sin(x/18)*.6+Math.cos(y/24)*.45});
 renderer.upsert("ground",{
-  positions:new Float32Array([-110,-110,-.1,110,-110,-.1,110,110,-.1,-110,-110,-.1,110,110,-.1,-110,110,-.1]),
-  colors:new Float32Array(18).fill(.52),
-  material:{color:[.24,.48,.25,1],doubleSided:true}
+ positions:nativeTerrain.positions,normals:nativeTerrain.normals,
+ colors:nativeTerrain.colors,uvs:nativeTerrain.uvs,indices:nativeTerrain.indices,
+ material:{color:[.8,.91,.72,1],doubleSided:true}
 });
 const glassInstances=[];
 for(let i=0;i<35;i++)glassInstances.push(...fromTRS([(i%7-3)*12,(Math.floor(i/7)-2)*15,3],[0,0,0,1],[3,3,5]));
@@ -117,6 +121,7 @@ times.sort((a,b)=>a-b);
 globalThis.__nativeSceneProof={
   schema:"native-webgl2-scene-nonproduction-proof-v1",
   osmBuildingFootprints:nativeCity.built,osmCityChunks:nativeCity.chunks.length,
+  terrainTriangles:nativeTerrain.triangles,terrainVertices:nativeTerrain.vertexCount,terrainIndexed:nativeTerrain.indices.length>0,
   indexedCityChunks,sourceCityGpuBytes,savedCityGpuBytes,
   kind:"new-native-engine-only-not-game-migration",count,backend:"native-webgl2",
   drawCalls:stats.drawCalls,triangles:stats.triangles,instances:stats.instances,culledMeshes:stats.culledMeshes,
