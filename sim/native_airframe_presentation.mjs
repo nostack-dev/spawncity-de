@@ -120,7 +120,7 @@ export class NativeAirframePresentation{
     if(corrected?.position?.length===3&&finite(corrected.position))eye=[...corrected.position];
   }
   this.renderer.setCamera({eye,target,up:cameraUp,fov:fov*Math.PI/180,near,far:1500});
-  return {mode,eye,target,up:cameraUp,position,quaternion:q,model};
+  return {mode,eye,target,up:cameraUp,fov:fov*Math.PI/180,near,far:1500,position,quaternion:q,model};
  }
  dispose(){if(this.renderer){this.renderer.remove("flight/airframe");this.renderer.remove("flight/rotors");this.renderer=null;}}
 }
