@@ -31,6 +31,33 @@ const newest=await asyncStream.ingestFootprints([b],{revision:"new"});
 assert.equal(newest.uploaded,1);
 release();assert.equal((await slow).cancelled,true,"stale asynchronous data may never overwrite current city");
 asyncStream.dispose();
+// GPU uploads must yield to browser input/paint, rather than blocking one frame.
+const frameWrites=[],frameSamples=[],frameRemoved=[];
+const budgetRenderer={
+ upsert(id){frameWrites.push(id);},
+ remove(id){frameRemoved.push(id);return true;}
+};
+const budget=new NativeCityStream(budgetRenderer,{chunkSize:100,buildingsPerStep:20,uploadsPerFrame:1});
+const budgetResult=await budget.ingestFootprints([a,b],{yieldFrame:async()=>{frameSamples.push(frameWrites.length);}});
+assert.equal(budgetResult.uploaded,2);
+assert.deepEqual(frameSamples,[1,2],"GPU uploads should be split across frame boundaries");
+budget.dispose();
+// A superseding fetch during GPU upload cannot leak a chunk: the previous
+// upload was tracked immediately and the new snapshot removes it.
+const liveIds=new Set(),throttleRenderer={
+ upsert(id){liveIds.add(id);},
+ remove(id){liveIds.delete(id);return true;}
+};
+const throttled=new NativeCityStream(throttleRenderer,{chunkSize:100,buildingsPerStep:20,uploadsPerFrame:1});
+let unblock;
+const blockingFrame=new Promise(resolve=>{unblock=resolve;});
+const superseded=throttled.ingestFootprints([a,b],{yieldFrame:()=>blockingFrame});
+assert.ok(liveIds.size===1,"one chunk staged before yielding");
+const newer=await throttled.ingestFootprints([b],{yieldFrame:async()=>{}});
+assert.equal(newer.chunks,1);
+unblock();assert.equal((await superseded).cancelled,true);
+assert.equal(liveIds.size,1,"superseded GPU upload must not leak a stale chunk");
+throttled.dispose();
 const gpuUploads=writes.length;
 assert.ok(gpuUploads<8,"chunk hash must avoid repeated GPU uploads");
 console.log("Native-only OSM renderer stream: stable hashes, crater updates, async cancellation, stale chunk eviction, no duplicate buffer upload:",gpuUploads);
