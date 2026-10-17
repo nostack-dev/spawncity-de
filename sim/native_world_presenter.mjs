@@ -1,0 +1,85 @@
+// Sole native WebGL2 presentation owner for a future SpawnCity engine cutover.
+// No Three.js import, no legacy GPU context or fallback. Existing Box3D
+// simulation owns ALL positions. This is an independent native game-world
+// composition entrypoint; the current live main does not use it yet.
+import {NativeSceneRenderer} from "./native_scene_renderer.mjs";
+import {NativeCityStream} from "./native_city_stream.mjs";
+import {NativeTerrainStream} from "./native_terrain_stream.mjs";
+import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
+export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
+const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
+const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
+export class NativeWorldPresenter{
+ constructor(canvas,{physics,heightAt,rendererOptions={},terrainOptions={},cityOptions={}}={}){
+  if(!physics?.bodies||!physics?.renderPose)throw Error("native world requires authoritative Box3D runtime");
+  this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
+  this.terrain=new NativeTerrainStream(this.renderer,{...terrainOptions,...(heightAt?{heightAt}:null)});
+  this.city=new NativeCityStream(this.renderer,cityOptions);
+  this.rigids=new NativeRigidVisuals(this.renderer,physics);
+  this.camera=null;this.running=false;this.disposed=false;this.lastTerrainAt=-Infinity;
+  this.terrainPromise=null;this.pendingCity=null;this.error=null;this.frameNumber=0;
+  this.drawStats=null;this.requestFrame=null;this.onError=null;
+ }
+ setCamera(input){
+  if(!finite3(input?.eye)||!finite3(input?.target)||!(input.fov>0&&input.fov<Math.PI)||!(input.far>input.near))
+   throw Error("native game needs a valid authoritative camera");
+  this.camera={
+    eye:Array.from(input.eye),target:Array.from(input.target),
+    up:finite3(input.up)?Array.from(input.up):[0,0,1],
+    fov:input.fov,near:input.near,far:input.far
+  };
+ }
+ async updateCityFootprints(footprints,options={}){
+  if(this.disposed)throw Error("native world disposed");
+  // All city geometry comes from the same Box3D building collision footprints.
+  // Concurrent map revisions are automatically rejected by NativeCityStream.
+  return this.city.ingestFootprints(footprints,options);
+ }
+ async updateCityFeatures(features,{project,center,radiusM,revision,damageTop}={}){
+  if(this.disposed)throw Error("native world disposed");
+  return this.city.ingestFeatures(features,{project,center,radiusM,revision,damageTop});
+ }
+ start({requestFrame=globalThis.requestAnimationFrame?.bind(globalThis),onError=null}={}){
+  if(this.disposed)throw Error("native world disposed");
+  if(this.running)return false;
+  if(typeof requestFrame!=="function")throw Error("browser animation frame required");
+  this.running=true;this.requestFrame=requestFrame;this.onError=onError;
+  const frame=now=>{
+   if(!this.running||this.disposed)return;
+   try{this.draw(now);}catch(error){this.error=error;this.running=false;this.onError?.(error);return;}
+   this.requestFrame(frame);
+  };
+  this.requestFrame(frame);return true;
+ }
+ draw(now=performance.now()){
+  if(this.disposed)throw Error("native world disposed");
+  if(!this.camera)throw Error("native world requires camera before rendering");
+  const canvas=this.renderer.canvas;
+  // The document/layout owns CSS dimensions. The sole native canvas owns
+  // backbuffer size. Do not force requestFullscreen or reinitialize GL.
+  const w=canvas.clientWidth||this.renderer.width,h=canvas.clientHeight||this.renderer.height;
+  if(w>0&&h>0)this.renderer.resize(w,h);
+  this.renderer.setCamera(this.camera);
+  const physics=this.rigids.update();
+  // View-radius data is reconciled asynchronously, at most every 250 ms.
+  // Rendering never awaits terrain triangulation/GPU tile uploads.
+  if(now-this.lastTerrainAt>=250&&!this.terrainPromise){
+   this.lastTerrainAt=now;
+   this.terrainPromise=this.terrain.update(this.camera.eye.slice(0,2),{yieldFrame:nextFrame})
+     .catch(error=>{this.error=error;this.running=false;this.onError?.(error);})
+     .finally(()=>{this.terrainPromise=null;});
+  }
+  const gpu=this.renderer.render();
+  this.frameNumber++;
+  this.drawStats={frame:this.frameNumber,gpu,physics,
+    terrain:this.terrain.stats,city:this.city.lastStats,renderer:"native-webgl2-only"};
+  return this.drawStats;
+ }
+ pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");return this.renderer.pick(x,y,options);}
+ stop(){const was=this.running;this.running=false;return was;}
+ dispose(){
+  if(this.disposed)return;
+  this.stop();this.city.dispose();this.terrain.dispose();this.rigids.dispose();
+  this.renderer.dispose();this.disposed=true;
+ }
+}
