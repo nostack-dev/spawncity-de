@@ -6,7 +6,7 @@ import {NativeSceneRenderer} from "./native_scene_renderer.mjs";
 import {NativeCityStream} from "./native_city_stream.mjs";
 import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
-import {nativeWorldPhysicsView} from "./native_world_physics_view.mjs";
+import {nativeWorldPhysicsView,nativeRigidRuntimeView} from "./native_world_physics_view.mjs";
 import {nativeFlightPoseView} from "./native_flight_pose_view.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
@@ -18,16 +18,17 @@ export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
 export class NativeWorldPresenter{
- constructor(canvas,{physics=null,worldPhysics=null,interpolationAlpha=()=>1,population=null,flight=null,flightPhysics=null,peer=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
-  if(physics&&worldPhysics)throw Error("native world requires exactly one Box3D pose authority");
-  const poseSource=worldPhysics?nativeWorldPhysicsView(worldPhysics,{alpha:interpolationAlpha}):physics;
+ constructor(canvas,{physics=null,worldPhysics=null,rigidRuntime=null,interpolationAlpha=()=>1,population=null,flight=null,flightPhysics=null,peer=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
+  if([physics,worldPhysics,rigidRuntime].filter(Boolean).length!==1)throw Error("native world requires exactly one Box3D pose authority");
+  const poseSource=rigidRuntime?nativeRigidRuntimeView(rigidRuntime)
+    :worldPhysics?nativeWorldPhysicsView(worldPhysics,{alpha:interpolationAlpha}):physics;
   if(!poseSource?.bodies||!poseSource?.renderPose)throw Error("native world requires authoritative Box3D runtime");
   this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
   this.terrain=new NativeTerrainStream(this.renderer,{...terrainOptions,...(heightAt?{heightAt}:null)});
   this.city=new NativeCityStream(this.renderer,cityOptions);
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
   this.rigids=new NativeRigidVisuals(this.renderer,poseSource);
-  this.worldPhysics=worldPhysics;
+  this.worldPhysics=rigidRuntime||worldPhysics;
   const crowdSource=typeof population?.nativePeople==="function"
    ?{people:()=>population.nativePeople(this.camera?.eye?.slice(0,2)??[0,0])}
    :population;
