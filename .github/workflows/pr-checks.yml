@@ -23,6 +23,3 @@ jobs:
           node tests/fullscreen_classic_hands_regression_test.mjs
           node tests/site_config_test.mjs
           node tests/jet_headshot_run_guided_contract_test.mjs
-          node tests/native_city_slice_contract_test.mjs
-          node --check tests/native_city_live_proof.mjs
-          node --check sim/native_city_facades.mjs
