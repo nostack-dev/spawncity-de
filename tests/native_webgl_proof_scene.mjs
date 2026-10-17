@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import {NativeStaticBatches} from "../sim/native_webgl2_static.mjs";
 
 // Isolated identical batched city-geometry experiment. NOT a substitute for
 // SpawnCity's real shaders, shadows, effects or a full engine migration.
@@ -17,12 +18,7 @@ renderer.shadowMap.enabled=false;
 const raw=nativeCanvas.getContext("webgl2",{antialias:false,alpha:false,preserveDrawingBuffer:true});
 if(!raw)throw Error("WebGL2 required for native comparison");
 raw.viewport(0,0,WIDTH,HEIGHT);raw.clearColor(0,0,0,1);raw.enable(raw.DEPTH_TEST);raw.depthFunc(raw.LEQUAL);raw.disable(raw.CULL_FACE);
-const vertexSource="#version 300 es\nprecision highp float;\nlayout(location=0) in vec3 position;\nlayout(location=1) in vec3 color;\nuniform mat4 mvp;\nout vec3 vColor;\nvoid main(){vColor=color;gl_Position=mvp*vec4(position,1.0);}";
-const fragmentSource="#version 300 es\nprecision highp float;\nin vec3 vColor;\nout vec4 outColor;\nvoid main(){outColor=vec4(vColor,1.0);}";
-function shader(type,source){const s=raw.createShader(type);raw.shaderSource(s,source);raw.compileShader(s);if(!raw.getShaderParameter(s,raw.COMPILE_STATUS))throw Error(raw.getShaderInfoLog(s));return s;}
-const program=raw.createProgram();raw.attachShader(program,shader(raw.VERTEX_SHADER,vertexSource));raw.attachShader(program,shader(raw.FRAGMENT_SHADER,fragmentSource));raw.linkProgram(program);
-if(!raw.getProgramParameter(program,raw.LINK_STATUS))throw Error(raw.getProgramInfoLog(program));
-const uniform=raw.getUniformLocation(program,"mvp");
+const native=new NativeStaticBatches(raw,{width:WIDTH,height:HEIGHT});
 let seed=324785;const rng=()=>((seed=Math.imul(seed^seed>>>15,2246822519)+3266489917|0)>>>0)/4294967296;
 const vertices=Array.from({length:BATCHES},()=>[]),colors=Array.from({length:BATCHES},()=>[]);
 const faces=[[0,1,2,0,2,3],[4,7,6,4,6,5],[0,4,5,0,5,1],[1,5,6,1,6,2],[2,6,7,2,7,3],[3,7,4,3,4,0]];
@@ -35,21 +31,15 @@ for(let i=0;i<BUILDINGS;i++){
     for(const id of faces[face]){out.push(...p[id]);col.push(base*mult,.60*base*mult,.75*base*mult);}
   }
 }
-const chunks=[];
 for(let k=0;k<BATCHES;k++){
   const position=new Float32Array(vertices[k]),color=new Float32Array(colors[k]);
   const geometry=new THREE.BufferGeometry();geometry.setAttribute("position",new THREE.BufferAttribute(position,3));geometry.setAttribute("color",new THREE.BufferAttribute(color,3));
   const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide,toneMapped:false}));
   mesh.frustumCulled=false;scene.add(mesh);
-  const vao=raw.createVertexArray();raw.bindVertexArray(vao);
-  const pb=raw.createBuffer();raw.bindBuffer(raw.ARRAY_BUFFER,pb);raw.bufferData(raw.ARRAY_BUFFER,position,raw.STATIC_DRAW);raw.enableVertexAttribArray(0);raw.vertexAttribPointer(0,3,raw.FLOAT,false,0,0);
-  const cb=raw.createBuffer();raw.bindBuffer(raw.ARRAY_BUFFER,cb);raw.bufferData(raw.ARRAY_BUFFER,color,raw.STATIC_DRAW);raw.enableVertexAttribArray(1);raw.vertexAttribPointer(1,3,raw.FLOAT,false,0,0);
-  chunks.push({vao,count:position.length/3});
+  native.add(position,color);
 }
-raw.bindVertexArray(null);raw.useProgram(program);
 const matrix=new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
-raw.uniformMatrix4fv(uniform,false,new Float32Array(matrix.elements));
-const rawFrame=()=>{raw.clear(raw.COLOR_BUFFER_BIT|raw.DEPTH_BUFFER_BIT);raw.useProgram(program);for(const chunk of chunks){raw.bindVertexArray(chunk.vao);raw.drawArrays(raw.TRIANGLES,0,chunk.count);}raw.bindVertexArray(null);raw.finish();};
+const rawFrame=()=>{native.render(new Float32Array(matrix.elements),{finish:true});};
 const threeFrame=()=>{renderer.render(scene,camera);renderer.getContext().finish();};
 for(let i=0;i<18;i++){threeFrame();rawFrame();}
 const times={three:[],native:[]},N=72;
@@ -77,7 +67,7 @@ globalThis.__nativeProof={
   renderer:String(raw.getParameter(debug?.UNMASKED_RENDERER_WEBGL||raw.RENDERER)),
   width:WIDTH,height:HEIGHT,buildings:BUILDINGS,batches:BATCHES,triangles:BUILDINGS*12,
   three:summary(times.three),native:summary(times.native),
-  threeDrawCalls:renderer.info.render.calls,nativeDrawCalls:BATCHES,
+  threeDrawCalls:renderer.info.render.calls,nativeDrawCalls:native.batches.length,
   imageMeanAbsoluteDifference:visible?+(diff/visible).toFixed(2):null,
   imagePixelsDifferingOver20Pct:visible?+(100*bad/visible).toFixed(2):null,
   threeDataUrl:threeCanvas.toDataURL("image/png"),nativeDataUrl:nativeCanvas.toDataURL("image/png")
