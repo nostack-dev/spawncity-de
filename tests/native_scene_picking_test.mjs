@@ -44,7 +44,7 @@ assert.equal(animated.hit?.id,"actor","player must hit the animated mesh in its 
 near(animated.hit?.distance,13);
 skin.bones=fromTRS([0,6,0]);
 const movedActor=pickNativeMeshes([actor],ray);
-near(movedActor.hit?.distance,16,"updated bone pose must change the hit depth");
+near(movedActor.hit?.distance,16);
 assert.equal(animated.skippedSkinned,0);
 assert.throws(()=>screenRay(camera,0,0,0,1080),/viewport/);
 assert.throws(()=>pickNativeMeshes([], {origin:[0,0,0],direction:[0,0,0]}),/direction/);
