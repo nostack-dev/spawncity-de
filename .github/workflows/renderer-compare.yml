@@ -72,12 +72,22 @@ jobs:
         run: |
           CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
           CHROME_BIN="$CHROME_BIN" node tests/native_scene_renderer_proof.mjs
+      - name: Bundle the sole Box3D-city-terrain native world presenter
+        run: |
+          ./node_modules/.bin/esbuild tests/native_world_presenter_proof_scene.mjs --bundle --format=iife --platform=browser --target=es2022 --outfile=/tmp/native-world.bundle.js
+          if grep -E 'three/src/|three\\.module\\.js|three/three' /tmp/native-world.bundle.js; then echo "legacy Three renderer leaked into native game world"; exit 1; fi
+      - name: Run native-only composed world with authoritative body poses
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_world_presenter_proof.mjs
       - name: Upload raw native-only screenshot and frame timings
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: spawncity-new-native-webgl2-scene
-          path: artifacts/native-scene/
+          path: |
+            artifacts/native-scene/
+            artifacts/native-world/
           if-no-files-found: warn
   full-native-release-gate:
     # Intentionally FAILS until ALL in-game Three dependencies have been
