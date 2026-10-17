@@ -294,6 +294,7 @@ export class NativeSceneRenderer{
   const gl=this.gl,start=performance.now(),u=this.gpu.u;this.pollGpu();
   let timerQuery=null;
   if(this.timer&&this.pending.length<4){timerQuery=gl.createQuery();gl.beginQuery(this.timer.TIME_ELAPSED_EXT,timerQuery);}
+  const shadowStats=this.shadow?.draw(this.meshes.values(),{focus:this.target,sunDirection:this.sunDirection})||null;
   gl.viewport(0,0,this.width,this.height);gl.clearColor(...clearColor);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(this.gpu.handle);
   const camera=multiply4(perspective(this.fov,this.width/this.height,this.near,this.far),lookAt(this.eye,this.target,this.up));
@@ -301,6 +302,12 @@ export class NativeSceneRenderer{
   for(const key of ["sunDirection","sunColor","skyColor","groundColor","fogColor","eye"])
    gl.uniform3fv(u["u"+key[0].toUpperCase()+key.slice(1)],new Float32Array(this[key]));
   gl.uniform1f(u.uFogDensity,this.fogDensity);gl.uniform1f(u.uExposure,this.exposure);gl.uniform1i(u.uTexture,0);
+  gl.uniform1i(u.uSunShadowEnabled,this.shadow?1:0);gl.uniform1i(u.uSunShadowMap,1);
+  if(this.shadow){
+   gl.uniformMatrix4fv(u.uSunShadowProjection,false,this.shadow.matrix);
+   gl.uniform1f(u.uSunShadowBias,this.shadow.bias);
+   gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this.shadow.depth);gl.activeTexture(gl.TEXTURE0);
+  }
   const planes=extractFrustumPlanes(camera);
   const meshes=[...this.meshes.values()].filter(m=>m.visible&&(m.data.skin||m.material.frustumCulled===false||sphereVisible(planes,m.worldBounds.center,m.worldBounds.radius)));
   const opaque=meshes.filter(m=>m.material.alphaMode!=="blend");
@@ -309,7 +316,7 @@ export class NativeSceneRenderer{
    const x=a.data.transforms,y=b.data.transforms;
    return Math.hypot(y[12]-this.eye[0],y[13]-this.eye[1],y[14]-this.eye[2])-Math.hypot(x[12]-this.eye[0],x[13]-this.eye[1],x[14]-this.eye[2]);
   });
-  const stats={drawCalls:0,triangles:0,instances:0,culledMeshes:this.meshes.size-meshes.length,cpuMs:0,gpuMs:this.lastGpuMs};
+  const stats={drawCalls:0,shadowDrawCalls:shadowStats?.drawCalls||0,shadowResolution:shadowStats?.resolution||0,triangles:0,instances:0,culledMeshes:this.meshes.size-meshes.length,cpuMs:0,gpuMs:this.lastGpuMs};
   const draw=m=>{
    const d=m.data,mat=m.material;
    gl.uniform4fv(u.uMaterial,new Float32Array(mat.color));
@@ -334,6 +341,6 @@ export class NativeSceneRenderer{
   if(this.disposed)return;
   for(const m of this.meshes.values())this.free(m);
   this.meshes.clear();if(!this.lost){for(const q of this.pending)this.gl.deleteQuery(q);this.gl.deleteProgram(this.gpu.handle);}
-  this.pending=[];this.disposed=true;this.canvas.removeEventListener?.("webglcontextlost",this.onLost);this.canvas.removeEventListener?.("webglcontextrestored",this.onRestored);
+  this.pending=[];this.shadow?.dispose({contextLost:this.lost});this.shadow=null;this.disposed=true;this.canvas.removeEventListener?.("webglcontextlost",this.onLost);this.canvas.removeEventListener?.("webglcontextrestored",this.onRestored);
  }
 }
