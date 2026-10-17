@@ -9,6 +9,7 @@ import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
+import {nativeDrawingBufferSize,nativePointerToDrawingPixels} from "./native_viewport.mjs";
 export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
@@ -94,8 +95,8 @@ export class NativeWorldPresenter{
   const canvas=this.renderer.canvas;
   // The document/layout owns CSS dimensions. The sole native canvas owns
   // backbuffer size. Do not force requestFullscreen or reinitialize GL.
-  const w=canvas.clientWidth||this.renderer.width,h=canvas.clientHeight||this.renderer.height;
-  if(w>0&&h>0)this.renderer.resize(w,h);
+  const viewport=nativeDrawingBufferSize(canvas);
+  this.renderer.resize(viewport.width,viewport.height);
   this.renderer.setCamera(this.camera);
   const physics=this.rigids.update(),people=this.people?.update()||null;
   // View-radius data is reconciled asynchronously, at most every 250 ms.
@@ -109,10 +110,14 @@ export class NativeWorldPresenter{
   const gpu=this.renderer.render();
   this.frameNumber++;
   this.drawStats={frame:this.frameNumber,gpu,physics,people,
-    terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,renderer:"native-webgl2-only"};
+    terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,
+    drawingWidth:viewport.width,drawingHeight:viewport.height,drawingDpr:viewport.pixelRatio,renderer:"native-webgl2-only"};
   return this.drawStats;
  }
- pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");return this.renderer.pick(x,y,options);}
+ pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");
+  const pixel=nativePointerToDrawingPixels(this.renderer.canvas,x,y,this.renderer.width,this.renderer.height);
+  return this.renderer.pick(pixel.x,pixel.y,options);
+ }
  stop(){const was=this.running;this.running=false;return was;}
  dispose(){
   if(this.disposed)return;
