@@ -68,7 +68,7 @@ export function installFlightFireFx({viewport,scene,camera,worldBridge=null,isEn
   let active=null,nextShotAt=0,fireTimer=0,audioSettings=loadAudioSettings(),gamepadMissileLatch=false;
 
   function droneWeapons(){return globalThis.__arondightDroneWeapons||null;}
-  function missileMode(){const mode=String(droneWeapons()?.mode||"gun");viewport.dataset.fireWeaponMode=mode;return mode==="missile";}
+  function missileMode(){const mode=String(droneWeapons()?.mode||"gun");viewport.dataset.fireWeaponMode=mode;return mode==="missile"||mode==="guided";}
   function applyAudioSettings(value=loadAudioSettings()){audioSettings=normalizeAudioSettings(value);viewport.dataset.fireAudioEnabled=audioSettings.soundEnabled?"1":"0";viewport.dataset.fireShotsVolumePct=String(audioSettings.shotsVolume);viewport.dataset.fireFxVolumePct=String(audioSettings.fxVolume);return audioSettings;}
   const audioSettingsListener=event=>applyAudioSettings(event.detail);window.addEventListener(AUDIO_SETTINGS_EVENT,audioSettingsListener);applyAudioSettings(audioSettings);
   function ensureAudio(){return getSharedCombatAudioContext({resume:true});}
