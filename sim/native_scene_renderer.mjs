@@ -4,7 +4,7 @@
 // TODO for full game release: skinned rigs, shadows, effects, picking and every
 // gameplay scene producer; native-only release gate remains closed.
 import {multiply4,lookAt,perspective,identity4} from "./native_render_math.mjs";
-export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-v1";
+export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-facades-v2";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
 "layout(location=0) in vec3 aPosition;",
@@ -18,23 +18,25 @@ const VERT="#version 300 es\n"+[
 "layout(location=8) in vec4 iTint;",
 "uniform mat4 uViewProjection;",
 "out vec3 vWorld,vNormal,vColor;",
-"out vec2 vUV;out float vOpacity;",
+"out vec2 vUV,vWallUV;out float vOpacity;",
 "void main(){",
 "  mat4 model=mat4(iModel0,iModel1,iModel2,iModel3);",
 "  vec4 p=model*vec4(aPosition,1.0);",
 "  vWorld=p.xyz;",
 "  vNormal=normalize(mat3(model)*aNormal);",
 "  vColor=aColor*iTint.rgb;vOpacity=iTint.a;vUV=aUV;",
+"  float wallSpan=abs(aNormal.x)>0.5?length(iModel1.xyz):length(iModel0.xyz);",
+"  vWallUV=vec2(aUV.x*wallSpan,aUV.y*length(iModel2.xyz));",
 "  gl_Position=uViewProjection*p;",
 "}"].join("\n");
 const FRAG="#version 300 es\n"+[
 "precision highp float;",
-"in vec3 vWorld,vNormal,vColor;in vec2 vUV;in float vOpacity;",
+"in vec3 vWorld,vNormal,vColor;in vec2 vUV,vWallUV;in float vOpacity;",
 "uniform vec4 uMaterial;",
 "uniform vec3 uSunDirection,uSunColor,uSkyColor,uGroundColor,uEye,uFogColor;",
 "uniform float uFogDensity,uExposure,uAlphaCutoff;",
 "uniform sampler2D uTexture;",
-"uniform int uHasTexture,uUnlit;",
+"uniform int uHasTexture,uUnlit,uFacade;",
 "out vec4 outColor;",
 "void main(){",
 "  vec4 texel=uHasTexture==1?texture(uTexture,vUV):vec4(1.0);",
@@ -42,6 +44,18 @@ const FRAG="#version 300 es\n"+[
 "  if(alpha<uAlphaCutoff)discard;",
 "  vec3 base=max(vec3(0.0),vColor*uMaterial.rgb*texel.rgb);",
 "  vec3 n=normalize(vNormal),sun=normalize(uSunDirection);",
+"  if(uFacade==1&&abs(n.z)<0.6){",
+"    vec2 uv=vec2(vWallUV.x/2.8,vWallUV.y/3.25);",
+"    vec2 cell=fract(uv),fw=max(fwidth(uv),vec2(0.01));",
+"    float wx=smoothstep(.20,.20+fw.x,cell.x)*(1.0-smoothstep(.8-fw.x,.8,cell.x));",
+"    float wy=smoothstep(.32,.32+fw.y,cell.y)*(1.0-smoothstep(.8-fw.y,.8,cell.y));",
+"    float farFade=1.0-smoothstep(.11,.35,max(fw.x,fw.y));",
+"    float glass=wx*wy*farFade;",
+"    vec3 pane=mix(vec3(.035,.072,.11),vec3(.13,.26,.37),clamp(dot(n,sun)*.6+.28,0.0,1.0));",
+"    base=mix(base,pane,glass*.94);",
+"    float ledge=(1.0-smoothstep(.05,.09,abs(cell.y-.28)))*farFade;",
+"    base=mix(base,base*1.2+vec3(.015),ledge*.18);",
+"  }",
 "  float ndl=max(dot(n,sun),0.0);",
 "  vec3 hemis=mix(uGroundColor,uSkyColor,clamp(n.z*0.5+0.5,0.0,1.0));",
 "  vec3 rgb=base*(uUnlit==1?vec3(1.0):hemis+uSunColor*ndl)*uExposure;",
@@ -96,7 +110,7 @@ function program(gl){
  const v=shader(gl.VERTEX_SHADER,VERT),f=shader(gl.FRAGMENT_SHADER,FRAG),p=gl.createProgram();
  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){const e=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw Error("native program: "+e);}
- const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit"];
+ const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade"];
  return {handle:p,u:Object.fromEntries(uniforms.map(k=>[k,gl.getUniformLocation(p,k)]))};
 }
 export class NativeSceneRenderer{
@@ -216,7 +230,7 @@ export class NativeSceneRenderer{
    const d=m.data,mat=m.material;
    gl.uniform4fv(u.uMaterial,new Float32Array(mat.color));
    gl.uniform1f(u.uAlphaCutoff,mat.alphaMode==="mask"?(mat.alphaCutoff??.5):0);
-   gl.uniform1i(u.uUnlit,mat.unlit?1:0);gl.uniform1i(u.uHasTexture,m.texture?1:0);
+   gl.uniform1i(u.uUnlit,mat.unlit?1:0);gl.uniform1i(u.uFacade,mat.facade?1:0);gl.uniform1i(u.uHasTexture,m.texture?1:0);
    if(m.texture){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,m.texture);}
    if(mat.doubleSided)gl.disable(gl.CULL_FACE);else{gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);}
    gl.bindVertexArray(m.vao);
