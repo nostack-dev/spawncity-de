@@ -5,13 +5,18 @@ const make=()=>({
   schema:"spawncity-native-renderer-proof-v1",
   productionRenderer:"native-webgl2",
   scenarios:REQUIRED_DEVICES.flatMap(device=>REQUIRED_MODES.map(mode=>({
-    device,mode,sameCameraTimeAndScene:true,sameGraphicsFeatures:true,
+    device,mode,sameCameraTimeAndScene:true,gameplayReadabilityPreserved:true,
     baseline:{renderer:"three-webgl",gpuVendor:"Real hardware",width:960,height:540,dpr:1.5,frames:600,durationMs:15000,fps:58,p95FrameMs:17.1,gpuTimeP95Ms:12},
     candidate:{renderer:"native-webgl2",gpuVendor:"Real hardware",width:960,height:540,dpr:1.5,frames:600,durationMs:15000,fps:60,p95FrameMs:16.5,gpuTimeP95Ms:9.5},
     visual:{ssim:.985,meanAbsoluteRgbError:3.2,screenshotBaseline:"proof-a.png",screenshotCandidate:"proof-b.png"}
   })))
 });
 assert.equal(verifyRendererEvidence(make()).pass,true,"acceptance rules must have a satisfiable (synthetic) contract");
+const newArt=make();
+for(const row of newArt.scenarios){row.visual.ssim=.80;row.visual.meanAbsoluteRgbError=31;row.visual.restyleReviewed=true;row.visual.noMissingGeometry=true;row.visual.hudReadabilityPreserved=true;row.visual.motionLegibilityPreserved=true;row.visual.reviewNotes="Reviewed side-by-side; improved facades, silhouettes, HUD contrast.";}
+assert.equal(verifyRendererEvidence(newArt).pass,true,"a reviewed prettier restyle may replace the old art direction");
+newArt.scenarios[0].visual.noMissingGeometry=false;
+assert.equal(verifyRendererEvidence(newArt).pass,false,"missing geometry must fail even if art direction approved");
 for(const mut of [
   a=>a.scenarios.pop(),
   a=>a.scenarios[0].candidate.dpr=1,
@@ -19,7 +24,7 @@ for(const mut of [
   a=>a.scenarios[0].candidate.p95FrameMs=22,
   a=>a.scenarios[0].candidate.gpuTimeP95Ms=11,
   a=>a.scenarios[0].visual.ssim=.95,
-  a=>a.scenarios[0].sameGraphicsFeatures=false,
+  a=>a.scenarios[0].gameplayReadabilityPreserved=false,
   a=>a.scenarios[0].candidate.renderer="three-webgl",
   a=>a.productionRenderer="three-webgl",
 ]){
