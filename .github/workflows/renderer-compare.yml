@@ -1,0 +1,65 @@
+name: Native WebGL2 Full-Engine Proof
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/renderer-compare.yml"
+      - "sim/native_*.mjs"
+      - "tests/native_*.mjs"
+      - "tests/renderer_*.mjs"
+      - "docs/RENDERER_NATIVE_ONLY.md"
+      - "tests/control_semantics_test.mjs"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-gpu-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build isolated native drawing reference (not production engine)
+        run: |
+          set -euo pipefail
+          npm install --prefix /tmp/spawncity-native-qa --ignore-scripts --no-audit --no-fund three@0.185.1 puppeteer-core@24.16.0 esbuild@0.25.8
+          ln -s /tmp/spawncity-native-qa/node_modules node_modules
+          ./node_modules/.bin/esbuild tests/native_webgl_proof_scene.mjs --bundle --format=iife --platform=browser --target=es2022 --outfile=/tmp/native-webgl-proof.bundle.js
+      - name: Native WebGL2 shader/draw/pixel proof (software; NOT device speed)
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_webgl_proof.mjs
+      - name: Save native and reference images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-only-renderer-isolated-proof
+          path: artifacts/native-webgl-proof/
+          if-no-files-found: warn
+  full-native-release-gate:
+    # Intentionally FAILS until ALL in-game Three dependencies have been
+    # replaced and desktop, Android Chrome and iPhone Safari device GPU
+    # measurements prove full visual/physics/gameplay quality and speed gains.
+    # No native-city toggle, no fallback, no partial shipping.
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check strict renderer gate logic
+        run: |
+          node tests/renderer_exclusive_release_contract_test.mjs
+          node tests/renderer_acceptance_selftest.mjs
+      - name: Require a full no-Three native engine with 15 hardware scenarios
+        run: node tests/renderer_acceptance_gate.mjs --gate
+      - name: Retain exact missing migration blockers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-only-renderer-blockers
+          path: artifacts/renderer-gate/readiness.json
+          if-no-files-found: warn
