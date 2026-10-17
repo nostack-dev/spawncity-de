@@ -25,3 +25,5 @@ jobs:
           node tests/jet_headshot_run_guided_contract_test.mjs
           node tests/render_stability_test.mjs
           node --check tests/renderer_ab_compare.mjs
+          node tests/native_city_slice_contract_test.mjs
+          node tests/renderer_acceptance_selftest.mjs
