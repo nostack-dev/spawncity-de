@@ -27,6 +27,7 @@ import {addPropellerSweepColliders} from "./airframe_collision_envelope.mjs";
 import {deriveQuadMassProperties} from "./component_mass_model.mjs";
 import {batteryOcvVoltage,batteryVoltageUnderLoad,scaleCurrentsToPackLimit,solveStaticPropulsionAuthority,MOTOR_BEARING_DRAG_NM_PER_RAD_S} from "./propulsion_authority.mjs";
 import {PlayerCameraModePolicy} from "./player_camera_mode_policy.mjs";
+import {nativeFlightPoseView} from "./native_flight_pose_view.mjs";
 
 const DT = 0.001;
 const DRONE_SUBSTEPS = 1;
@@ -626,6 +627,17 @@ function resize(){if(presentationResizeQueued)return;presentationResizeQueued=tr
 addEventListener("resize",resize,{passive:true});addEventListener("orientationchange",resize,{passive:true});globalThis.visualViewport?.addEventListener?.("resize",resize,{passive:true});const viewportResizeObserver=globalThis.ResizeObserver?new ResizeObserver(resize):null;viewportResizeObserver?.observe($("viewport"));commitPresentationResize();
 
 let physics=new PhysicsModel(defaultParams(),{graphics:true,scene});
+ // Pure state producer for the forthcoming exclusive native renderer. This
+ // does not instantiate another renderer or schedule another physics tick.
+ let nativePresentationAlpha=1;
+ globalThis.__spawncityNativeFlightView=Object.freeze({
+   get p(){return {span:physics.p.span,propD:physics.p.propD};},
+   get motorOmega(){return [...physics.motorOmega];},
+   presentationPose(){
+     return nativeFlightPoseView(physics,{alpha:()=>nativePresentationAlpha}).presentationPose();
+   }
+ });
+
 globalThis.__arondightRealWorld?.attachCameraCollisionResolver?.((anchor,desired)=>physics.resolveCameraPath(anchor,desired));
 const box3dColliderDebugDraw=new Box3dColliderDebugDraw(scene);
 let box3dColliderDebugEnabled=false;try{box3dColliderDebugEnabled=localStorage.getItem(BOX3D_COLLIDER_DEBUG_STORAGE)==="1";}catch{}
@@ -1131,6 +1143,7 @@ function render(){
   const drawDue=forceDraw||(backlog<PRESENTATION_SKIP_DRAW_BACKLOG_MS&&sinceDraw>=effectiveDrawInterval);
   if(drawDue){
     const presentationDt=Number.isFinite(lastPresentationDrawMs)?clamp(sinceDraw/1000,0,.1):1/60,presentationAlpha=running&&mode!=="replay"?clamp(backlog/SIM_FIXED_STEP_MS,0,1):1;
+    nativePresentationAlpha=presentationAlpha;
     recordPresentationFrame(renderNow);
     lastPresentationDrawMs=renderNow;
     const presentationPose=physics.presentationPose(presentationAlpha);box3dColliderDebugDraw.syncAirframe(physics.motorPos,AIRFRAME_COLLISION_HALF_Z_M,physics.p.propD);box3dColliderDebugDraw.syncWorld(physics.worldBuildingCollisionState,physics.worldBuildingCollisionRevision);box3dColliderDebugDraw.updateAirframe(presentationPose);const box3dDebugViewport=$("viewport");if(box3dDebugViewport&&box3dColliderDebugEnabled)box3dDebugViewport.dataset.box3dColliderDebugPrisms=String(box3dColliderDebugDraw.activePrismCount);const externalCameraState=updateCamera(presentationPose,renderNow);let visualPose=presentationPose,visualState=null;if(externalCameraState){visualState=externalAirframeVisualRig.update({position:[presentationPose.position.x,presentationPose.position.y,presentationPose.position.z],quaternion:[presentationPose.quaternion.x,presentationPose.quaternion.y,presentationPose.quaternion.z,presentationPose.quaternion.w],cameraAnchor:externalCameraState.anchor,mode:cameraMode,dt:presentationDt});externalVisualPosition.set(...visualState.position);externalVisualQuaternion.set(...visualState.quaternion);externalVisualVelocity.copy(presentationPose.velocity);visualPose=externalVisualPose;}else externalAirframeVisualRig.invalidate();const publishPresentationDiagnostics=renderNow-lastPresentationDiagnosticsMs>=250;if(publishPresentationDiagnostics){lastPresentationDiagnosticsMs=renderNow;const visualViewport=$("viewport");if(visualViewport){visualViewport.dataset.visualAirframeFilter=externalCameraState?cameraMode:"off";visualViewport.dataset.visualAirframePositionErrorM=(visualState?.positionErrorM||0).toFixed(4);visualViewport.dataset.visualAirframeRotationErrorDeg=((visualState?.rotationErrorRad||0)*180/Math.PI).toFixed(3);visualViewport.dataset.presentationTelemetry="250ms";}}physics.render(presentationPose,presentationDt,visualPose);
