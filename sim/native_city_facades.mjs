@@ -1,4 +1,4 @@
-import {FACADE_GLSL,CUTOUT_GLSL,facadeCutouts} from "./world_city_buildings.mjs";
+import {FACADE_GLSL,CUTOUT_GLSL,facadeCutouts} from "./world_city_facade_contract.mjs";
 // Native WebGL2 facade shader. The geometry generators still need replacing
 // before Three can be removed; shading here reuses exact building window rules.
 export const NATIVE_FACADE_GL_VERSION="native-city-facades-v1";
