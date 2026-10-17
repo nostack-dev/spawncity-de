@@ -1,0 +1,132 @@
+name: Native WebGL2 Full-Engine Proof
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/renderer-compare.yml"
+      - "sim/native_*.mjs"
+      - "tests/native_*.mjs"
+      - "tests/renderer_*.mjs"
+      - "docs/RENDERER_NATIVE_ONLY.md"
+      - "tests/control_semantics_test.mjs"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-gpu-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build isolated native drawing reference (not production engine)
+        run: |
+          set -euo pipefail
+          npm install --prefix /tmp/spawncity-native-qa --ignore-scripts --no-audit --no-fund three@0.185.1 puppeteer-core@24.16.0 esbuild@0.25.8
+          ln -s /tmp/spawncity-native-qa/node_modules node_modules
+          ./node_modules/.bin/esbuild tests/native_webgl_proof_scene.mjs --bundle --format=iife --platform=browser --target=es2022 --outfile=/tmp/native-webgl-proof.bundle.js
+      - name: Native WebGL2 shader/draw/pixel proof (software; NOT device speed)
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_webgl_proof.mjs
+      - name: Save native and reference images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-only-renderer-isolated-proof
+          path: artifacts/native-webgl-proof/
+          if-no-files-found: warn
+  native-scene-proof:
+    # Standalone real raw-WebGL2 renderer with sun/fog/alpha/instancing.
+    # This is NOT equivalent to the full game and never deployed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify independent native scene graph math and code
+        run: |
+          node tests/native_render_math_test.mjs
+          node tests/native_viewport_test.mjs
+          node tests/native_sun_shadow_test.mjs
+          node tests/native_render_culling_test.mjs
+          node tests/native_scene_picking_test.mjs
+          node tests/native_scene_bvh_test.mjs
+          node tests/native_presenter_lifecycle_test.mjs
+          node tests/native_scene_atomic_replace_test.mjs
+          node tests/native_instance_capacity_test.mjs
+          node tests/native_airframe_presentation_test.mjs
+          node tests/native_rigid_visuals_test.mjs
+          node tests/native_world_physics_view_test.mjs
+          node tests/native_world_runtime_view_test.mjs
+          node tests/native_gameplay_targeting_test.mjs
+          node tests/native_osm_world_integration_test.mjs
+          node tests/native_flight_pose_view_test.mjs
+          node tests/native_road_geometry_test.mjs
+          node tests/native_road_stream_test.mjs
+          node tests/native_pedestrian_visuals_test.mjs
+          node tests/native_population_view_test.mjs
+          node tests/native_peer_visuals_test.mjs
+          node tests/native_city_geometry_test.mjs
+          node tests/native_city_stream_test.mjs
+          node tests/native_city_indexed_test.mjs
+          node tests/native_terrain_geometry_test.mjs
+          node tests/native_terrain_stream_test.mjs
+          node --check sim/native_scene_renderer.mjs
+          node --check tests/native_scene_renderer_proof.mjs
+      - name: Bundle real standalone WebGL2 backend (no Three imports)
+        run: |
+          npm install --prefix /tmp/native-scene-proof --ignore-scripts --no-audit --no-fund esbuild@0.25.8 puppeteer-core@24.16.0
+          ln -s /tmp/native-scene-proof/node_modules node_modules
+          ./node_modules/.bin/esbuild tests/native_scene_renderer_proof_scene.mjs --bundle --format=iife --platform=browser --target=es2022 --outfile=/tmp/native-scene.bundle.js
+          if grep -E 'three/src/|three\\.module\\.js|three/three' /tmp/native-scene.bundle.js; then echo "Three accidentally included"; exit 1; fi
+      - name: Render 900 instanced real WebGL2 buildings, test alpha and GPU
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_scene_renderer_proof.mjs
+      - name: Bundle the sole Box3D-city-terrain native world presenter
+        run: |
+          ./node_modules/.bin/esbuild tests/native_world_presenter_proof_scene.mjs --bundle --format=iife --platform=browser --target=es2022 --outfile=/tmp/native-world.bundle.js
+          if grep -E 'three/src/|three\\.module\\.js|three/three' /tmp/native-world.bundle.js; then echo "legacy Three renderer leaked into native game world"; exit 1; fi
+      - name: Run native-only composed world with authoritative body poses
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_world_presenter_proof.mjs
+      - name: Upload raw native-only screenshot and frame timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-new-native-webgl2-scene
+          path: |
+            artifacts/native-scene/
+            artifacts/native-world/
+          if-no-files-found: warn
+  full-native-release-gate:
+    # Intentionally FAILS until ALL in-game Three dependencies have been
+    # replaced and desktop, Android Chrome and iPhone Safari device GPU
+    # measurements prove full visual/physics/gameplay quality and speed gains.
+    # No native-city toggle, no fallback, no partial shipping.
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check strict renderer gate logic
+        run: |
+          node tests/renderer_exclusive_release_contract_test.mjs
+          node tests/renderer_acceptance_selftest.mjs
+      - name: Require a full no-Three native engine with 15 hardware scenarios
+        run: node tests/renderer_acceptance_gate.mjs --gate
+      - name: Retain exact missing migration blockers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-only-renderer-blockers
+          path: artifacts/renderer-gate/readiness.json
+          if-no-files-found: warn
