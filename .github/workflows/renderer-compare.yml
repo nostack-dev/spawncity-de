@@ -110,3 +110,32 @@ jobs:
           name: spawncity-native-engine-release-gate
           path: artifacts/renderer-gate/readiness.json
           if-no-files-found: warn
+
+  actual-city-geometry:
+    # Compare native draw calls against the actual streamed world-city chunks.
+    # This is a real source geometry test, not production shading or full-engine parity.
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Bundle candidate native path for live-world geometry probe
+        run: |
+          npm install --prefix /tmp/real-city-bench --ignore-scripts --no-audit --no-fund three@0.185.1 puppeteer-core@24.16.0 esbuild@0.25.8
+          ln -s /tmp/real-city-bench/node_modules node_modules
+          node --check tests/native_real_city_proof.mjs
+          ./node_modules/.bin/esbuild tests/native_real_city_scene.mjs --bundle --format=iife --platform=browser --target=es2022 --outfile=/tmp/native-real-city.bundle.js
+      - name: Inspect ACTUAL published city chunks in matched native/Three WebGL
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_real_city_proof.mjs "$(node tools/public_site.mjs origin)/drone_simulator.html"
+      - name: Save real-city pictures and render timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-native-real-city-proof
+          path: artifacts/native-real-city/
+          if-no-files-found: warn
