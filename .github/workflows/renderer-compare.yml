@@ -1,5 +1,8 @@
 name: SpawnCity WebGL visual and performance A/B
 on:
+  workflow_run:
+    workflows: ["Deploy SpawnCity"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       baseline_url:
@@ -12,8 +15,9 @@ permissions:
   contents: read
 jobs:
   compare:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,10 +32,23 @@ jobs:
         env:
           BASELINE: ${{ inputs.baseline_url }}
           CANDIDATE: ${{ inputs.candidate_url }}
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
           ORIGIN="$(node tools/public_site.mjs origin)"
+          # Published comparison must observe the exact just-built commit.
+          if [ -n "$EXPECTED_SHA" ]; then
+            matched=0
+            for attempt in $(seq 1 45); do
+              if curl -fsSL --connect-timeout 6 --max-time 15 -H 'Cache-Control: no-cache' "$ORIGIN/build.json?render_proof=$attempt" -o /tmp/spawncity-live-build.json                 && node -e 'if(require("/tmp/spawncity-live-build.json").sha!==process.argv[1])process.exit(1)' "$EXPECTED_SHA"; then
+                matched=1
+                break
+              fi
+              sleep 7
+            done
+            if [ "$matched" != 1 ]; then echo "::error::Live build SHA does not match the deploy being compared"; exit 1; fi
+          fi
           CHROME_BIN="$CHROME_BIN" node tests/renderer_ab_compare.mjs "${BASELINE:-$ORIGIN/drone_simulator.html}" "${CANDIDATE:-$ORIGIN/drone_simulator.html}"
       - name: Save images and metrics for actual visual review
         if: always()
