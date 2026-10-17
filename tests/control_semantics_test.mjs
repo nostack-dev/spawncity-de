@@ -12,11 +12,11 @@ import {
 // The unrelated Kurzlernen/Editor3D workflows are intentionally not copied.
 assert.deepEqual(
   readdirSync(".github/workflows").sort(),
-  ["box3d-upstream-wasm.yml","deploy.yml","esp32-hil.yml","gameplay-regression.yml","player-suggestions.yml","pr-checks.yml","published-browser-regressions.yml"],
+  ["box3d-upstream-wasm.yml","deploy.yml","esp32-hil.yml","gameplay-regression.yml","player-suggestions.yml","pr-checks.yml","published-browser-regressions.yml","renderer-compare.yml"],
   "SpawnCity's game Actions must be complete and contain no unrelated legacy workflows",
 );
 
-for(const name of ["gameplay-regression.yml","esp32-hil.yml","published-browser-regressions.yml","pr-checks.yml","player-suggestions.yml","box3d-upstream-wasm.yml"]){
+for(const name of ["gameplay-regression.yml","esp32-hil.yml","published-browser-regressions.yml","pr-checks.yml","player-suggestions.yml","box3d-upstream-wasm.yml","renderer-compare.yml"]){
   const ci=readFileSync(`.github/workflows/${name}`,"utf8");
   assert.match(ci,/contents: read/);
   assert.doesNotMatch(ci,/(contents|pages|issues): write/,"game verification must have read-only permissions");
