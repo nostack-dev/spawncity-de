@@ -1,5 +1,6 @@
 import {NativeWorldPresenter} from "../sim/native_world_presenter.mjs";
 import {WorldRigidBodyPhysics} from "../sim/world_rigid_body_physics.mjs";
+import {nativePopulationSnapshot} from "../sim/native_population_view.mjs";
 import {VsPoseTimeline} from "../sim/vs_pose_sync.mjs";
 (async()=>{
 const canvas=document.getElementById("native-world");
@@ -29,7 +30,12 @@ const flightPhysics={
  renderPreviousVelocity:[0,0,0],renderCurrentVelocity:[0,0,0]
 };
 
-const population={people:()=>[{id:"npc1",x:-5,y:1,z:1.1,yaw:.7},{id:"npc2",x:1,y:12,z:1.3,yaw:1.2}]};
+const agents=[{id:"npc1",x:-5,y:1,z:1.1,yaw:.7,alive:true,state:"walk"},
+ {id:"npc2",x:1,y:12,z:1.3,yaw:1.2,alive:true,state:"walk"}];
+const population={
+ people(){throw Error("legacy THREE crowd visibility path must not be used by native world");},
+ nativePeople(center){return nativePopulationSnapshot(agents,{center,maxPeople:10,radius:150,heightAt:()=>0});}
+};
 const timeline=new VsPoseTimeline({delayMs:0});
 const peerNow=performance.now();
 timeline.push({p:[5,2,8],q:[0,0,0,1],v:[0,0,0],t:peerNow},peerNow);
