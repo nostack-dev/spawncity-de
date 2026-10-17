@@ -9,12 +9,13 @@ import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
+import {NativePeerVisuals} from "./native_peer_visuals.mjs";
 import {nativeDrawingBufferSize,nativePointerToDrawingPixels} from "./native_viewport.mjs";
 export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
 export class NativeWorldPresenter{
- constructor(canvas,{physics,population=null,flight=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
+ constructor(canvas,{physics,population=null,flight=null,peer=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
   if(!physics?.bodies||!physics?.renderPose)throw Error("native world requires authoritative Box3D runtime");
   this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
   this.terrain=new NativeTerrainStream(this.renderer,{...terrainOptions,...(heightAt?{heightAt}:null)});
@@ -22,6 +23,7 @@ export class NativeWorldPresenter{
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
   this.rigids=new NativeRigidVisuals(this.renderer,physics);
   this.people=population?new NativePedestrianVisuals(this.renderer,population):null;
+  this.peer=peer?new NativePeerVisuals(this.renderer,peer):null;
   if(flight&&typeof flight.presentationPose!=="function")throw Error("native flight must expose authoritative Box3D presentationPose()");
   this.flight=flight;
   this.airframe=flight?new NativeAirframePresentation(this.renderer,{span:flight.p?.span??.25,propD:flight.p?.propD??.11}):null;
@@ -100,7 +102,7 @@ export class NativeWorldPresenter{
   const viewport=nativeDrawingBufferSize(canvas);
   this.renderer.resize(viewport.width,viewport.height);
   this.renderer.setCamera(this.camera);
-  const physics=this.rigids.update(),people=this.people?.update()||null;
+  const physics=this.rigids.update(),people=this.people?.update()||null,peer=this.peer?.update(now)||null;
   // View-radius data is reconciled asynchronously, at most every 250 ms.
   // Rendering never awaits terrain triangulation/GPU tile uploads.
   if(now-this.lastTerrainAt>=250&&!this.terrainPromise){
@@ -111,7 +113,7 @@ export class NativeWorldPresenter{
   }
   const gpu=this.renderer.render();
   this.frameNumber++;
-  this.drawStats={frame:this.frameNumber,gpu,physics,people,
+  this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,
     terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,
     drawingWidth:viewport.width,drawingHeight:viewport.height,drawingDpr:viewport.pixelRatio,renderer:"native-webgl2-only"};
   return this.drawStats;
@@ -124,6 +126,6 @@ export class NativeWorldPresenter{
  dispose(){
   if(this.disposed)return;
   this.stop();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
-  this.renderer.dispose();this.disposed=true;
+  this.peer?.dispose();this.renderer.dispose();this.disposed=true;
  }
 }
