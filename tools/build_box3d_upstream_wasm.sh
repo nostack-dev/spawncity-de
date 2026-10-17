@@ -27,6 +27,7 @@ test "$(git -C "$WORK/wrapper" rev-parse HEAD)" = "$BOX3D_BINDINGS_SHA"
 test "$(git -C "$WORK/wrapper/vendor/box3d" rev-parse HEAD)" = "$BOX3D_SOURCE_SHA"
 test "$(em++ --version | head -n1 | grep -o -m1 -E '[0-9]+\.[0-9]+\.[0-9]+')" = "$BOX3D_EMSDK_VERSION"
 cd "$WORK/wrapper"
+node "$ROOT/tools/patch_box3d_upstream_bindings.mjs" "$WORK/wrapper/src/bindings.cpp"
 node scripts/build.mjs
 node test/smoke.mjs
 test -s dist/box3d.inline.mjs
