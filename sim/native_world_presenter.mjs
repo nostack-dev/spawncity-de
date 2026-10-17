@@ -28,7 +28,10 @@ export class NativeWorldPresenter{
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
   this.rigids=new NativeRigidVisuals(this.renderer,poseSource);
   this.worldPhysics=worldPhysics;
-  this.people=population?new NativePedestrianVisuals(this.renderer,population):null;
+  const crowdSource=typeof population?.nativePeople==="function"
+   ?{people:()=>population.nativePeople(this.camera?.eye?.slice(0,2)??[0,0])}
+   :population;
+  this.people=crowdSource?new NativePedestrianVisuals(this.renderer,crowdSource):null;
   this.peer=peer?new NativePeerVisuals(this.renderer,peer):null;
   if(flight&&flightPhysics)throw Error("native world requires exactly one 1 kHz flight pose authority");
   const flightSource=flightPhysics?nativeFlightPoseView(flightPhysics,{alpha:interpolationAlpha}):flight;
