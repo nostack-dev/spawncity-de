@@ -231,3 +231,24 @@ scene producers, player/jet/car modes, combat/lock-on, multiplayer, shadows
 and effects is still mandatory before the native-only release gate can pass;
 Android/iPhone/desktop GPU comparisons are also untested. The release stays
 blocked by design.
+
+
+## 2026-10-17 — Real PWA backbuffer resolution and aiming
+
+`sim/native_viewport.mjs` now measures the actual CSS viewport and
+uses the device pixel ratio to allocate the native backbuffer, instead of
+silently rendering mobile fullscreen at 1x physical resolution. The
+`NativeWorldPresenter` camera and native touch-hit tests share that
+exact drawing-buffer resolution: a CSS-local touch is transformed to
+physical pixels before camera unprojection.
+
+The native Chromium scene fixture explicitly runs a full frame at
+2x pixel density (960x540 CSS → 1920x1080 GPU), verifies identical
+touch-vs-GPU-center picking, then restores normal resolution. The
+CI-native-world proof passed with context restoration and zero GL errors.
+
+**This does not establish faster FPS on phones:** equal-DPR real-game
+hardware measurements are still needed. The production game is still
+Three-backed, so PR #7 remains draft, unmerged and intentionally
+fails the whole-engine gate (75 Three-importing files / 2,292 calls;
+0 of 15 physical device/mode comparisons).
