@@ -102,14 +102,22 @@ const animatedBones=new Float32Array(actorBones);
 animatedBones.set(fromTRS([0,0,1.3],[0,0,.12,.9927738917]),16);
 renderer.updateBones("actor",animatedBones);
 for(let i=0;i<10;i++)renderer.render();
-const times=[];
-for(let i=0;i<50;i++){const start=performance.now();renderer.render();renderer.gl.finish();times.push(performance.now()-start);}
+const times=[];let cachedSunFrames=0;
+for(let i=0;i<50;i++){const start=performance.now();const frame=renderer.render();renderer.gl.finish();times.push(performance.now()-start);if(frame.shadowReused)cachedSunFrames++;}
 const newTransforms=new Float32Array(transforms);newTransforms[12]+=5;
 renderer.updateInstances("city",{transforms:newTransforms,tints:new Float32Array(tints)});
 const stats=renderer.render();renderer.gl.finish();
 const gl=renderer.gl,pixels=new Uint8Array(width*height*4);
 gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
 const errors=gl.getError();
+// Exercise mutable instancing buffers used by physics; this must update the
+// native vertex transform and invalidate cached sunlight depth immediately.
+const sharedTransforms=renderer.meshes.get("city").data.transforms;
+const sharedTints=renderer.meshes.get("city").data.tints;
+sharedTransforms[12]+=3;
+const mutableUpdated=renderer.updateInstances("city",{transforms:sharedTransforms,tints:sharedTints})!==false;
+const mutatedFrame=renderer.render();renderer.gl.finish();
+const mutableGlError=gl.getError();
 let nonBackground=0;
 for(let i=0;i<pixels.length;i+=4)
   if(Math.abs(pixels[i]-12)>15||Math.abs(pixels[i+1]-18)>15||Math.abs(pixels[i+2]-31)>15)nonBackground++;
@@ -124,7 +132,7 @@ globalThis.__nativeSceneProof={
   terrainTriangles:nativeTerrain.triangles,terrainVertices:nativeTerrain.vertexCount,terrainIndexed:nativeTerrain.indices.length>0,
   indexedCityChunks,sourceCityGpuBytes,savedCityGpuBytes,
   kind:"new-native-engine-only-not-game-migration",count,backend:"native-webgl2",
-  drawCalls:stats.drawCalls,shadowDrawCalls:stats.shadowDrawCalls,shadowResolution:stats.shadowResolution,triangles:stats.triangles,instances:stats.instances,culledMeshes:stats.culledMeshes,
+  drawCalls:stats.drawCalls,shadowDrawCalls:stats.shadowDrawCalls,shadowResolution:stats.shadowResolution,cachedSunFrames,mutableUpdated,mutatedShadowDrawCalls:mutatedFrame.shadowDrawCalls,mutableGlError,triangles:stats.triangles,instances:stats.instances,culledMeshes:stats.culledMeshes,
   cpuFrameMs:stats.cpuMs,gpuTimeMs:stats.gpuMs,
   finishP50Ms:+times[Math.floor(times.length*.5)].toFixed(3),
   finishP95Ms:+times[Math.floor(times.length*.95)].toFixed(3),
