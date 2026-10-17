@@ -48,6 +48,20 @@ renderer.upsert("glass",{
   instances:{transforms:new Float32Array(glassInstances)},
   material:{color:[.11,.42,.73,.19],alphaMode:"blend",doubleSided:true,unlit:true}
 });
+// A separate two-bone native skinned actor; moving its upper joint requires
+// only a bone uniform update, not a vertex-buffer rebuild.
+const actorJoints=new Float32Array(p.length/3*4),actorWeights=new Float32Array(p.length/3*4);
+for(let i=0;i<p.length/3;i++){const j=p[i*3+2]>.5?1:0;actorJoints[i*4]=j;actorWeights[i*4]=1;}
+const actorBones=new Float32Array(32);actorBones.set(fromTRS([0,0,0]),0);actorBones.set(fromTRS([0,0,0]),16);
+renderer.upsert("actor",{
+  positions:new Float32Array(p),colors:new Float32Array(colors),
+  skin:{joints:actorJoints,weights:actorWeights,bones:actorBones},
+  instances:{transforms:fromTRS([0,-85,0],[0,0,0,1],[3.5,3.5,12])},
+  material:{color:[.94,.4,.32,1],doubleSided:true}
+});
+const animatedBones=new Float32Array(actorBones);
+animatedBones.set(fromTRS([0,0,1.3],[0,0,.12,.9927738917]),16);
+renderer.updateBones("actor",animatedBones);
 for(let i=0;i<10;i++)renderer.render();
 const times=[];
 for(let i=0;i<50;i++){const start=performance.now();renderer.render();renderer.gl.finish();times.push(performance.now()-start);}
