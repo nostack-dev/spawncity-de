@@ -17,7 +17,7 @@ assert.match(slice,/this\.sources/);
 assert.match(slice,/this\.native\.update/);
 assert.match(bootstrap,/get\("render"\)==="native-city"/,"debug renderer must be opt-in and not replace the default rendering");
 assert.match(bootstrap,/this\.nativeCityDisabled=true/);
-assert.match(bootstrap,/renderer\.render\(scene,camera\);\s*\}\s*catch\(error\)/);
+assert.match(bootstrap,/nativeCityError=error;this\.nativeCityDisabled=true;\s*renderer\.render\(scene,camera\)/);
 assert.match(bootstrap,/this\.nativeCitySlice\.restore\(\)/);
 assert.ok(!bootstrap.includes('get("render")!=="quality"'),"default quality must remain intact");
 console.log("Native city vertical-slice regression passed: opt-in only; buffers, depth and fallback protected.");
