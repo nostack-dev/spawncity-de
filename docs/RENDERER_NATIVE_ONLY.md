@@ -132,3 +132,25 @@ skinned actor (15,880 triangles total, six draw calls, zero GL errors
 on SwiftShader). The full native player/world presentation and real
 phone GPU performance measurements are **still missing**, so the
 full-engine merge gate remains red by design.
+
+
+## Native camera targeting: actual deforming geometry, accelerated static hits
+
+The native-only rendering branch includes `sim/native_scene_picking.mjs`
+with `getScreenRay` / `pick` in `NativeSceneRenderer`. Weapon and
+lock-on rays use the native Z-up camera inverse, exact indexed/instanced
+triangle meshes, and **current skeletal bone palettes** for characters.
+The old Three raycaster is not called by these new modules.
+
+`sim/native_scene_bvh.mjs` now builds a spatial triangle index once for
+static world-space OSM/Box3D meshes; dynamic instance updates invalidate it.
+On a 12,800-triangle terrain fixture, the same hit position/depth was
+returned with **25 instead of 12,800 triangle checks (99.8047% fewer)**.
+All native picking/BVH/scene-GPU regression tests were green for commit
+`6d99ea035e2b18918a71ea241c1684550917cf01`.
+
+This is a CPU geometry-pruning measurement, **not a frame-rate gain** and
+does **not** make the game production-native. The actual player/jet/drone
+weapon systems still use Three objects; the renderer cutover remains
+blocked on a complete port and true hardware measurements. Do not merge
+just the proof or weaken the acceptance gate.
