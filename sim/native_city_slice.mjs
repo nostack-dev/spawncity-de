@@ -1,30 +1,31 @@
-import {NativeStaticBatches} from "./native_webgl2_static.mjs";
+import {NativeCityFacades,NATIVE_FACADE_GL_VERSION} from "./native_city_facades.mjs";
 
-// Opt-in live vertical slice, not the production native engine.
-// Draws the ACTUAL streamed city solids using the same WebGL2 context and depth
-// buffer as the existing presentation renderer. The city will look UNLIT:
-// facades, PBR, shadows and cutouts still require native shader equivalents.
-// Do not enable this path by default until the full visual/GPU gate is green.
-export const NATIVE_CITY_SLICE_VERSION="native-webgl2-live-city-unlit-experimental-v1";
+// Native WebGL2 live-city *vertical slice* with real procedural facade windows.
+// Still shares Three's scene graph, collision, raycasts and material system and
+// does NOT reproduce full PBR/environment map/shadows. Opt-in for safe A/B only.
+export const NATIVE_CITY_SLICE_VERSION="native-webgl2-city-facades-experimental-v2";
+const ATTRIBUTES=["position","color","aWall","aSeed","aFloorH","normal"];
 
 export class NativeCitySlice {
   constructor(renderer){
     const gl=renderer?.getContext?.();
-    if(!gl||typeof gl.createVertexArray!=="function")throw Error("Live city native path needs WebGL2");
+    if(!gl||typeof gl.createVertexArray!=="function")throw Error("Native city facades need WebGL2");
     this.renderer=renderer;this.gl=gl;
-    this.native=new NativeStaticBatches(gl,{width:gl.drawingBufferWidth,height:gl.drawingBufferHeight});
-    this.owners=[];this.entries=[];this.failures=0;this.shownFrames=0;
-    this.geometryKeys=[];this.sources=[];
+    this.native=new NativeCityFacades(gl,{width:gl.drawingBufferWidth,height:gl.drawingBufferHeight});
+    this.owners=[];this.entries=[];this.shownFrames=0;this.geometryKeys=[];this.sources=[];
+  }
+  attribs(attributes){
+    return Object.fromEntries(ATTRIBUTES.map(key=>[key,attributes[key].array]));
   }
   chunks(scene){
     const root=scene?.getObjectByName?.("WORLD_CITY_BUILDINGS");
-    if(!root||root.visible===false)return [];
+    if(!root||!root.visible)return [];
     const result=[];
     root.traverse?.(n=>{
-      const p=n.geometry?.attributes?.position,c=n.geometry?.attributes?.color;
+      const a=n.geometry?.attributes,p=a?.position,c=a?.color;
       if(n.isMesh&&n.name==="WORLD_CITY_CHUNK"&&n.visible&&p?.array instanceof Float32Array
-        &&c?.array instanceof Float32Array&&p.array.length===c.array.length&&p.array.length%9===0)
-        result.push(n);
+        &&c?.array instanceof Float32Array&&p.array.length===c.array.length&&p.array.length%9===0
+        &&ATTRIBUTES.every(k=>a[k]?.array instanceof Float32Array))result.push(n);
     });
     return result;
   }
@@ -35,46 +36,36 @@ export class NativeCitySlice {
     const changed=ids.length!==this.geometryKeys.length||ids.some((id,i)=>this.geometryKeys[i]!==id);
     if(changed){
       this.native.clear();this.entries=[];this.geometryKeys=ids;
-      for(const mesh of objects){
-        const a=mesh.geometry.attributes;
-        this.entries.push(this.native.add(a.position.array,a.color.array));
-      }
-      this.sources=objects.map(n=>({p:n.geometry.attributes.position.version,c:n.geometry.attributes.color.version}));
+      for(const mesh of objects)this.entries.push(this.native.add(this.attribs(mesh.geometry.attributes)));
+      this.sources=objects.map(n=>ATTRIBUTES.map(k=>n.geometry.attributes[k].version));
     }else for(let i=0;i<objects.length;i++){
-      const a=objects[i].geometry.attributes,prev=this.sources[i];
-      if(prev.p===a.position.version&&prev.c===a.color.version)continue;
-      this.native.update(this.entries[i],a.position.array,a.color.array);
-      this.sources[i]={p:a.position.version,c:a.color.version};
+      const a=objects[i].geometry.attributes,prev=this.sources[i],versions=ATTRIBUTES.map(k=>a[k].version);
+      if(versions.every((n,k)=>n===prev[k]))continue;
+      this.native.update(this.entries[i],this.attribs(a));this.sources[i]=versions;
     }
-    // Only suppress city solids during the Three main pass; collision, actor,
-    // damage and camera scene objects remain intact. Visibility is restored
-    // immediately even if GPU work throws.
     this.owners=objects.map(mesh=>({mesh,visible:mesh.visible}));
-    for(const owner of this.owners)owner.mesh.visible=false;
+    for(const o of this.owners)o.mesh.visible=false;
     return objects.length;
   }
-  restore(){
-    for(const o of this.owners)o.mesh.visible=o.visible;
-    this.owners=[];
-  }
+  restore(){for(const o of this.owners)o.mesh.visible=o.visible;this.owners=[];}
   draw(camera){
     if(!this.entries.length)return null;
     const gl=this.gl,renderer=this.renderer;
-    // Three caches the GL state: reset it before touching raw WebGL and again
-    // afterwards, otherwise the next normal Three frame can inherit our VAO.
     renderer.resetState();
-    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-    gl.disable(gl.SCISSOR_TEST);gl.disable(gl.BLEND);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.disable(gl.SCISSOR_TEST);gl.disable(gl.BLEND);
     gl.colorMask(true,true,true,true);gl.depthMask(true);
-    const e=camera.projectionMatrix.elements,v=camera.matrixWorldInverse.elements;
-    const m=new Float32Array(16);
-    for(let col=0;col<4;col++)for(let row=0;row<4;row++){
-      m[col*4+row]=e[row]*v[col*4]+e[4+row]*v[col*4+1]+e[8+row]*v[col*4+2]+e[12+row]*v[col*4+3];
-    }
+    const a=camera.projectionMatrix.elements,b=camera.matrixWorldInverse.elements,m=new Float32Array(16);
+    for(let col=0;col<4;col++)for(let row=0;row<4;row++)
+      m[col*4+row]=a[row]*b[col*4]+a[row+4]*b[col*4+1]+a[row+8]*b[col*4+2]+a[row+12]*b[col*4+3];
     this.native.resize(gl.drawingBufferWidth,gl.drawingBufferHeight);
+    const fog=renderer.getClearColor?.(),world=globalThis.__arondightRealWorld;
+    const sun=world?.threeScene?.getObjectByName?.("REAL_SUN"),sunDir=sun?.position?[sun.position.x,sun.position.y,sun.position.z]:[-.45,-.52,.72];
     let result;
-    try{result=this.native.render(m,{clear:false});this.shownFrames++;}
-    finally{renderer.resetState();}
+    try{
+      result=this.native.render(m,{clear:false,eye:[camera.position.x,camera.position.y,camera.position.z],sunDir,
+        fogColor:fog?[fog.r,fog.g,fog.b]:[.75,.83,.89],exposure:renderer.toneMappingExposure||1});
+      this.shownFrames++;
+    }finally{renderer.resetState();}
     return result;
   }
   dispose(){this.restore();this.native.dispose();this.geometryKeys=[];this.entries=[];}
