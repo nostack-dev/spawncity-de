@@ -23,6 +23,9 @@ worldPhysics.b3={
  b3Body_GetLinearVelocity:out=>{out.splice(0,3,0,0,0);return out;},
  b3Body_GetAngularVelocity:out=>{out.splice(0,3,0,0,0);return out;}
 };
+// Same public methods/getter as __arondightWorldRigidBodies in production.
+const rigidRuntime={get engine(){return worldPhysics;},
+ renderPose:id=>worldPhysics.renderPose(id,1),raycast:()=>null};
 const flightPhysics={
  p:{span:.25,propD:.11},motorOmega:[140,142,138,140],
  renderPreviousPosition:[0,-20,10],renderCurrentPosition:[0,-20,10],
@@ -40,7 +43,7 @@ const timeline=new VsPoseTimeline({delayMs:0});
 const peerNow=performance.now();
 timeline.push({p:[5,2,8],q:[0,0,0,1],v:[0,0,0],t:peerNow},peerNow);
 const world=new NativeWorldPresenter(canvas,{
- worldPhysics,flightPhysics,population,peer:{timeline,connected:()=>true,mode:()=>"drone"},heightAt:(x,y)=>Math.sin(x/14)*.32+Math.cos(y/20)*.48,
+ rigidRuntime,flightPhysics,population,peer:{timeline,connected:()=>true,mode:()=>"drone"},heightAt:(x,y)=>Math.sin(x/14)*.32+Math.cos(y/20)*.48,
  rendererOptions:{width:960,height:540,shadows:{resolution:256,extent:130}},
  terrainOptions:{radius:100,maxTiles:4,cells:16,step:5,listenPhysics:false,uploadsPerFrame:2},
  cityOptions:{buildingsPerStep:2,chunkSize:100}
