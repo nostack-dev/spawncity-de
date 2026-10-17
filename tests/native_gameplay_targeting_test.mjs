@@ -46,7 +46,8 @@ assert.equal(result.hit.source,"box3d","gameplay damage must come from actual C-
 assert.equal(result.hit.distance,12);
 assert.equal(result.visualHit.bodyId,"taxi-2","GPU instance index must resolve the correct moving Box3D body");
 assert.equal(received.translation[1],50);
-assert.equal(received.filter.maskBits,undefined);
+assert.equal(received.filter.categoryBits,8n,"raycaster must use Box3D projectile query category");
+assert.equal(received.filter.maskBits,7n,"raycaster must honor Box3D terrain/vehicle/drone collision mask");
 assert.equal(result.trianglesExamined,36);
 physics.b3.b3World_CastRayClosest=()=>({hit:false});
 assert.equal(presenter.pickGameplay(480,270).hit,null,
