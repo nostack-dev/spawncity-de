@@ -5,6 +5,9 @@
 // Mouse, touch, keyboard (Esc closes) and the pad (pad_actions.mjs: up/down scroll, B closes).
 export const CHANGELOG_MENU_VERSION="title-changelog-v1";
 export const CHANGELOG=Object.freeze([
+  {date:"2026-10-17",time:"11:44",title:"Vollbild und klassische Hände zurück",items:[
+    "Vollbild startet wieder wie vor der App-Umstellung; die Steuerung bleibt in normaler Ansicht und Vollbild nutzbar.",
+    "In der Ego-Ansicht sind die Hände und Waffen wieder kompakt wie vor den neuen großen Handschuh-Armen."]},
   {date:"2026-10-16",time:"14:42",title:"Neueste Spielversion und Changelog wieder live",items:[
     "Alle bisherigen Änderungen und Updates erscheinen wieder in der richtigen Reihenfolge im NEU / CHANGELOG-Menü.",
     "Die aktuelle Spielversion wird jetzt einheitlich unter spawncity.de veröffentlicht – einschließlich des verbesserten Touchpad-Mouselooks.",
