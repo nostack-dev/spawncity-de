@@ -21,6 +21,7 @@ near(n[0],1);near(n[4],.5);near(n[8],1/3);
 const shear=new Float32Array([1,0,0,0,1,1,0,0,0,0,1,0,0,0,0,1]);
 const ns=normalMatrix3(shear);
 assert.ok([...ns].every(Number.isFinite));
+near(ns[0],1);near(ns[1],-1);near(ns[3],0);near(ns[4],1);
 assert.deepEqual([...worldMatrix({position:[2,3,4]})],[...fromTRS([2,3,4])]);
 for(const fn of[()=>lookAt([0,0,0],[0,0,0]),()=>perspective(0,1,.1,100),()=>normalMatrix3(new Float32Array(16))])assert.throws(fn);
 console.log("Native Three-free camera/TRS/matrix/normal tests passed.");
