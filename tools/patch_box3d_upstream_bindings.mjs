@@ -10,6 +10,9 @@ function one(before,after,label){
 }
 // The upstream 2026-10-16 main branch has intentional public C API changes.
 // Keep the old JavaScript-facing names for the methods SpawnCity calls.
+one('function( "b3World_DumpShapeBounds(worldId, type)", &b3World_DumpShapeBounds );',
+    '// Removed debug dump entry: disabled in upstream optimized Emscripten core.',
+    "unavailable native diagnostics not linked");
 one('function( "b3World_RebuildStaticTree(worldId)", &b3World_RebuildStaticTree );',
     '// REMOVED upstream: b3World_RebuildStaticTree no longer exists.',
     "deprecated static tree rebuild removed");
