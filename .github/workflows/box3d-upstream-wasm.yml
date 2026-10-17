@@ -54,6 +54,17 @@ jobs:
       - name: Ensure whole SpawnCity game bundles exclusively the new verified WASM
         run: |
           set -eux
+          # Bundle the actual shared flight-controller C++ module, not a stub.
+          # This is the PR bundle-input test; production deploy still builds
+          # the flight core separately with its pinned emsdk 4.0.10.
+          mkdir -p generated
+          em++ sim/Arondight45_DroneFC_SIL_WASM.cpp -std=c++17 -O3 \
+            -s MODULARIZE=1 -s EXPORT_ES6=1 -s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
+            -s FILESYSTEM=0 -s SINGLE_FILE=1 -s ALLOW_MEMORY_GROWTH=0 \
+            -s INITIAL_MEMORY=16777216 \
+            -s 'EXPORTED_RUNTIME_METHODS=["HEAPU8"]' \
+            -s 'EXPORTED_FUNCTIONS=["_fc_input_buffer","_fc_output_buffer","_fc_input_size","_fc_output_size","_fc_reset","_fc_process","_fc_protocol_version"]' \
+            -s ENVIRONMENT=web -o generated/flight_core.mjs
           npm install --prefix /tmp/spawncity-upstream-bundle --ignore-scripts --no-audit --no-fund \
             three@0.185.1 box3d.js@0.1.1 maplibre-gl@5.24.0 esbuild@0.25.8 mqtt@5.15.2 nostr-tools@2.24.1 \
             qrcode-generator@1.4.4 jsqr@1.4.0 trystero@0.25.3 @trystero-p2p/mqtt@0.25.3 @trystero-p2p/torrent@0.25.3
@@ -64,6 +75,7 @@ jobs:
           node tests/production_box3d_bundle_contract_test.mjs --input-only /tmp/upstream-game.meta.json
           test "$(wc -c < /tmp/upstream-game.bundle.mjs)" -gt 1000000
           rm node_modules
+          rm -rf generated
       - name: Upload compiled native + inline WASM and SHA-256 provenance
         if: always()
         uses: actions/upload-artifact@v4
