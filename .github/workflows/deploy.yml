@@ -37,6 +37,7 @@ jobs:
           node tests/standalone_source_test.mjs
           node tests/touchpad_pointerlock_contract_test.mjs
           node tests/live_deploy_auth_contract_test.mjs
+          node tests/renderer_exclusive_release_contract_test.mjs
 
       - name: Check SpawnCity site config
         run: node tests/site_config_test.mjs
@@ -194,10 +195,13 @@ jobs:
             exit 1
           fi
           origin="$(node tools/public_site.mjs origin)"
+          # A successful Pages sync must carry the REAL renderer identity,
+          # not claim a native cutover just because native modules exist in git.
+          expected_renderer="$(node tools/public_site.mjs build-json "$GH_SHA" | jq -er '.renderer')"
           for attempt in $(seq 1 75); do
             if curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H "Cache-Control: no-cache" \
                 "$origin/build.json?sha=${GH_SHA}-${attempt}" -o /tmp/spawncity-build.json \
-              && node -e 'const p=require("/tmp/spawncity-build.json");if(p.sha!==process.argv[1])process.exit(1)' "$GH_SHA" \
+              && node -e 'const p=require("/tmp/spawncity-build.json");if(p.sha!==process.argv[1]||p.renderer!==process.argv[2]||p.nativeReleaseVerified!==(p.renderer==="native-webgl2"))process.exit(1)' "$GH_SHA" "$expected_renderer" \
               && curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H "Cache-Control: no-cache" \
                 "$origin/drone_simulator.html?ci=${GH_SHA}-${attempt}" -o /tmp/spawncity-live.html \
               && grep -q "ARONDIGHT45_BUILD_SHA:${GH_SHA}" /tmp/spawncity-live.html \
