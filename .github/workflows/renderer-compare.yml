@@ -1,5 +1,7 @@
 name: SpawnCity WebGL visual and performance A/B
 on:
+  pull_request:
+    branches: [main]
   workflow_run:
     workflows: ["Deploy SpawnCity"]
     types: [completed]
@@ -15,7 +17,7 @@ permissions:
   contents: read
 jobs:
   compare:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -56,4 +58,30 @@ jobs:
         with:
           name: spawncity-webgl-ab
           path: artifacts/renderer-ab/
+          if-no-files-found: warn
+
+  native-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install local rendering microbenchmark (no CDN)
+        run: |
+          npm install --prefix /tmp/native-bench --ignore-scripts --no-audit --no-fund three@0.185.1 puppeteer-core@24.16.0 esbuild@0.25.8
+          ln -s /tmp/native-bench/node_modules node_modules
+          node --check tests/native_webgl_proof.mjs
+          ./node_modules/.bin/esbuild tests/native_webgl_proof_scene.mjs --bundle --format=iife --platform=browser --target=es2022 --outfile=/tmp/native-webgl-proof.bundle.js
+      - name: Measure same batched city geometry with Three and raw WebGL2
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_webgl_proof.mjs
+      - name: Save raw GPU/CPU timing and image-comparison artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-native-webgl-proof
+          path: artifacts/native-webgl-proof/
           if-no-files-found: warn
