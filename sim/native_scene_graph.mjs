@@ -30,10 +30,18 @@ export class NativeSceneGraph{
  setTransform(id,{position,rotation,scale}={}){
   if(this.closed)throw Error("native scene graph disposed");
   const node=this.require(id);
-  if(position!==undefined)node.position=vec(position,3,"position");
-  if(rotation!==undefined){node.rotation=vec(rotation,4,"rotation");if(Math.hypot(...node.rotation)<1e-10)throw Error("degenerate rotation");}
-  if(scale!==undefined){node.scale=vec(scale,3,"scale");if(node.scale.some(x=>x===0))throw Error("degenerate scale");}
-  this.dirtySubtree(id);
+  // Validate the entire Box3D pose before changing anything; a rejected
+  // quaternion/scale must never half-update a live actor.
+  const nextPosition=position===undefined?node.position:vec(position,3,"position");
+  const nextRotation=rotation===undefined?node.rotation:vec(rotation,4,"rotation");
+  const nextScale=scale===undefined?node.scale:vec(scale,3,"scale");
+  if(Math.hypot(...nextRotation)<1e-10)throw Error("degenerate rotation");
+  if(nextScale.some(x=>x===0))throw Error("degenerate scale");
+  if(nextPosition.every((x,i)=>x===node.position[i])
+   &&nextRotation.every((x,i)=>x===node.rotation[i])
+   &&nextScale.every((x,i)=>x===node.scale[i]))return false;
+  node.position=nextPosition;node.rotation=nextRotation;node.scale=nextScale;
+  this.dirtySubtree(id);return true;
  }
  setVisible(id,visible){
   if(this.closed)throw Error("native scene graph disposed");
