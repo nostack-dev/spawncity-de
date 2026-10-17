@@ -1,6 +1,7 @@
 import {NativeWorldPresenter} from "../sim/native_world_presenter.mjs";
 import {WorldRigidBodyPhysics} from "../sim/world_rigid_body_physics.mjs";
 import {nativePopulationSnapshot} from "../sim/native_population_view.mjs";
+import {nativeLiveGameplayState} from "../sim/native_gameplay_camera.mjs";
 import {VsPoseTimeline} from "../sim/vs_pose_sync.mjs";
 (async()=>{
 const canvas=document.getElementById("native-world");
@@ -111,7 +112,14 @@ const initialNativeContext=world.renderer.gl;
 const walk={mode:"foot",position:{x:2,y:-10,z:1.68},yaw:0,pitch:0};
 const car={active:false,pose:{position:[15,-4,1],rotation:[0,0,0,1],yaw:0},speedMps:8};
 const jet={active:false,cockpit:true,pose:{x:-6,y:-11,z:40,q:[0,0,0,1]}};
-const gameplayState={mode:"auto",walk,car,jet,peerTimeline:timeline};
+// Bind the exact global surfaces present in the shipped game, not an
+// invented alternate state/renderer contract.
+globalThis.__arondightWalkMode=walk;
+globalThis.__arondightVehicleDrive=car;
+globalThis.__jetMode=jet;
+globalThis.__arondightRealWorld={vsPeerTimeline:timeline,lookYawDeg:0,lookPitchDeg:0};
+let spectating=false;
+const gameplayState=nativeLiveGameplayState(globalThis,{spectate:()=>spectating});
 world.gameplayState=gameplayState;
 const footFrame=world.draw(performance.now()+432);
 if(footFrame.gameMode!=="foot"||Math.abs(world.renderer.eye[0]-2)>1e-4
@@ -125,11 +133,11 @@ jet.active=true;
 const jetFrame=world.draw(performance.now()+434);
 if(jetFrame.gameMode!=="jet"||Math.abs(world.renderer.eye[2]-41.42)>1e-3)
  throw Error("jet cockpit did not use existing +Y forward native projection");
-gameplayState.mode="multiplayer";
+spectating=true;
 const mateFrame=world.draw(performance.now()+435);
 if(mateFrame.gameMode!=="multiplayer"||world.renderer.meshes.get("flight/airframe").visible)
  throw Error("multiplayer spectator failed to use authoritative VsPoseTimeline");
-gameplayState.mode="drone";
+spectating=false;jet.active=false;car.active=false;walk.mode="drone";
 world.setFlightCameraMode("fpv",{fpvFovDeg:105,fpvTiltDeg:0});
 const droneFrame=world.draw(performance.now()+436);
 if(droneFrame.gameMode!=="drone"||!world.renderer.meshes.get("flight/airframe").visible
