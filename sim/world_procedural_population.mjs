@@ -12,6 +12,7 @@ import {buildTrafficRoute,collectRenderedDrivableRoads,makeBuildingsOpaque} from
 import {syncWorldBuildingDepthOcclusion} from "./world_building_depth_occlusion.mjs";
 import {createPedestrianNetwork,seedRouteAgents,stepAgent,routePointInto,projectOnRoute,agentRandom,shiftAgent,frighten,provoke,punchPose,armsOf,fightWeapon,temperOf} from "./pedestrian_agents.mjs";
 import {worldOption,WORLD_OPTIONS_EVENT} from "./world_options.mjs";
+import {nativePopulationSnapshot} from "./native_population_view.mjs";
 import {projectileMomentumNs} from "./ballistics.mjs";
 import {honk,shout,scream} from "./street_voices.mjs";
 
@@ -746,6 +747,12 @@ export function installWorldProceduralPopulation(){if(installed)return;installed
     towEnd(id,{x,y,yaw}={}){const r=byId.get(String(id||""));if(!r||!r.towed)return false;r.towed=false;const shape=vehicleShape(r);if(Number.isFinite(x)&&Number.isFinite(y))rigidBodies()?.setPose?.(r.id,{position:[x,y,staticGroundHeightAt(x,y)+shape.half[2]+.08],yaw:Number(yaw)||0});return true;},
     // people as vehicle impacts (people_impacts.mjs) see them: the drawn, standing ones
     people(){peopleOut.length=0;let k=0;for(const slot of personSlots){const a=slot.agent;if(!a||!slot.group.visible||!a.alive||a.knocked)continue;const o=peopleOutPool[k]||(peopleOutPool[k]={id:"",x:0,y:0,z:0,yaw:0});k++;o.id=a.id;o.x=a.x;o.y=a.y;o.z=a.z;o.yaw=a.yaw;peopleOut.push(o);}return peopleOut;},
+    // Pure live agent snapshots for the sole native WebGL2 renderer.
+    // No THREE.Group visibility or graphical-slot ownership is involved.
+    nativePeople(center=[0,0]){
+      return opts.people?nativePopulationSnapshot(people,{center,maxPeople:PERSON_SLOTS,
+        radius:PEOPLE_SHOW_M,heightAt:staticGroundHeightAt}):[];
+    },
     // a hit that is not (yet) fatal: the person goes down as a ragdoll and gets up again
     knockdown(id,options={}){const a=byId.get(String(id||""));return a?.kind==="person"?knockPerson(a,options):null;},
     // a fist (player melee): hurts, angers, and three or four of them put a person down (ragdoll)
