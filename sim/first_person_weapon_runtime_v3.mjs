@@ -1,12 +1,10 @@
 import * as THREE from "three";
-import {buildVoltSmg,buildGoldenHandCannon,buildBoomstick,buildRocketLauncher,buildSniperRifle,buildFists,buildKnife,attachWeaponArms} from "./weapon_models.mjs";
+import {buildVoltSmg,buildGoldenHandCannon,buildBoomstick,buildRocketLauncher,buildSniperRifle,buildFists,buildKnife} from "./weapon_models.mjs";
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,Number(v)||0));
 const shotCamera=new THREE.PerspectiveCamera(78,16/9,.01,500),raycaster=new THREE.Raycaster(),ndc=new THREE.Vector2(),forward=new THREE.Vector3(),target=new THREE.Vector3();
 const localBarrelForward=new THREE.Vector3(0,0,-1),currentBarrelForward=new THREE.Vector3(),shotDirection=new THREE.Vector3(0,1,0),fullAdjust=new THREE.Quaternion(),weightedAdjust=new THREE.Quaternion(),identityQuat=new THREE.Quaternion(),lastAppliedAdjust=new THREE.Quaternion();
 const PISTOL_PARTS=new Set(["WALK_VM_FRAME","WALK_VM_RAIL","WALK_VM_SLIDE","WALK_VM_SLIDE_TOP","WALK_VM_BARREL","WALK_VM_MUZZLE","WALK_VM_EJECTION_PORT","WALK_VM_GRIP","WALK_VM_MAG_BASE","WALK_VM_TRIGGER_GUARD","WALK_VM_TRIGGER","WALK_VM_REAR_SIGHT","WALK_VM_FRONT_SIGHT","WALK_VM_FRONT_DOT"]);
-// the old capsule gloves/sleeves of the walk-mode pistol rig: replaced by the per-weapon arms
-const LEGACY_ARM_PARTS=new Set(["WALK_VM_SLEEVE_R","WALK_VM_CUFF_R","WALK_VM_SLEEVE_L","WALK_VM_CUFF_L","WALK_VM_GLOVE_R","WALK_VM_GLOVE_L","WALK_VM_GLOVE_PAD_R","WALK_VM_GLOVE_PAD_L"]);
 const WEAPON_NAMES={smg:"MP",glock:"GLOCK",sniper:"SNIPER",grenade:"WERFER",rocket:"RAKETEN",fists:"FÄUSTE",knife:"MESSER"},WEAPON_ORDER=["smg","glock","sniper","grenade","rocket","fists","knife"];
 let installed=false,lastScreenShotAt=-Infinity,lastSwitchAt=-Infinity,lastMode="",lastGun=null,hasAppliedAdjust=false,lastShotClientX=NaN,lastShotClientY=NaN,weaponButton=null,lastButtonMode="";
 
@@ -23,28 +21,27 @@ function mesh(name,geometry,mat,x,y,z,rx=0,ry=0,rz=0,order=9998){const m=new THR
 function launcherMesh(name,geometry,mat,x,y,z,rx=0,ry=0,rz=0,order=9998){const m=new THREE.Mesh(geometry,mat);m.name=name;m.position.set(x,y,z);m.rotation.set(rx,ry,rz);m.renderOrder=order;m.frustumCulled=false;m.userData.flightFireIgnore=true;m.userData.walkWeaponPart=true;m.userData.walkGrenadePart=true;return m;}
 // Hero weapon skins (weapon_models.mjs). Group and muzzle-node names stay
 // the same, so firing, muzzle flash and aiming code keep working.
-// Each gun gets its own gloved arms (viewmodel_arms.mjs) posed on its grips.
-function mount(gun,name,build,offset,meta,arms){let group=gun.getObjectByName?.(name);if(group)return group;group=build();group.name=name;group.position.add(offset);group.userData.flightFireIgnore=true;group.userData.walkWeaponPart=true;Object.assign(group.userData,meta);if(arms)attachWeaponArms(group,arms);gun.add(group);return group;}
-function ensureSmg(gun){return mount(gun,"WALK_SMG_3D",buildVoltSmg,new THREE.Vector3(.012,.05,.015),{walkSmgViewmodel:"volt-smg-epic-v5"},"smg");}
-function ensureGrenadeLauncher(gun){return mount(gun,"WALK_GRENADE_LAUNCHER_3D",buildBoomstick,new THREE.Vector3(.01,.1,.018),{walkGrenadePart:true,walkGrenadeViewmodel:"boomstick-40mm-v2"},"grenade");}
-function ensureRocketLauncher(gun){return mount(gun,"WALK_ROCKET_LAUNCHER_3D",buildRocketLauncher,new THREE.Vector3(.01,.1,.02),{walkRocketViewmodel:"shoulder-tube-v1"},"rocket");}
-function ensureSniper(gun){return mount(gun,"WALK_SNIPER_3D",buildSniperRifle,new THREE.Vector3(.012,.045,.02),{walkSniperViewmodel:"anti-materiel-50-v1"},"sniper");}
+function mount(gun,name,build,offset,meta){let group=gun.getObjectByName?.(name);if(group)return group;group=build();group.name=name;group.position.add(offset);group.userData.flightFireIgnore=true;group.userData.walkWeaponPart=true;Object.assign(group.userData,meta);gun.add(group);return group;}
+function ensureSmg(gun){return mount(gun,"WALK_SMG_3D",buildVoltSmg,new THREE.Vector3(.012,-.008,.015),{walkSmgViewmodel:"volt-smg-epic-v5"});}
+function ensureGrenadeLauncher(gun){return mount(gun,"WALK_GRENADE_LAUNCHER_3D",buildBoomstick,new THREE.Vector3(.01,-.015,.018),{walkGrenadePart:true,walkGrenadeViewmodel:"boomstick-40mm-v2"});}
+function ensureRocketLauncher(gun){return mount(gun,"WALK_ROCKET_LAUNCHER_3D",buildRocketLauncher,new THREE.Vector3(.01,-.01,.02),{walkRocketViewmodel:"shoulder-tube-v1"});}
+function ensureSniper(gun){return mount(gun,"WALK_SNIPER_3D",buildSniperRifle,new THREE.Vector3(.012,-.01,.02),{walkSniperViewmodel:"anti-materiel-50-v1"});}
 function ensureFists(gun){return mount(gun,"WALK_FISTS_3D",buildFists,new THREE.Vector3(0,0,0),{walkFistsViewmodel:"bare-fists-v1"});}
 function ensureKnife(gun){return mount(gun,"WALK_KNIFE_3D",buildKnife,new THREE.Vector3(0,0,0),{walkKnifeViewmodel:"combat-knife-v1"});}
 function ensureGlock(gun){
   let group=gun.getObjectByName?.("WALK_GLOCK_3D");if(group)return group;
-  group=new THREE.Group();group.name="WALK_GLOCK_3D";group.position.set(.03,.12,-.14);group.userData.flightFireIgnore=true;group.userData.walkWeaponPart=true;group.userData.walkGlockViewmodel="dual-mirrored-matte-black-v3";
+  group=new THREE.Group();group.name="WALK_GLOCK_3D";group.position.set(.01,-.01,0);group.userData.flightFireIgnore=true;group.userData.walkWeaponPart=true;group.userData.walkGlockViewmodel="dual-mirrored-matte-black-v3";
   // The right pistol sits in the right hand (the gun anchor). The left pistol
   // is a separate, mirrored viewmodel anchored in the left hand by the
   // first-person controller, so each gun aims at its own finger.
   const right=buildGoldenHandCannon();right.name="WALK_GLOCK_RIGHT";right.userData.walkGlockHand="right";
   // one pistol in the right hand
-  right.position.x+=.02;right.position.y-=.006;attachWeaponArms(right,"glock");
+  right.position.x+=.02;right.position.y-=.006;
   group.add(right);gun.add(group);return group;
 }
 function setWeaponModeVisual(gun,mode){
   const smg=ensureSmg(gun),launcher=ensureGrenadeLauncher(gun),rocketTube=ensureRocketLauncher(gun),glock=ensureGlock(gun),sniper=ensureSniper(gun),fists=ensureFists(gun),knife=ensureKnife(gun),isSmg=mode==="smg",isGrenade=mode==="grenade",isGlock=mode==="glock",isSniper=mode==="sniper";smg.visible=isSmg;launcher.visible=isGrenade;rocketTube.visible=mode==="rocket";glock.visible=isGlock;sniper.visible=isSniper;fists.visible=mode==="fists";knife.visible=mode==="knife";const conversion=gun.getObjectByName?.("FINAL_SMG_CONVERSION");if(conversion)conversion.visible=false;
-  gun.traverse?.(node=>{if(PISTOL_PARTS.has(node.name)||LEGACY_ARM_PARTS.has(node.name)||node.userData?.walkArmHotfix)node.visible=false;});
+  gun.traverse?.(node=>{if(PISTOL_PARTS.has(node.name))node.visible=false;});
   const flash=gun.getObjectByName?.("FINAL_MUZZLE_FLASH")||gun.getObjectByName?.("WALK_MUZZLE_FLASH");if(flash){flash.traverse?.(node=>{if(node.isMesh&&node.material){node.material.depthTest=true;node.material.depthWrite=false;node.material.needsUpdate=true;}if(node.isMesh)node.renderOrder=9996;});}
   gun.userData.finalWeapon=mode;gun.userData.walkWeaponViewmodel=isGrenade?"boomstick-40mm-v2":isSmg?"volt-smg-epic-v5":"dual-mirrored-matte-black-glock-v3";const view=viewport();if(view){view.dataset.walkWeapon=mode;view.dataset.walkWeaponViewmodel=gun.userData.walkWeaponViewmodel;view.dataset.walkSmgMesh=isSmg?"dedicated-receiver+barrel+magazine+brace-v4":"hidden";view.dataset.walkGrenadeLauncher=isGrenade?"40mm-visible-v1":"hidden";view.dataset.walkWeaponSwitch="single-owner-touch+q+dpad-v4";view.dataset.walkMuzzleOwnership="gameplay-runtime-dual-glock-nodes-v2";view.dataset.walkGlockViewmodel=isGlock?"dual-mirrored-matte-black-v3":"hidden";}
 }
