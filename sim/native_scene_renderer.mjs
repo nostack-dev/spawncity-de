@@ -5,6 +5,7 @@
 // gameplay scene producer; native-only release gate remains closed.
 import {multiply4,lookAt,perspective,identity4,normalMatrix3} from "./native_render_math.mjs";
 import {extractFrustumPlanes,sphereVisible,geometryBoundingSphere,instancedBoundingSphere} from "./native_render_culling.mjs";
+import {screenRay,pickNativeMeshes} from "./native_scene_picking.mjs";
 export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-culled-v5";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
@@ -175,6 +176,12 @@ export class NativeSceneRenderer{
  setCamera({eye,target,up,fov,near,far}={}){
   if(eye)this.eye=[...eye];if(target)this.target=[...target];if(up)this.up=[...up];
   if(fov!==undefined)this.fov=fov;if(near!==undefined)this.near=near;if(far!==undefined)this.far=far;
+ }
+ getScreenRay(x,y){
+  return screenRay({eye:this.eye,target:this.target,up:this.up,fov:this.fov,near:this.near,far:this.far},x,y,this.width,this.height);
+ }
+ pick(x,y,{maxDistance=this.far,ignoreId=null}={}){
+  return pickNativeMeshes(this.meshes,this.getScreenRay(x,y),{maxDistance,ignoreId});
  }
  setLighting(values={}){
   for(const key of ["sunDirection","sunColor","skyColor","groundColor","fogColor","fogDensity","exposure"])
