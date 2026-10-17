@@ -69,9 +69,10 @@ export class NativeWorldPresenter{
   const frame=now=>{
    if(!this.running||this.disposed)return;
    try{this.draw(now);}catch(error){this.error=error;this.running=false;this.onError?.(error);return;}
-   this.requestFrame(frame);
+   if(this.running&&!this.disposed)this.requestFrame(frame);
   };
-  this.requestFrame(frame);return true;
+  try{this.requestFrame(frame);}catch(error){this.running=false;throw error;}
+  return true;
  }
  draw(now=performance.now()){
   if(this.disposed)throw Error("native world disposed");
