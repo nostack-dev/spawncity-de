@@ -8,20 +8,24 @@ const features=[
 const result=buildNativeRoadGeometry(features,{heightAt:ground,radius:180,center:[0,0],chunkSize:100});
 assert.equal(result.roads,3);
 assert.ok(result.triangles>50);
-assert.equal(result.chunks.length,1);
-const m=result.chunks[0];
-assert.equal(m.positions.length/3*3,m.normals.length);
-assert.equal(m.positions.length,m.colors.length);
-assert.equal(m.uvs.length,m.positions.length/3*2);
-assert.equal(m.triangles,m.positions.length/9);
-let raisedRoad=0,raisedSidewalk=0,raisedPaint=0;
-for(let i=0;i<m.positions.length;i+=3){
- const x=m.positions[i],y=m.positions[i+1],z=m.positions[i+2],delta=z-ground(x,y);
- if(Math.abs(delta-.112)<1e-5)raisedRoad++;
- if(Math.abs(delta-.09)<1e-5)raisedSidewalk++;
- if(Math.abs(delta-.135)<1e-5)raisedPaint++;
- assert.equal(m.normals[i],0);assert.equal(m.normals[i+1],0);assert.equal(m.normals[i+2],1);
+assert.ok(result.chunks.length>=1);
+// A road crossing a chunk origin legitimately straddles multiple tiles.
+let raisedRoad=0,raisedSidewalk=0,raisedPaint=0,totalTriangles=0;
+for(const m of result.chunks){
+ assert.equal(m.positions.length,m.normals.length);
+ assert.equal(m.positions.length,m.colors.length);
+ assert.equal(m.uvs.length,m.positions.length/3*2);
+ assert.equal(m.triangles,m.positions.length/9);
+ totalTriangles+=m.triangles;
+ for(let i=0;i<m.positions.length;i+=3){
+  const x=m.positions[i],y=m.positions[i+1],z=m.positions[i+2],delta=z-ground(x,y);
+  if(Math.abs(delta-.112)<1e-5)raisedRoad++;
+  if(Math.abs(delta-.09)<1e-5)raisedSidewalk++;
+  if(Math.abs(delta-.135)<1e-5)raisedPaint++;
+  assert.equal(m.normals[i],0);assert.equal(m.normals[i+1],0);assert.equal(m.normals[i+2],1);
+ }
 }
+assert.equal(totalTriangles,result.triangles);
 assert.ok(raisedRoad>40);assert.ok(raisedSidewalk>10);assert.ok(raisedPaint>0);
 const generator=nativeRoadGeometrySteps(features,{heightAt:ground,featuresPerStep:1});
 assert.equal(generator.next().value.complete,false);
