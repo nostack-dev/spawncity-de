@@ -77,3 +77,34 @@ post-FX, projectile/particle VFX, game-world ray picking, vehicles/terrain,
 interiors and the production renderer hookup. The player cannot use it yet.
 
 **Do not merge this branch until the complete release gate is green.**
+
+
+## 17 October: Native city GPU performance stage
+
+Additional Three-free modules now in this draft:
+
+- `sim/native_render_culling.mjs`: conservative Z-up frustum- and transform-aware
+  sphere bounds. The test introduces an offscreen mesh and proves it is culled
+  before any GL draw, without losing an intersecting/on-screen mesh.
+- `sim/native_city_indexed.mjs`: bit-for-bit lossless triangle deduplication
+  (positions, normals, vertex colors, roof/facade UVs), preserves hard normals,
+  damage and courtyard seams. The actual native GPU OSM browser proof shows
+  **1,960 / 5,280 bytes (37.1%) fewer** geometry buffer bytes for its two
+  OSM chunks, with `drawElementsInstanced` used on WebGL2 and no GL errors.
+  This is a small scene fixture, not a representative all-city measurement.
+- `sim/native_city_stream.mjs`: OSM/Box3D collision footprint source drives
+  native scene chunk IDs. Unchanged chunks do not reupload, damage revisions
+  update only affected geometry, removed tiles evict buffers, superseded
+  asynchronous requests cannot reintroduce stale geometry. GPU uploads are
+  time-sliced with a configurable per-frame limit (default two), yielding
+  to browser input and painting between batches. This is not a separate
+  renderer or a fallback.
+
+**Remaining scope is still substantial:** the native modules do not yet own the
+actual production game presentation path. All controls, player/NPC animation,
+jet and drone visuals, weapon targeting/HUD integration, real-world terrain,
+street meshes, dynamic city, lighting/shadows, all effects and multiplayer
+actors must be ported as a single tested cutover. The existing Three.js game
+stays on live until the new native-only engine passes the full acceptance gate
+on physical phones and desktop. No performance guarantee is inferred from
+SwiftShader CI.
