@@ -177,11 +177,17 @@ jobs:
         timeout-minutes: 16
         env:
           GH_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Fail immediately with a useful action instead of polling for a
-          # custom domain that has not been moved to the canonical repo yet.
-          repo_pages="$(curl -fsSL --retry 2 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${GITHUB_REPOSITORY}" | jq -r '.has_pages')"
+          # The runner's unauthenticated GitHub API request returned HTTP 403
+          # after publication (2026-10-17, #7). Auth with the built-in,
+          # read-scoped Actions token. Keep it out of stdout and target files.
+          repo_pages="$(curl -fsSL --retry 2 \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}" | jq -r '.has_pages')"
           if [ "$repo_pages" != "true" ]; then
             echo "::error::Canonical repository Pages disabled. Set Settings > Pages > Deploy from branch > gh-pages /root; then transfer spawncity.de from the old Pages repo."
             exit 1
