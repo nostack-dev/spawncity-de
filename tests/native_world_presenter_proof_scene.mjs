@@ -68,12 +68,14 @@ const contextExtension=gl.getExtension("WEBGL_lose_context");
 let contextRestored=false;
 if(contextExtension){
  const eventWithin=(name)=>new Promise((resolve,reject)=>{
-   const timeout=setTimeout(()=>reject(new Error("Timed out: "+name)),3000);
+   const timeout=setTimeout(()=>reject(new Error("Timed out: "+name+"; lost="+gl.isContextLost())),12000);
    canvas.addEventListener(name,()=>{clearTimeout(timeout);resolve();},{once:true});
  });
  const lost=eventWithin("webglcontextlost");contextExtension.loseContext();await lost;
  const paused=world.draw(performance.now()+435);
  if(!paused.paused||paused.renderer!=="native-webgl2-only")throw Error("Native GPU context loss must pause without fallback or halt");
+ // Chromium/ANGLE may defer manual restoration until after a GPU service turn.
+ await new Promise(resolve=>setTimeout(resolve,250));
  const restored=eventWithin("webglcontextrestored");contextExtension.restoreContext();await restored;
  const resumed=world.draw(performance.now()+455);
  if(resumed.paused||resumed.gpu?.drawCalls<5)throw Error("Native GPU scene failed to recover its VAOs after context restore");
