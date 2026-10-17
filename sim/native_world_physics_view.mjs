@@ -27,3 +27,27 @@ export function nativeWorldPhysicsView(world,{alpha=()=>1,maxBodies=2000}={}){
   }
  });
 }
+
+// The live game already exposes its Box3D world as
+// globalThis.__arondightWorldRigidBodies. That runtime owns the correct
+// accumulator/FIXED_DT alpha, so use its public renderPose(id), NOT the raw
+// engine's default alpha=1. No duplicate physics stepping or pose authority.
+export function nativeRigidRuntimeView(runtime,{maxBodies=2000}={}){
+ if(!runtime||typeof runtime.renderPose!=="function"||typeof runtime.raycast!=="function"
+  ||!Number.isInteger(maxBodies)||maxBodies<1)
+  throw Error("native view requires existing world_rigid_body_runtime");
+ return Object.freeze({
+  bodies(){
+   const engine=runtime.engine;
+   if(!(engine?.records instanceof Map)||typeof engine.b3?.b3Body_IsValid!=="function")return [];
+   const out=[];
+   for(const record of engine.records.values()){
+    if(!validRecord(record)||!engine.b3.b3Body_IsValid(record.body))continue;
+    out.push({id:record.id,kind:record.kind,halfExtents:record.halfExtents,drone:record.drone});
+    if(out.length>=maxBodies)break;
+   }
+   return out;
+  },
+  renderPose(id){return runtime.renderPose(String(id));}
+ });
+}
