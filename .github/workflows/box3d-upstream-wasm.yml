@@ -1,0 +1,43 @@
+name: Compile latest upstream Box3D WebAssembly
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/box3d-upstream-wasm.yml"
+      - "tools/build_box3d_upstream_wasm.sh"
+      - "tests/box3d_upstream_contract_test.mjs"
+      - "tests/control_semantics_test.mjs"
+      - "docs/box3d-upstream-wasm.md"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-latest-box3d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 38
+    container:
+      image: emscripten/emsdk:6.0.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify current source identity and build isolation
+        run: |
+          node --version
+          em++ --version | head -n 2
+          node tests/box3d_upstream_contract_test.mjs
+          node tests/control_semantics_test.mjs
+      - name: Compile current Erin Catto Box3D from upstream source and original 1:1 WASM bindings
+        run: |
+          bash tools/build_box3d_upstream_wasm.sh
+      - name: Compare API/behavior with existing published box3d.js package
+        run: |
+          node tests/box3d_upstream_contract_test.mjs artifacts/box3d-upstream-wasm
+          node tests/physics_validation_test.mjs
+          node tests/world_building_collision_physics_test.mjs
+      - name: Upload compiled native + inline WASM and SHA-256 provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-box3d-latest-upstream-wasm
+          path: artifacts/box3d-upstream-wasm/
+          if-no-files-found: warn
+          retention-days: 30
