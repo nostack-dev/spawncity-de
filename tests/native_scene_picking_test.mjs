@@ -23,7 +23,6 @@ const distantWall=node("far",{transforms:fromTRS([0,4,0])});
 const offscreenWall=node("outside",{transforms:fromTRS([300,0,0])});
 const map=new Map([["far",distantWall],["outside",offscreenWall],["wall",nearWall]]);
 const hit=pickNativeMeshes(map,ray,{maxDistance:80});
-console.log("NATIVE_PICK_DEBUG",JSON.stringify({ray,hit,mesh:nearWall.data.transforms.slice(0,16)}));
 assert.equal(hit.hit?.id,"wall","closest matching wall must win");
 near(hit.hit.distance,10);near(hit.hit.point[0],0);near(hit.hit.point[1],0);near(hit.hit.point[2],2);
 near(hit.hit.normal[1],-1);
