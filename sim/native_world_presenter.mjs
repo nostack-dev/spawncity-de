@@ -74,6 +74,10 @@ export class NativeWorldPresenter{
  }
  draw(now=performance.now()){
   if(this.disposed)throw Error("native world disposed");
+  // Android GPU contexts can be evicted while changing apps or PWA window.
+  // Pause only presentation until the SAME native WebGL2 context restores;
+  // never initialize Three.js or terminate the only rendering loop.
+  if(this.renderer.lost){this.lastFrameAt=now;return {paused:true,reason:"native-webgl2-context-lost",renderer:"native-webgl2-only"};}
   // The *same* Box3D presentationPose used by the original simulator now
   // feeds only the native GPU meshes; no parallel visual physics or Three.
   if(this.airframe){
