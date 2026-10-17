@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
 import {readFileSync,readdirSync} from "node:fs";
 import {SITE,canonicalGameUrl,controllerUrl,gameUrl,productFrontDoor} from "../sim/site_config.mjs";
+import {auditRuntime} from "./renderer_acceptance_gate.mjs";
 
 assert.equal(SITE.productName,"SpawnCity");
 assert.equal(SITE.productHost,"spawncity.de");
@@ -79,6 +80,13 @@ assert.equal(json.sha,"abc1234");
 assert.equal(json.product,"SpawnCity");
 assert.equal(json.productHost,"spawncity.de");
 assert.equal(json.pagesHost,SITE.pagesHost);
+const rendererAudit=auditRuntime();
+assert.equal(json.renderer,rendererAudit.nativeOnly?"native-webgl2":"threejs",
+ "the published build identity must reflect the production renderer, not experimental module presence");
+assert.equal(json.nativeReleaseVerified,rendererAudit.nativeOnly);
+assert.equal(json.threeImportModules,rendererAudit.threeImportCount);
+assert.ok(Number.isInteger(json.threeImportModules)&&json.threeImportModules>=0);
+
 const origin=spawnSync(process.execPath,["tools/public_site.mjs","origin"],{encoding:"utf8"});
 assert.equal(origin.stdout.trim(),`https://${SITE.pagesHost}`);
 
