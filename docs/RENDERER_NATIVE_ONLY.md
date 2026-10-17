@@ -108,3 +108,27 @@ actors must be ported as a single tested cutover. The existing Three.js game
 stays on live until the new native-only engine passes the full acceptance gate
 on physical phones and desktop. No performance guarantee is inferred from
 SwiftShader CI.
+
+
+## Native collision terrain (Box3D ground, not separate scenery)
+
+The native-only renderer now includes `sim/native_terrain_geometry.mjs`
+and `sim/native_terrain_stream.mjs`. Real ground height sampling is taken
+straight from `terrain_craters.mjs:terrainNodeHeightAt`, the same ground
+used by the Box3D height-field. Every 5 m physics cell is rendered using
+the same southwest-to-northeast diagonal. Indexed 32-cell tiles share
+height/normal samples at borders. A 32-cell terrain tile requires more than
+65% fewer GPU bytes than expanded triangles in the pure geometry test.
+
+Tiles are selected by camera radius and uploaded at most two per frame
+(default). When craters, DEM or roads change, the existing terrain-change
+listener invalidates only overlapping tiles; moving across the map evicts
+stale GPU buffers and preserves unchanged tiles. New terrain is never
+a hybrid Three/native render path.
+
+The native browser GPU fixture now draws 4,608 physics-compatible
+terrain triangles as an indexed mesh alongside city buildings and a
+skinned actor (15,880 triangles total, six draw calls, zero GL errors
+on SwiftShader). The full native player/world presentation and real
+phone GPU performance measurements are **still missing**, so the
+full-engine merge gate remains red by design.
