@@ -170,7 +170,8 @@ export class NativeSceneRenderer{
   this.skyColor=[.48,.58,.7];this.groundColor=[.26,.27,.26];this.fogColor=[.68,.8,.88];
   this.fogDensity=.00085;this.exposure=1;this.stats=null;
   this.shadow=null;this.shadowConfig=shadows&&shadows!==false?{...shadows}:null;
-  this.onLost=e=>{e.preventDefault();this.lost=true;this.shadow?.dispose({contextLost:true});this.shadow=null;};
+  this.sceneRevision=0;this.shadowCache=null;
+  this.onLost=e=>{e.preventDefault();this.lost=true;this.shadow?.dispose({contextLost:true});this.shadow=null;this.shadowCache=null;};
   this.onRestored=()=>{this.lost=false;this.init();for(const m of this.meshes.values())this.upload(m);};
   canvas.addEventListener?.("webglcontextlost",this.onLost,false);
   canvas.addEventListener?.("webglcontextrestored",this.onRestored,false);
@@ -180,6 +181,7 @@ export class NativeSceneRenderer{
   this.gpu=program(this.gl);
   this.timer=this.gl.getExtension("EXT_disjoint_timer_query_webgl2");
   if(this.shadowConfig)this.shadow=new NativeSunShadowMap(this.gl,this.shadowConfig);
+  this.shadowCache=null;
   this.pending=[];this.lastGpuMs=null;
  }
  resize(w,h){
@@ -200,7 +202,7 @@ export class NativeSceneRenderer{
  }
  setShadows(options=null){
   if(this.disposed)throw Error("renderer disposed");
-  this.shadow?.dispose({contextLost:this.lost});this.shadow=null;
+  this.shadow?.dispose({contextLost:this.lost});this.shadow=null;this.shadowCache=null;
   this.shadowConfig=options&&options!==false?{...options}:null;
   if(this.shadowConfig&&!this.lost)this.shadow=new NativeSunShadowMap(this.gl,this.shadowConfig);
  }
@@ -220,7 +222,7 @@ export class NativeSceneRenderer{
   const triangleCount=(m.data.indices?.length||m.data.p.length/3)/3;
   m.bvh=isIdentity&&!m.data.skin&&triangleCount>=36?nativeBuildBvh(m.data.p,m.data.indices):null;
   m.worldBounds=instancedBoundingSphere(m.localBounds,m.data.transforms);
-  this.meshes.set(id,m);if(!this.lost)this.upload(m);return m;
+  this.meshes.set(id,m);this.sceneRevision++;if(!this.lost)this.upload(m);return m;
  }
  upload(m){
   const gl=this.gl,d=m.data,vao=gl.createVertexArray();gl.bindVertexArray(vao);m.vao=vao;m.buffers=[];
@@ -252,7 +254,11 @@ export class NativeSceneRenderer{
  }
  updateInstances(id,newInstances){
   const m=this.meshes.get(id);if(!m)throw Error("unknown mesh "+id);
-  const next=instances(newInstances);Object.assign(m.data,next);
+  const next=instances(newInstances);
+  const prev=m.data;
+  const same=(a,b)=>a.length===b.length&&a.every((value,i)=>value===b[i]);
+  if(same(prev.transforms,next.transforms)&&same(prev.tints,next.tints))return false;
+  Object.assign(m.data,next);this.sceneRevision++;
   // A changed transform invalidates the static-world BVH assumption.
   m.bvh=null;
   m.worldBounds=instancedBoundingSphere(m.localBounds,next.transforms);
@@ -270,13 +276,13 @@ export class NativeSceneRenderer{
   const m=this.meshes.get(id);if(!m?.data.skin)throw Error("not a skinned mesh "+id);
   typed("skin bones",bones,16);
   if(bones.length!==m.data.skin.bones.length)throw Error("joint count cannot change without rebuilding mesh");
-  m.data.skin.bones=bones;
+  m.data.skin.bones=bones;this.sceneRevision++;
  }
  free(m){
   if(!this.lost){if(m.vao)this.gl.deleteVertexArray(m.vao);for(const b of m.buffers||[])this.gl.deleteBuffer(b);if(m.element)this.gl.deleteBuffer(m.element);}
   m.vao=null;m.buffers=[];m.element=null;
  }
- remove(id){const m=this.meshes.get(id);if(!m)return false;this.free(m);this.meshes.delete(id);return true;}
+ remove(id){const m=this.meshes.get(id);if(!m)return false;this.free(m);this.meshes.delete(id);this.sceneRevision++;return true;}
  pollGpu(){
   if(!this.timer)return;
   const gl=this.gl,rest=[];
@@ -294,7 +300,12 @@ export class NativeSceneRenderer{
   const gl=this.gl,start=performance.now(),u=this.gpu.u;this.pollGpu();
   let timerQuery=null;
   if(this.timer&&this.pending.length<4){timerQuery=gl.createQuery();gl.beginQuery(this.timer.TIME_ELAPSED_EXT,timerQuery);}
-  const shadowStats=this.shadow?.draw(this.meshes.values(),{focus:this.target,sunDirection:this.sunDirection})||null;
+  let shadowStats=null;
+  if(this.shadow){
+   const key=this.sceneRevision+"|"+this.target.join(",")+"|"+this.sunDirection.join(",");
+   if(this.shadowCache?.key===key)shadowStats={drawCalls:0,resolution:this.shadow.resolution,reused:true};
+   else{shadowStats=this.shadow.draw(this.meshes.values(),{focus:this.target,sunDirection:this.sunDirection});this.shadowCache={key};}
+  }
   gl.viewport(0,0,this.width,this.height);gl.clearColor(...clearColor);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(this.gpu.handle);
   const camera=multiply4(perspective(this.fov,this.width/this.height,this.near,this.far),lookAt(this.eye,this.target,this.up));
@@ -316,7 +327,7 @@ export class NativeSceneRenderer{
    const x=a.data.transforms,y=b.data.transforms;
    return Math.hypot(y[12]-this.eye[0],y[13]-this.eye[1],y[14]-this.eye[2])-Math.hypot(x[12]-this.eye[0],x[13]-this.eye[1],x[14]-this.eye[2]);
   });
-  const stats={drawCalls:0,shadowDrawCalls:shadowStats?.drawCalls||0,shadowResolution:shadowStats?.resolution||0,triangles:0,instances:0,culledMeshes:this.meshes.size-meshes.length,cpuMs:0,gpuMs:this.lastGpuMs};
+  const stats={drawCalls:0,shadowDrawCalls:shadowStats?.drawCalls||0,shadowResolution:shadowStats?.resolution||0,shadowReused:Boolean(shadowStats?.reused),triangles:0,instances:0,culledMeshes:this.meshes.size-meshes.length,cpuMs:0,gpuMs:this.lastGpuMs};
   const draw=m=>{
    const d=m.data,mat=m.material;
    gl.uniform4fv(u.uMaterial,new Float32Array(mat.color));
