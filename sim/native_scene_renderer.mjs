@@ -7,7 +7,8 @@ import {multiply4,lookAt,perspective,identity4,normalMatrix3} from "./native_ren
 import {extractFrustumPlanes,sphereVisible,geometryBoundingSphere,instancedBoundingSphere} from "./native_render_culling.mjs";
 import {screenRay,pickNativeMeshes} from "./native_scene_picking.mjs";
 import {nativeBuildBvh} from "./native_scene_bvh.mjs";
-export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-scene-culled-v5";
+import {NativeSunShadowMap} from "./native_sun_shadow.mjs";
+export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-sun-shadows-v6";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
 "layout(location=0) in vec3 aPosition;",
@@ -54,6 +55,10 @@ const FRAG="#version 300 es\n"+[
 "uniform vec3 uSunDirection,uSunColor,uSkyColor,uGroundColor,uEye,uFogColor;",
 "uniform float uFogDensity,uExposure,uAlphaCutoff;",
 "uniform sampler2D uTexture;",
+"uniform sampler2DShadow uSunShadowMap;",
+"uniform mat4 uSunShadowProjection;",
+"uniform float uSunShadowBias;",
+"uniform int uSunShadowEnabled;",
 "uniform int uHasTexture,uUnlit,uFacade;",
 "out vec4 outColor;",
 "void main(){",
@@ -76,7 +81,14 @@ const FRAG="#version 300 es\n"+[
 "  }",
 "  float ndl=max(dot(n,sun),0.0);",
 "  vec3 hemis=mix(uGroundColor,uSkyColor,clamp(n.z*0.5+0.5,0.0,1.0));",
-"  vec3 rgb=base*(uUnlit==1?vec3(1.0):hemis+uSunColor*ndl)*uExposure;",
+"  float shadow=1.0;",
+"  if(uSunShadowEnabled==1&&ndl>0.0){",
+"   vec4 clip=uSunShadowProjection*vec4(vWorld,1.0);",
+"   vec3 uvz=clip.xyz/clip.w*0.5+0.5;",
+"   if(uvz.x>0.0&&uvz.x<1.0&&uvz.y>0.0&&uvz.y<1.0&&uvz.z>0.0)",
+"    shadow=texture(uSunShadowMap,vec3(uvz.xy,uvz.z-uSunShadowBias));",
+"  }",
+"  vec3 rgb=base*(uUnlit==1?vec3(1.0):hemis+uSunColor*ndl*shadow)*uExposure;",
 "  rgb=(rgb*(2.51*rgb+0.03))/(rgb*(2.43*rgb+0.59)+0.14);",
 "  float fog=1.0-exp(-pow(uFogDensity*length(vWorld-uEye),2.0));",
 "  rgb=mix(rgb,uFogColor,clamp(fog,0.0,1.0));",
@@ -142,11 +154,11 @@ function program(gl){
  const v=shader(gl.VERTEX_SHADER,VERT),f=shader(gl.FRAGMENT_SHADER,FRAG),p=gl.createProgram();
  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){const e=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw Error("native program: "+e);}
- const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uSkinEnabled","uBones[0]"];
+ const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled"];
  return {handle:p,u:Object.fromEntries(uniforms.map(k=>[k,gl.getUniformLocation(p,k)]))};
 }
 export class NativeSceneRenderer{
- constructor(canvas,{width=canvas?.width??960,height=canvas?.height??540}={}){
+ constructor(canvas,{width=canvas?.width??960,height=canvas?.height??540,shadows=null}={}){
   if(!canvas?.getContext)throw Error("Canvas required");
   this.canvas=canvas;
   this.gl=canvas.getContext("webgl2",{alpha:false,antialias:false,depth:true,powerPreference:"high-performance",preserveDrawingBuffer:false});
@@ -157,7 +169,8 @@ export class NativeSceneRenderer{
   this.sunDirection=[-.45,-.52,.72];this.sunColor=[.9,.82,.73];
   this.skyColor=[.48,.58,.7];this.groundColor=[.26,.27,.26];this.fogColor=[.68,.8,.88];
   this.fogDensity=.00085;this.exposure=1;this.stats=null;
-  this.onLost=e=>{e.preventDefault();this.lost=true;};
+  this.shadow=null;this.shadowConfig=shadows&&shadows!==false?{...shadows}:null;
+  this.onLost=e=>{e.preventDefault();this.lost=true;this.shadow?.dispose({contextLost:true});this.shadow=null;};
   this.onRestored=()=>{this.lost=false;this.init();for(const m of this.meshes.values())this.upload(m);};
   canvas.addEventListener?.("webglcontextlost",this.onLost,false);
   canvas.addEventListener?.("webglcontextrestored",this.onRestored,false);
@@ -166,6 +179,7 @@ export class NativeSceneRenderer{
  init(){
   this.gpu=program(this.gl);
   this.timer=this.gl.getExtension("EXT_disjoint_timer_query_webgl2");
+  if(this.shadowConfig)this.shadow=new NativeSunShadowMap(this.gl,this.shadowConfig);
   this.pending=[];this.lastGpuMs=null;
  }
  resize(w,h){
@@ -183,6 +197,12 @@ export class NativeSceneRenderer{
  }
  pick(x,y,{maxDistance=this.far,ignoreId=null}={}){
   return pickNativeMeshes(this.meshes,this.getScreenRay(x,y),{maxDistance,ignoreId});
+ }
+ setShadows(options=null){
+  if(this.disposed)throw Error("renderer disposed");
+  this.shadow?.dispose({contextLost:this.lost});this.shadow=null;
+  this.shadowConfig=options&&options!==false?{...options}:null;
+  if(this.shadowConfig&&!this.lost)this.shadow=new NativeSunShadowMap(this.gl,this.shadowConfig);
  }
  setLighting(values={}){
   for(const key of ["sunDirection","sunColor","skyColor","groundColor","fogColor","fogDensity","exposure"])
