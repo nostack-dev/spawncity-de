@@ -2,7 +2,8 @@
 // Shares the *geometry/coordinate* contract with Box3D; no Three scene graph,
 // old renderer, fallback toggle, or extra network tile provider.
 import {buildingFootprintsFromFeatures,buildingFootprintHash} from "./world_building_collisions.mjs";
-import {buildNativeCityGeometry,nativeCityChunkSteps} from "./native_city_geometry.mjs";
+import {nativeCityChunkSteps} from "./native_city_geometry.mjs";
+import {packCityMesh} from "./native_city_indexed.mjs";
 export const NATIVE_CITY_STREAM_VERSION="native-city-stream-v1";
 const hashFloatArrays=parts=>{
   let hash=2166136261;
@@ -15,12 +16,13 @@ const hashFloatArrays=parts=>{
 const keyForChunk=part=>"osm/"+part.id;
 const drawOptions={facade:true,color:[1,1,1,1],doubleSided:false,alphaMode:"opaque"};
 export class NativeCityStream{
-  constructor(renderer,{chunkSize=320,maxBuildings=2600,buildingsPerStep=24}={}){
+  constructor(renderer,{chunkSize=320,maxBuildings=2600,buildingsPerStep=24,compactGpuMeshes=true}={}){
     if(!renderer?.upsert||!renderer?.remove)throw Error("NativeCityStream requires one native-only WebGL2 renderer");
     this.renderer=renderer;
     this.options={chunkSize,maxBuildings,buildingsPerStep};
+    this.compactGpuMeshes=compactGpuMeshes;
     this.chunkHashes=new Map();this.snapshotKey=null;this.generation=0;this.closed=false;
-    this.lastStats={built:0,uploaded:0,removed:0,skipped:0,chunks:0};
+    this.lastStats={built:0,uploaded:0,removed:0,skipped:0,chunks:0,bytesUploaded:0,bytesSaved:0};
   }
   async ingestFeatures(features,{project,center=[0,0],radiusM=1250,maxFootprints=2600,revision="",damageTop=null,yieldFrame=()=>Promise.resolve()}={}){
     const footprints=buildingFootprintsFromFeatures(features,{project,center,radiusM,maxFootprints});
@@ -43,27 +45,31 @@ export class NativeCityStream{
     }
     if(this.closed||generation!==this.generation)return {cancelled:true,generation};
     const {chunks,built,skipped}=current.value;
-    let uploaded=0,removed=0;
+    let uploaded=0,removed=0,bytesUploaded=0,bytesSaved=0;
     const next=new Map();
     for(const part of chunks){
       const id=keyForChunk(part);
       const hash=hashFloatArrays([part.positions,part.normals,part.colors,part.uvs]);
       next.set(id,hash);
       if(this.chunkHashes.get(id)===hash)continue;
-      this.renderer.upsert(id,{positions:part.positions,normals:part.normals,colors:part.colors,uvs:part.uvs,material:drawOptions});
+      const packed=this.compactGpuMeshes?packCityMesh(part):null;
+      const mesh=packed?.mesh||part;
+      this.renderer.upsert(id,{positions:mesh.positions,normals:mesh.normals,colors:mesh.colors,uvs:mesh.uvs,indices:mesh.indices,material:drawOptions});
+      bytesUploaded+=(packed?.bytesAfter??(part.positions.byteLength+part.normals.byteLength+part.colors.byteLength+part.uvs.byteLength));
+      bytesSaved+=packed?(packed.bytesBefore-packed.bytesAfter):0;
       uploaded++;
     }
     for(const id of this.chunkHashes.keys()){
       if(!next.has(id)){this.renderer.remove(id);removed++;}
     }
     this.chunkHashes=next;this.snapshotKey=token;
-    this.lastStats={built,uploaded,removed,skipped:skipped.length,chunks:chunks.length};
+    this.lastStats={built,uploaded,removed,skipped:skipped.length,chunks:chunks.length,bytesUploaded,bytesSaved};
     return {...this.lastStats,unchanged:false};
   }
   clear(){
     this.generation++;
     for(const id of this.chunkHashes.keys())this.renderer.remove(id);
-    this.chunkHashes.clear();this.snapshotKey=null;this.lastStats={built:0,uploaded:0,removed:0,skipped:0,chunks:0};
+    this.chunkHashes.clear();this.snapshotKey=null;this.lastStats={built:0,uploaded:0,removed:0,skipped:0,chunks:0,bytesUploaded:0,bytesSaved:0};
   }
   dispose(){if(this.closed)return;this.clear();this.closed=true;}
 }
