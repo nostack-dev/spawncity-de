@@ -9,6 +9,8 @@ import * as THREE from "three";
 // z up, forward = +y, root at the feet (put it on the ground height).
 
 export const CHARACTER_MODEL_VERSION="articulated-soldier-v1";
+// Expressive NPC sprint silhouette: upper body falls back while feet reach forward.
+export const NPC_RUN_RECLINE_RAD=.60,NPC_RUN_FEET_FORWARD_RAD=.20;
 export const OUTFITS=Object.freeze({
   player:{shirt:0x4b5238,vest:0x2b3024,pants:0x3d3b33,boots:0x1a1a18,skin:0xc08a68,gloves:0x1c1e1b,helmet:0x3a4030},
   civilian:{shirt:0x5a6f86,vest:0x5a6f86,pants:0x2c3138,boots:0x24221f,skin:0xc8956f,gloves:0xc8956f,helmet:0x2a211b},
@@ -109,6 +111,7 @@ export function animateCharacter(rig,{state="idle",speed=0,weapon="none",dt=1/60
   rig.runW=run?Math.min(1,(rig.runW||0)+dt*4):Math.max(0,(rig.runW||0)-dt*4);const G=run?runGait(rig.phase,speed):null,kr=run?(rig.runW>=1?1:Math.max(k,rig.runW*rig.runW)):k;
   const p=rig.phase,swing=moving?Math.sin(p)*(run?Math.min(1.15,.65+speed*.075):Math.min(.75,.3+speed*.09)):0,lift=moving?Math.max(0,Math.cos(p))*(run?.75:.35):0,liftO=moving?Math.max(0,-Math.cos(p))*(run?.75:.35):0;
   const{arms,legs,pelvis,spine,head,visor}=rig;rig.state=state;
+  const exaggeratedNpcRun=Boolean(G&&(rig.outfit==="civilian"||rig.outfit==="runner"));
   pelvis.position.z=lerp(pelvis.position.z,state==="drive"?.52:G&&!air?G.pelvisZ:(.96-(moving?Math.abs(Math.sin(p))*.03:0)),G?kr:k);
   // pelvis twist / ankles are not part of the saved crowd joint state: set outright every call
   pelvis.rotation.z=G?G.pelvisYaw*rig.runW:0;legs.L.an.rotation.x=G?G.anL*rig.runW:0;legs.R.an.rotation.x=G?G.anR*rig.runW:0;
@@ -116,10 +119,10 @@ export function animateCharacter(rig,{state="idle",speed=0,weapon="none",dt=1/60
   if(state==="drive"){set(legs.L.hip,1.5,0,.06,k);set(legs.R.hip,1.5,0,-.06,k);set(legs.L.kn,-1.45,0,0,k);set(legs.R.kn,-1.45,0,0,k);}
   else if(state==="dead"){set(legs.L.hip,0,0,.1,k);set(legs.R.hip,0,0,-.1,k);set(legs.L.kn,0,0,0,k);set(legs.R.kn,0,0,0,k);}
   else if(air){const sway=Math.sin(p*.9)*.05;set(legs.L.hip,.32+sway,0,.08,k);set(legs.R.hip,.08-sway,0,-.08,k);set(legs.L.kn,-.55,0,0,k);set(legs.R.kn,-.3,0,0,k);}
-  else if(G){set(legs.L.hip,G.hipL,0,0,kr);set(legs.R.hip,G.hipR,0,0,kr);set(legs.L.kn,G.knL,0,0,kr);set(legs.R.kn,G.knR,0,0,kr);}
+  else if(G){const reach=exaggeratedNpcRun?NPC_RUN_FEET_FORWARD_RAD:0;set(legs.L.hip,G.hipL+reach,0,0,kr);set(legs.R.hip,G.hipR+reach,0,0,kr);set(legs.L.kn,G.knL,0,0,kr);set(legs.R.kn,G.knR,0,0,kr);}
   else{const shamble=state==="zombie"?.6:1;set(legs.L.hip,swing*shamble,0,0,k);set(legs.R.hip,-swing*shamble,0,0,k);set(legs.L.kn,-lift*(run?1.6:1.1),0,0,k);set(legs.R.kn,-liftO*(run?1.6:1.1),0,0,k);}
   // torso lean
-  set(spine,state==="zombie"?-.28:G?G.spine:state==="drive"?-.12:0,0,G?G.spineYaw:0,G?kr:k);set(head,state==="zombie"?.18:G?G.head:0,0,state==="zombie"?Math.sin(p*.5)*.15:0,k);
+  set(spine,state==="zombie"?-.28:exaggeratedNpcRun?NPC_RUN_RECLINE_RAD:G?G.spine:state==="drive"?-.12:0,0,G?G.spineYaw:0,G?kr:k);set(head,state==="zombie"?.18:exaggeratedNpcRun?-.28:G?G.head:0,0,state==="zombie"?Math.sin(p*.5)*.15:0,k);
   visor.visible=state==="vr";
   // arms
   const g=state.startsWith("aim")||((state==="walk"||state==="run"||state==="idle"||air)&&weapon!=="none");

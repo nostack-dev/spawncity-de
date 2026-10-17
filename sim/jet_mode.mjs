@@ -437,7 +437,7 @@ html body.jet-mode #viewport #mobileGameplayMode.hud-mode-switch,html body.jet-m
 #jetHud .jet-btns [data-a=rocket][data-ready="0"]{opacity:.8}
 /* under the parachute there is no jet any more: no jet buttons, no jet readouts */
 body.jet-chute #jetHud .jet-btns,body.jet-chute #jetHud .jet-read,body.jet-chute #jetHud .jet-thr,body.jet-chute #jetHud .jet-svg{display:none!important}
-#jetHud [data-a=exit]{position:absolute;top:calc(max(8px,var(--solo-safe-top,env(safe-area-inset-top))) + 55px);right:max(10px,var(--solo-safe-right,env(safe-area-inset-right)));height:38px;min-width:84px;z-index:40;background:#411811d9;color:#ffe5d8;border:1.5px solid #ff5a4a;border-radius:10px;pointer-events:auto;touch-action:none}
+#jetHud [data-a=exit]{position:absolute;top:calc(max(8px,var(--solo-safe-top,env(safe-area-inset-top))) + 55px);left:max(8px,var(--solo-safe-left,env(safe-area-inset-left)));right:auto;height:38px;min-width:84px;z-index:40;background:#411811d9;color:#ffe5d8;border:1.5px solid #ff5a4a;border-radius:10px;pointer-events:auto;touch-action:none}
 #jetHud [data-a=exit][data-holding="1"]{background:#b24927;border-color:#ffddaa;box-shadow:0 0 0 2px #ffbb8899}
 body.jet-passenger :is(#footHud,#soloLeft,#soloRight,#vehicleHud,#footMove,#footFire){display:none!important}body.jet-passenger #enterJetButton{display:block!important}
 #enterJetButton{position:absolute;z-index:30;left:50%;transform:translateX(-50%);bottom:calc(max(14px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + 118px);min-width:170px;height:46px;padding:0 18px;border-radius:14px;font:900 15px/1 "Nunito","Trebuchet MS",system-ui,sans-serif;letter-spacing:.06em;color:#0f2433;background:#7fd3ff;border:2.5px solid #fff;box-shadow:0 4px 0 #2d86b5;pointer-events:auto;touch-action:manipulation}body.jet-mode #enterJetButton{display:none!important}
@@ -452,7 +452,7 @@ bottom:calc(max(18px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + min(
 }}
 html body.jet-mode #viewport #footHud #footFire{display:block!important;pointer-events:auto!important}`;document.head.appendChild(st);
     const eject=h.querySelector('[data-a="exit"]');h.appendChild(eject);
-    // Touch eject is deliberately far from thumb controls and requires a hold,
+    // Left/top EJECT stays outside the right/top minimap and requires a hold,
     // so steering never triggers an accidental bailout. Mouse/controller
     // keyboard still use their explicit discrete commands.
     let ejectAt=0,ejectPointer=-1;
