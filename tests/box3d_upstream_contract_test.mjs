@@ -31,9 +31,10 @@ if(dir){
  const g=b3.b3CreateBody(world,ground);b3.b3CreateBoxShape(g,b3.b3DefaultShapeDef(),20,20,.5);
  const bd=b3.b3DefaultBodyDef();bd.type=b3.b3BodyType.b3_dynamicBody;bd.position=[0,0,3];
  const body=b3.b3CreateBody(world,bd);b3.b3CreateBoxShape(body,b3.b3DefaultShapeDef(),.5,.5,.5);
- const zBefore=b3.b3Body_GetPosition(body)[2];
+ const positionOut=new Float32Array(3);
+ const zBefore=b3.b3Body_GetPosition(positionOut,body)[2];
  for(let i=0;i<120;i++)b3.b3World_Step(world,1/60,4);
- const zAfter=b3.b3Body_GetPosition(body)[2];
+ const zAfter=b3.b3Body_GetPosition(positionOut,body)[2];
  assert.ok(zAfter<zBefore-1&&zAfter>-.1&&zAfter<1.1,"upstream gravity/solver differ unexpectedly: "+zAfter);
  b3.b3DestroyWorld(world);
  console.log("LATEST_BOX3D_WASM_VERIFIED "+JSON.stringify({engine:version,zBefore,zAfter,manifest}));
