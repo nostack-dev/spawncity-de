@@ -203,3 +203,31 @@ renderer or fallback was shipped.
 4. Only when production is 100% native run the existing 15 device-mode
    appearance/frame-time checks and merge on a green gate. **No partial
    legacy renderer remains in the eventual live bundle.**
+
+
+## Box3D player-flight presentation in the sole native world
+
+`sim/native_airframe_presentation.mjs` now consumes the simulator's actual
+`PhysicsModel.presentationPose()` shape: position, quaternion, velocity,
+`physics.p.span`, `physics.p.propD`, `physics.motorOmega`. No independent
+visual motion simulation or Three.js renderer is used. It builds an actual
+quadcopter hull/arms and four animated rotor instances, and updates their GPU
+transforms from Box3D snapshots. Native FPV uses the current .102 m forward,
+.028 m up optical mount, rigid body -X forward and camera tilt; follow/third
+reuse the existing pure-JS stabilized camera rig and its game distances.
+
+`NativeWorldPresenter` now accepts optional `flight` in its constructor and
+`setFlightCameraMode("fpv"|"follow"|"third")`. This renders the player drone
+in **the same native GL scene** as rigid Box3D vehicles, road geometry,
+people, OSM buildings and height-field terrain. The `native-world` Chrome
+software-GL CI run verified 15 draw calls, 2 rigid bodies, 1 player flight,
+16 buildings, 4 terrain tiles, 4 road chunks, 2 pedestrians, successful FPV
+and third camera placement, and zero WebGL errors. No graphics fallback exists
+in the new path.
+
+This is **not** yet the canonical live simulator: gameplay is still
+implemented on Three scene objects in dozens of modules. Integrating all
+scene producers, player/jet/car modes, combat/lock-on, multiplayer, shadows
+and effects is still mandatory before the native-only release gate can pass;
+Android/iPhone/desktop GPU comparisons are also untested. The release stays
+blocked by design.
