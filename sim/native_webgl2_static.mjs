@@ -46,8 +46,31 @@ void main(){outColor=vec4(vColor,1.0);}`;
       gl.enableVertexAttribArray(slot);gl.vertexAttribPointer(slot,3,gl.FLOAT,false,0,0);
     }
     gl.bindVertexArray(null);gl.bindBuffer(gl.ARRAY_BUFFER,null);
-    const batch={vao,buffers,count:positions.length/3};this.batches.push(batch);
+    const batch={vao,buffers,count:positions.length/3,capacity:positions.length};this.batches.push(batch);
     this.triangles+=positions.length/9;return batch;
+  }
+  // Live city destruction and craters modify geometry. Upload changes in-place;
+  // do not recreate VAOs, programs or buffers every frame.
+  update(batch,positions,colors){
+    if(this.disposed||!this.batches.includes(batch))throw Error("Unowned/disposed native batch");
+    if(!(positions instanceof Float32Array)||!(colors instanceof Float32Array)
+      ||positions.length===0||positions.length!==colors.length||positions.length%9)
+      throw Error("Invalid native batch update");
+    const gl=this.gl;
+    for(const [i,values] of [[0,positions],[1,colors]]){
+      gl.bindBuffer(gl.ARRAY_BUFFER,batch.buffers[i]);
+      if(values.length!==batch.capacity)gl.bufferData(gl.ARRAY_BUFFER,values,gl.DYNAMIC_DRAW);
+      else gl.bufferSubData(gl.ARRAY_BUFFER,0,values);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER,null);
+    this.triangles+=(positions.length/9)-(batch.count/3);
+    batch.count=positions.length/3;batch.capacity=positions.length;
+  }
+  clear(){
+    if(this.disposed)throw Error("NativeStaticBatches is disposed");
+    const gl=this.gl;
+    for(const b of this.batches){gl.deleteVertexArray(b.vao);for(const buffer of b.buffers)gl.deleteBuffer(buffer);}
+    this.batches.length=0;this.triangles=0;
   }
   render(mvp,{clear=true,finish=false}={}){
     if(this.disposed)throw Error("NativeStaticBatches is disposed");
