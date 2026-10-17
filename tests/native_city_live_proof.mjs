@@ -6,7 +6,7 @@ if(!exe)throw Error("CHROME_BIN missing");
 const out="artifacts/native-city-live";await mkdir(out,{recursive:true});
 const browser=await puppeteer.launch({headless:true,executablePath:exe,args:["--no-sandbox","--disable-dev-shm-usage","--enable-webgl","--ignore-gpu-blocklist","--use-gl=angle","--use-angle=swiftshader"]});
 const page=await browser.newPage(),sleep=t=>new Promise(r=>setTimeout(r,t)),issues=[];
-page.on("pageerror",err=>issues.push(String(err)));
+page.on("pageerror",err=>issues.push(String(err?.stack||err).slice(0,1200)));
 try{
  await page.setViewport({width:960,height:540,deviceScaleFactor:1});
  const url=new URL(process.argv[2]||"https://spawncity.de/drone_simulator.html");
