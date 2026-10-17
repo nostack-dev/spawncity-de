@@ -90,11 +90,17 @@ export class NativeRigidVisuals{
   let groups=0,triangles=0;
   const send=(kind,batch,geometry)=>{
    const name=NAME[kind],count=batch.transforms.length/16;
-   if(!count){this.instanceIds.delete(name);if(this.active.delete(name))this.renderer.remove(name);return;}
+   if(!count){
+    if(this.active.has(name)){this.renderer.remove(name);this.active.delete(name);}
+    this.instanceIds.delete(name);
+    return;
+   }
    const instances={transforms:new Float32Array(batch.transforms),tints:new Float32Array(batch.tints)};
-   this.instanceIds.set(name,batch.ids);
    if(this.active.has(name))this.renderer.updateInstances(name,instances);
    else{this.renderer.upsert(name,{...geometry,instances,material:{doubleSided:true}});this.active.add(name);}
+   // Only commit a new collision-target index AFTER the GPU accepted that
+   // exact instance order. A failed upload must not make shots hit another car.
+   this.instanceIds.set(name,batch.ids);
    groups++;triangles+=geometry.positions.length/9*count;
   };
   for(const kind of CATEGORIES)send(kind,grouped.get(kind),GEOMETRIES[kind]);
