@@ -14,6 +14,7 @@ const keys=Object.keys(meta.inputs||{});
 const input=keys.find(x=>x.replaceAll("\\","/").endsWith("artifacts/box3d-upstream-wasm/box3d.inline.mjs"));
 assert.ok(input,"bundler did not consume fresh compiled Box3D; inspected: "+keys.filter(x=>x.includes("box3d")).join(", "));
 assert.ok((meta.inputs[input]?.bytes||0)>900_000,"fresh inline WASM suspiciously small");
-assert.ok(!keys.some(x=>/node_modules\/box3d\.js\/(dist\/)?box3d(\.inline)?\.mjs$/.test(x)),"old npm Box3D was silently bundled");
+const oldInputs=keys.filter(x=>/node_modules\/box3d\.js\/(dist\/)?box3d(\.inline)?\.mjs$/.test(x));
+assert.deepEqual(oldInputs,[],"old npm Box3D was silently bundled; all Box3D inputs: "+keys.filter(x=>x.toLowerCase().includes("box3d")).join(", "));
 assert.ok(meta.outputs&&Object.values(meta.outputs).some(x=>(x.inputs||{})[input]),"fresh engine input not linked into final game output");
 console.log("SpawnCity production Box3D provenance passed:",desired,"source bytes",meta.inputs[input].bytes);
