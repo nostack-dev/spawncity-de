@@ -1,4 +1,5 @@
 import {NativeWorldPresenter} from "../sim/native_world_presenter.mjs";
+import {VsPoseTimeline} from "../sim/vs_pose_sync.mjs";
 (async()=>{
 const canvas=document.getElementById("native-world");
 const p=new Map([
@@ -15,8 +16,11 @@ const playerFlight={p:{span:.25,propD:.11},motorOmega:[140,142,138,140],
  quaternion:{x:0,y:0,z:0,w:1},velocity:{x:0,y:0,z:0}})};
 
 const population={people:()=>[{id:"npc1",x:-5,y:1,z:1.1,yaw:.7},{id:"npc2",x:1,y:12,z:1.3,yaw:1.2}]};
+const timeline=new VsPoseTimeline({delayMs:0});
+const peerNow=performance.now();
+timeline.push({p:[5,2,8],q:[0,0,0,1],v:[0,0,0],t:peerNow},peerNow);
 const world=new NativeWorldPresenter(canvas,{
- physics,population,flight:playerFlight,heightAt:(x,y)=>Math.sin(x/14)*.32+Math.cos(y/20)*.48,
+ physics,population,flight:playerFlight,peer:{timeline,connected:()=>true,mode:()=>"drone"},heightAt:(x,y)=>Math.sin(x/14)*.32+Math.cos(y/20)*.48,
  rendererOptions:{width:960,height:540,shadows:{resolution:256,extent:130}},
  terrainOptions:{radius:100,maxTiles:4,cells:16,step:5,listenPhysics:false,uploadsPerFrame:2},
  cityOptions:{buildingsPerStep:2,chunkSize:100}
@@ -36,6 +40,8 @@ world.draw(performance.now());
 await world.terrainPromise;
 const first=world.draw(performance.now()+300);
 const firstDraws=first.gpu.drawCalls;
+if(!world.renderer.meshes.has("vs/airframe")||!world.renderer.meshes.has("vs/rotors"))
+ throw Error("existing VsPoseTimeline did not reach sole native multiplayer GPU meshes");
 p.get("taxi").position[0]=15;
 const next=world.draw(performance.now()+350);
 if(!world.renderer.meshes.has("box3d/car")||world.renderer.meshes.get("box3d/car").data.transforms[12]!==15)
@@ -98,7 +104,7 @@ if(contextExtension){
 }
 let nonBlank=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>25||pixels[i+1]>25||pixels[i+2]>40)nonBlank++;
 globalThis.__nativeWorldProof={
- renderer:"webgl2-only",sources:{box3d:2,flight:1,buildings:16,terrain:world.terrain.stats.chunks,roads:world.roads.live.size,people:world.people?.update().visible},
+ renderer:"webgl2-only",sources:{box3d:2,flight:1,buildings:16,terrain:world.terrain.stats.chunks,roads:world.roads.live.size,people:world.people?.update().visible,peer:world.peer?.live?1:0},
  drawCalls:firstDraws,shadowDrawCalls:first.gpu.shadowDrawCalls,updatedDrawCalls:next.gpu.drawCalls,drawnTriangles:first.gpu.triangles,
  nonBlank,glError,contextLossExtension:Boolean(contextExtension),contextRestored,shadowRestored:Boolean(world.renderer.shadow?.depth),hasThreeImport:false,
  hiDpiVerified:true,touchPickingVerified:true,
