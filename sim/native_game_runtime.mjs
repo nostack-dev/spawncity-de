@@ -259,6 +259,8 @@ export class NativeGameRuntime{
    heightAt:this.world.terrain?.heightAt??terrainNodeHeightAt,firstLoad
   });
   this.osmCollisionOrigin=collision.originKey;
+  // The same collision snapshot drives camera occlusion and rigid bodies.
+  this.gameplayState.carObstacleSnapshot=collision;
   this.lastOsmCollision={...physics,hash:collision.hash,origin:collision.originKey,spawnClearance};
   return {...shown,collision:this.lastOsmCollision};
  }
