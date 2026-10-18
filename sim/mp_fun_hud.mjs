@@ -4,7 +4,7 @@
 //   hit marker: an X on the crosshair when your round hurt a mate, red when it killed
 //   damage direction: a red arc on the edge pointing where the hit came from
 //   spawn protection: a short shimmer after you respawn
-import * as THREE from "three";
+import {worldCameraPose} from "./world_camera_projection.mjs";
 export const MP_FUN_HUD_VERSION="mp-fun-hud-v1";
 let installed=false,root=null,feed=null,board=null,marker=null,hurt=null,shield=null,lastBoard="";
 const WEAPON_LABEL={smg:"MP",glock:"GLOCK",sniper:"SNIPER",grenade:"GRANATE",rocket:"RAKETE",fists:"FÄUSTE",knife:"MESSER",gun:"DROHNE","5.56":"DROHNE",missile:"RAKETE",explosion:"EXPLOSION"};
@@ -34,9 +34,13 @@ function onKill(e){const d=e.detail||{};if(!feed)return;const row=document.creat
   row.className=me?"me":"";row.innerHTML=!d.by||d.by===d.victim?`${name(d.victim)}<i>✕</i>${w||"UNFALL"}`:`${name(d.by)}<i>${w||"✕"}</i>${name(d.victim)}${d.zone==="head"?"<em>KOPF</em>":""}`;
   feed.prepend(row);while(feed.children.length>5)feed.lastChild.remove();setTimeout(()=>{row.style.opacity="0";setTimeout(()=>row.remove(),450);},5200);renderBoard(true);}
 let markerTimer=0;function onHit(e){const d=e.detail||{};if(!marker)return;marker.className=`show${d.killed?" kill":""}${d.zone==="head"?" head":""}`;clearTimeout(markerTimer);markerTimer=setTimeout(()=>{marker.className=d.killed?"kill":"";},d.killed?260:110);}
-const shooterPos=new THREE.Vector3(),camDir=new THREE.Vector3();let hurtTimer=0;
+// Matches Object3D.getWorldPosition(target) without allocating a library vector.
+const shooterPos={x:0,y:0,z:0,setFromMatrixPosition(matrix){
+ const e=matrix?.elements??matrix;
+ this.x=e[12];this.y=e[13];this.z=e[14];return this;
+}};let hurtTimer=0;
 function onHurt(e){const d=e.detail||{};if(!hurt)return;const b=globalThis.__arondightRealWorld,cam=b?.presentedCamera?.()||b?.threeCamera;let ang=0;
-  if(cam&&globalThis.__arondightRemoteAnchor?.(d.by,shooterPos)){cam.getWorldDirection(camDir);const yawTo=Math.atan2(shooterPos.y-cam.position.y,shooterPos.x-cam.position.x),yawFwd=Math.atan2(camDir.y,camDir.x);ang=(yawFwd-yawTo)*180/Math.PI;}
+  if(cam&&globalThis.__arondightRemoteAnchor?.(d.by,shooterPos)){const pose=worldCameraPose(cam);if(pose){const yawTo=Math.atan2(shooterPos.y-pose.position[1],shooterPos.x-pose.position[0]),yawFwd=Math.atan2(pose.direction[1],pose.direction[0]);ang=(yawFwd-yawTo)*180/Math.PI;}}
   hurt.style.setProperty("--a",`${ang.toFixed(0)}deg`);hurt.className="show";clearTimeout(hurtTimer);hurtTimer=setTimeout(()=>{hurt.className="";},140);}
 function onProtected(e){if(!shield)return;shield.className="show";setTimeout(()=>{shield.className="";},Number(e.detail?.ms)||2500);}
 function renderBoard(force=false){if(!board)return;const mp=globalThis.__arondightVsMultiplayer,on=Boolean(mp?.connected);if(!on){if(!board.hidden)board.hidden=true;return;}const list=(mp.scores?.()||[]).slice().sort((a,b)=>b.k-a.k||a.d-b.d);

@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import {worldVisualBottom} from "./world_transform_numeric.mjs";
 
 const GROUND_PLANE_Z_M=0;
 const GROUND_EPSILON_M=1e-6;
@@ -57,9 +57,7 @@ function findAirframe(scene,bridge){
 }
 
 function visualBottom(airframe){
-  airframe.updateMatrixWorld(true);
-  const bounds=new THREE.Box3().setFromObject(airframe);
-  return Number.isFinite(bounds.min.z)?bounds.min.z:null;
+  return worldVisualBottom(airframe);
 }
 
 export function installInitialAirframeGroundPose(){

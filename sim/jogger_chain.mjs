@@ -4,7 +4,6 @@
 // (or take them out otherwise) and every jogger counts up a streak: get the whole line and the
 // screen calls out "KOMPLETTE LAUFGRUPPE!" with a jingle. They run along the real road network
 // (the sidewalk of a real street), turn round at its ends and jog off after a minute and a half.
-import * as THREE from "three";
 import {createCrowd} from "./crowd_characters.mjs";
 import {staticGroundHeightAt} from "./terrain_craters.mjs";
 import {spawnWorldPersonRagdoll} from "./world_person_ragdoll.mjs";

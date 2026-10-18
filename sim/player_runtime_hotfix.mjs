@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import {worldRootPose} from "./world_transform_numeric.mjs";
 import {VS_GAME_EVENT,VS_PEER_EVENT} from "./lan_vs.mjs";
 import {FPS_PITCH_LIMIT_RAD} from "./fps_control_math.mjs";
 
@@ -13,7 +13,7 @@ let installed=false,patchedScene=null,nativeTraverse=null,cache=emptyCache(),bui
 let dragPointer=null,lastPointerX=0,lastPointerY=0,lastResetAt=-Infinity,resetSeq=0,lastAvatarCheck=-Infinity;
 let patchedRegister=null,shotSeq=0,resetHumanAnchor=null,resetAnchorSawFoot=false;
 const callbackKinds=new WeakMap(),cachedKindsSeen=new Set();
-const tmpPos=new THREE.Vector3(),tmpQuat=new THREE.Quaternion(),tmpEuler=new THREE.Euler();
+
 
 function emptyCache(){return{peer:[],vehicles:[],population:[],decor:[],fire:[],fireSet:new Set(),localAvatar:null,generation:0};}
 function viewport(){return document.getElementById("viewport");}
@@ -108,7 +108,7 @@ function installAim(){
 }
 
 function resetPoseFromAirframe(){
-  const b=bridge(),root=b?.threeScene?(b.airframeFor?.(b.threeScene)||b.airframe):null;if(!root)return{x:0,y:0,yaw:0,pitch:0};root.updateWorldMatrix?.(true,false);root.getWorldPosition?.(tmpPos);root.getWorldQuaternion?.(tmpQuat);tmpEuler.setFromQuaternion(tmpQuat,"XYZ");return{x:Number(tmpPos.x)||0,y:Number(tmpPos.y)||0,yaw:Number(tmpEuler.z)||0,pitch:0};
+  const b=bridge(),root=b?.threeScene?(b.airframeFor?.(b.threeScene)||b.airframe):null;return worldRootPose(root)??{x:0,y:0,yaw:0,pitch:0};
 }
 function syncResetHumanAnchor(scene){
   const anchor=resetHumanAnchor,w=walk();if(!anchor||!w)return;if(w.mode==="foot"){if(!resetAnchorSawFoot){w.setPose?.(anchor);resetAnchorSawFoot=true;}return;}if(resetAnchorSawFoot){resetHumanAnchor=null;resetAnchorSawFoot=false;return;}const root=localAvatarRoot(scene);if(root){root.position.set(anchor.x,anchor.y,0);root.rotation.set(0,0,anchor.yaw);}
