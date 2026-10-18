@@ -28,7 +28,7 @@ function updateTelemetry(game,now){
  const pos=game.flight.position(),spd=Math.hypot(...game.flight.linear()),gpu=game.lastDraw?.gpu;
  telemetry.textContent=game.mode.toUpperCase()+" · "+friendly(spd)+" m/s · "+
   "Z "+friendly(pos[2])+" m · "+game.simulatedTicks+" ticks · "+game.rigidSteps+" rigid · "+
-  (gpu?.drawCalls??"—")+" draws · backlog "+friendly(game.backlogMs)+" ms";
+  (gpu?.drawCalls??"—")+" draws · backlog "+friendly(game.backlogMs)+" ms · dropped "+friendly(game.discontinuityMs)+" ms";
  setModePressed(game.mode);
  const arm=$("armButton");
  if(arm&&session?.input)arm.setAttribute("aria-pressed",String(session.input.arm));
