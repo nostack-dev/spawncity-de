@@ -144,6 +144,8 @@ async function launch(){
       fov:camera.fov,near:camera.near,far:camera.far}:null,
     terrainChunks:terrain.live.size,terrainStats:terrain.stats,
     terrainHeightAtTarget:camera?terrain.heightAt(camera.target[0],camera.target[1]):null,
+    cityStats:world.city.lastStats,roadSegments:world.roads.live.size,
+    buildingColliders:game.lastOsmCollision?.prismCount??0,
     gpu:world.renderer.stats,
     meshCount:world.renderer.meshes.size,
     meshClasses:[...world.renderer.meshes.keys()].reduce((out,k)=>{
