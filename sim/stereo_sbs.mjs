@@ -50,7 +50,7 @@ export function nativeStereoCameras(camera,opts={}){
 export function nativeStereoRay(renderer,camera,x,y,{mode="drone"}={}){
  if(!renderer||!(renderer.width>0&&renderer.height>0))throw Error("native ray needs drawing buffer");
  if(!Number.isFinite(x)||!Number.isFinite(y))throw Error("nonfinite stereo screen coordinates");
- if(!active)return screenRay(camera,x,y,renderer.width,renderer.height);
+ if(!active)return renderer.getScreenRay?renderer.getScreenRay(x,y):screenRay(camera,x,y,renderer.width,renderer.height);
  const split=Math.floor(renderer.width/2);
  if(split<1)throw Error("stereo viewport too narrow");
  const cameras=nativeStereoCameras(camera,{mode});
@@ -58,6 +58,9 @@ export function nativeStereoRay(renderer,camera,x,y,{mode="drone"}={}){
  return screenRay(cameras.left,x-split,y,renderer.width-split,renderer.height);
 }
 export function nativeStereoPick(renderer,camera,x,y,{mode="drone",maxDistance=1500,ignoreId=null}={}){
+ // The monoscopic path already has an optimized native pick API. Reuse it;
+ // only cross-eye needs its distinct camera/viewport before triangle lookup.
+ if(!active&&renderer.pick)return renderer.pick(x,y,{maxDistance,ignoreId});
  return pickNativeMeshes(renderer.meshes,nativeStereoRay(renderer,camera,x,y,{mode}),{maxDistance,ignoreId});
 }
 export function installStereo(renderer){
