@@ -68,6 +68,8 @@ jobs:
           node tests/native_point_lights_test.mjs
           node tests/native_airframe_presentation_test.mjs
           node tests/native_gameplay_camera_test.mjs
+          node tests/native_building_collision_bridge_test.mjs
+          node tests/native_game_input_test.mjs
           node tests/native_scene_graph_test.mjs
           node tests/native_scene_graph_scaling_test.mjs
           node tests/native_effects_test.mjs
