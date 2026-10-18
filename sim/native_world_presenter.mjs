@@ -19,6 +19,7 @@ import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
 import {NativePeerVisuals} from "./native_peer_visuals.mjs";
 import {nativeDrawingBufferSize,nativePointerToDrawingPixels} from "./native_viewport.mjs";
+import {renderNativeStereo} from "./stereo_sbs.mjs";
 export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
@@ -172,7 +173,7 @@ export class NativeWorldPresenter{
   this.renderer.setPointLights(lightFrame);
   const hierarchy=this.sceneGraph.sync();
   const fx=this.effects.tick(now,this.camera.eye);
-  const gpu=this.renderer.render();
+  const gpu=renderNativeStereo(this.renderer,this.camera,{mode:this.gameMode});
   this.frameNumber++;
   this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,pointLights:lightFrame.count,hierarchy,effects:fx,
     terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,
