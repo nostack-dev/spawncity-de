@@ -29,6 +29,13 @@ on:
       - "tests/native_bootstrap_contract_test.mjs"
       - "tests/native_full_browser_smoke.mjs"
       - "tests/production_box3d_bundle_contract_test.mjs"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/box3d-upstream-wasm.yml"
+      - "sim/native_*.mjs"
+      - "tests/native_*.mjs"
+      - "native_game.html"
   workflow_dispatch:
 permissions:
   contents: read
@@ -169,3 +176,52 @@ jobs:
           path: artifacts/native-browser-smoke/
           if-no-files-found: ignore
           retention-days: 14
+
+  native-preview-publish:
+    # This publishes ONLY an explicitly unverified test build at /native/.
+    # The regular production gate and canonical home/game are not altered.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: native-browser-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: spawncity-native-preview-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: spawncity-native-webgl2-browser
+          path: /tmp/spawncity-native-published
+      - name: Publish ONLY native test candidate, never replace production game
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -s /tmp/spawncity-native-published/native_game.html
+          grep -Fq "SPAWNCITY_NATIVE_CANDIDATE_SHA:${SOURCE_SHA}" /tmp/spawncity-native-published/native_game.html
+          if grep -Eq 'THREE[.]WebGLRenderer|three[.]module[.]js' /tmp/spawncity-native-published/native_game.html; then
+            echo "::error::Legacy graphics detected in native candidate" >&2
+            exit 1
+          fi
+          git fetch origin gh-pages
+          git checkout -B gh-pages origin/gh-pages
+          # Preserve existing production home, game, CNAME and sw. Only these
+          # two preview paths are staged and published. NEVER git push --force.
+          mkdir -p native
+          cp /tmp/spawncity-native-published/native_game.html native/index.html
+          node -e 'const fs=require("fs");fs.writeFileSync("native/build.json",JSON.stringify({sha:process.env.SOURCE_SHA,renderer:"native-webgl2",nativeReleaseVerified:false,scope:"preview-only",hardwareAcceptance:"pending",url:"https://spawncity.de/native/"})+"\\n")'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- native/index.html native/build.json
+          if git diff --cached --quiet; then
+            echo "Native test candidate already published."
+            exit 0
+          fi
+          git commit -m "Publish isolated native WebGL2 device-testing build from ${SOURCE_SHA}"
+          git push origin HEAD:gh-pages
+          echo "Native device-testing candidate staged at https://spawncity.de/native/ (NOT full release)"
