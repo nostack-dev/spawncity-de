@@ -1,0 +1,100 @@
+name: Publish SpawnCity Native Test Build
+
+on:
+  workflow_run:
+    workflows: ["Compile latest upstream Box3D WebAssembly"]
+    types: [completed]
+
+# Detached from the physics compiler: only this tightly scoped, successful
+# same-repo+main candidate publishing job receives repository write permission.
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  native-preview-publish:
+    # This publishes ONLY an explicitly unverified test build at /native/.
+    # The regular production gate and canonical home/game are not altered.
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: spawncity-native-preview-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: spawncity-native-webgl2-browser
+          path: /tmp/spawncity-native-published
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+      - name: Publish ONLY native test candidate, never replace production game
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          PUBLIC_ORIGIN="$(node tools/public_site.mjs origin)"
+          export PUBLIC_ORIGIN
+          echo "PUBLIC_ORIGIN=${PUBLIC_ORIGIN}" >> "$GITHUB_ENV"
+          test -s /tmp/spawncity-native-published/native_game.html
+          grep -Fq "SPAWNCITY_NATIVE_CANDIDATE_SHA:${SOURCE_SHA}" /tmp/spawncity-native-published/native_game.html
+          if grep -Eq 'THREE[.]WebGLRenderer|three[.]module[.]js' /tmp/spawncity-native-published/native_game.html; then
+            echo "::error::Legacy graphics detected in native candidate" >&2
+            exit 1
+          fi
+          # The root PWA worker must never put /native/ in the offline game
+          # cache. Production deployment is gated, so publish its v2 safety
+          # fix with this isolated candidate without replacing any game HTML.
+          grep -Fq 'spawncity-app-v2' oppenheimer-sw.js
+          grep -Fq 'const canonical=path==="/drone_simulator.html"' oppenheimer-sw.js
+          cp oppenheimer-sw.js /tmp/spawncity-native-safe-sw.js
+          git fetch origin gh-pages
+          git checkout -B gh-pages origin/gh-pages
+          cp /tmp/spawncity-native-safe-sw.js oppenheimer-sw.js
+          # Preserve existing production home, game, CNAME and sw. Only these
+          # two preview paths are staged and published. Existing Pages history must be preserved.
+          mkdir -p native
+          cp /tmp/spawncity-native-published/native_game.html native/index.html
+          node -e 'const fs=require("fs");fs.writeFileSync("native/build.json",JSON.stringify({sha:process.env.SOURCE_SHA,renderer:"native-webgl2",nativeReleaseVerified:false,scope:"preview-only",hardwareAcceptance:"pending",url:process.env.PUBLIC_ORIGIN+"/native/"})+String.fromCharCode(10))'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- native/index.html native/build.json oppenheimer-sw.js
+          if git diff --cached --quiet; then
+            echo "Native test candidate already published."
+            exit 0
+          fi
+          git commit -m "Publish isolated native WebGL2 device-testing build from ${SOURCE_SHA}"
+          git push origin HEAD:gh-pages
+          echo "Native device-testing candidate staged at ${PUBLIC_ORIGIN}/native/ (NOT full release)"
+
+      - name: Verify actual public native game SHA and preview-only provenance
+        timeout-minutes: 9
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if curl -fsSL --retry 1 --connect-timeout 5 --max-time 15 \
+                 -H "Cache-Control: no-cache" \
+                 "${PUBLIC_ORIGIN}/native/build.json?v=${SOURCE_SHA}-${attempt}" \
+                 -o /tmp/spawncity-native-public-build.json \
+              && node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/spawncity-native-public-build.json","utf8"));if(p.sha!==process.argv[1]||p.renderer!=="native-webgl2"||p.nativeReleaseVerified!==false||p.scope!=="preview-only")process.exit(1)' "${SOURCE_SHA}" \
+              && curl -fsSL --retry 1 --connect-timeout 5 --max-time 15 \
+                 -H "Cache-Control: no-cache" \
+                 "${PUBLIC_ORIGIN}/native/?v=${SOURCE_SHA}-${attempt}" \
+                 -o /tmp/spawncity-native-public-game.html \
+              && grep -Fq "SPAWNCITY_NATIVE_CANDIDATE_SHA:${SOURCE_SHA}" /tmp/spawncity-native-public-game.html; then
+              echo "Verified native WebGL2 candidate at ${PUBLIC_ORIGIN}/native/ for exact SHA ${SOURCE_SHA}"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::The native candidate has not propagated to the real public origin."
+          exit 1

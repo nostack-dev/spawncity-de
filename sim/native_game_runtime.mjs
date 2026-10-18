@@ -7,6 +7,7 @@ import {NativeFlightController} from "./native_flight_controller_wasm.mjs";
 import {WorldRigidBodyPhysics,WORLD_PHYSICS_CATEGORIES} from "./world_rigid_body_physics.mjs";
 import {JET_SPEC,createAirframe,airframeStep,setFlightMode} from "./jet_flight_dynamics.mjs";
 import {NativeWorldPresenter} from "./native_world_presenter.mjs";
+import {nativeBuildingCollisionSnapshot,syncNativeBuildingCollisions} from "./native_building_collision_bridge.mjs";
 export const NATIVE_GAME_RUNTIME_VERSION="single-native-1khz-full-game-physics-v1";
 const MILLIS_PER_FLIGHT_TICK=1;
 const WORLD_STEP_MS=1000/60;
@@ -19,18 +20,20 @@ export class NativeGameRuntime{
    presenterFactory=(canvas,options)=>new NativeWorldPresenter(canvas,options),
    peerTimeline=null,osmHeightAt=null,clock=()=>performance.now(),
    requestFrame=fn=>requestAnimationFrame(fn),cancelFrame=id=>cancelAnimationFrame(id),
-   frameBudgetMs=6,maxBacklogMs=2000,initialMode="drone",
-   onError=null}={}){
+   frameBudgetMs=6,maxBacklogMs=125,initialMode="drone",
+   beforeFrame=null,afterFrame=null,onError=null}={}){
   if(!b3?.b3CreateWorld||!b3?.b3CreateBody)throw Error("NativeGameRuntime requires original Box3D WASM");
   if(typeof flightCoreFactory!=="function"||typeof presenterFactory!=="function")
    throw Error("NativeGameRuntime requires genuine Flight Core and sole WebGL2 presentation");
   if(!validMode.has(initialMode)||!(frameBudgetMs>0&&frameBudgetMs<=25)||maxBacklogMs<100)
    throw Error("Invalid native runtime scheduler configuration");
   this.b3=b3;this.clock=clock;this.requestFrame=requestFrame;this.cancelFrame=cancelFrame;
+  this.beforeFrame=beforeFrame;this.afterFrame=afterFrame;
   this.frameBudgetMs=frameBudgetMs;this.maxBacklogMs=maxBacklogMs;this.onError=onError;
   this.mode=initialMode;this.running=false;this.closed=false;this.frameHandle=null;this.generation=0;
   this.lastFrameAt=null;this.backlogMs=0;this.rigidPhaseMs=0;this.simulatedTicks=0;
   this.discontinuityMs=0;this.rigidSteps=0;this.frames=0;this.lastDraw=null;
+  this.osmGeneration=0;this.osmCollisionOrigin=null;this.lastOsmCollision=null;
   this.flight=createNativeFlightPhysics(b3,params);
   this.flightControls={arm:false,throttle:0,roll:0,pitch:0,yaw:0,gameMode:true,groundClearance:2,bodyPitch:0};
   this.flightController=new NativeFlightController(this.flight,{
@@ -111,6 +114,8 @@ export class NativeGameRuntime{
   if(input.gameMode!==undefined)this.flightControls.gameMode=Boolean(input.gameMode);
   if(input.foot)for(const key of footAxes)if(Number.isFinite(input.foot[key]))
    this.footInput[key]=key==="yaw"?input.foot[key]:clamp(input.foot[key],-1.5,1.5);
+  if(input.foot?.sprint!==undefined)this.footInput.sprint=Boolean(input.foot.sprint);
+  if(input.foot?.jump!==undefined)this.footInput.jump=Boolean(input.foot.jump);
   if(input.car)for(const key of carAxes)if(Number.isFinite(input.car[key]))
    this.carInput[key]=clamp(input.car[key],-1,1);
   if(input.car?.handbrake!==undefined)this.carInput.handbrake=Boolean(input.car.handbrake);
@@ -127,7 +132,9 @@ export class NativeGameRuntime{
       dy=(Math.cos(a)*f-Math.sin(a)*s)*speed*dt;
     this.rigids.setTarget("player-foot",{
      position:[pose.position[0]+dx,pose.position[1]+dy,pose.position[2]],
-     speedMps:speed,response:6,yaw:a
+     // Camera forward yaw=0 points +Y; Box3D body yaw=0 points +X.
+     // Physical omni forces enable real W/A/S/D strafing without camera teleport.
+     speedMps:speed,response:6,yaw:a+Math.PI/2,omnidirectional:true
     });
    }
   }else this.rigids.clearTarget("player-foot");
@@ -148,6 +155,10 @@ export class NativeGameRuntime{
   if(!(Number.isFinite(ms)&&ms>=0)||!(stepBudget>0))throw Error("Invalid native 1 kHz scheduler");
   this.backlogMs+=ms;
   if(this.backlogMs>this.maxBacklogMs){
+   // A WebGL2 frame that takes longer than the CPU can service must NOT leave
+   // the pilot one or two seconds behind their live pointer/gamepad input.
+   // Explicitly account for wall-clock discontinuity. Firmware and Box3D
+   // still always run true 1 ms steps (never a fake variable-dt physics jump).
    this.discontinuityMs+=this.backlogMs-this.maxBacklogMs;
    this.backlogMs=this.maxBacklogMs;
   }
@@ -163,7 +174,7 @@ export class NativeGameRuntime{
    }
    if(ticks>=8&&this.clock()-began>=stepBudget)break;
   }
-  return {ticks,remainingMs:this.backlogMs,rigidSteps:this.rigidSteps,discontinuityMs:this.discontinuityMs};
+  return {ticks,remainingMs:this.backlogMs,rigidSteps:this.rigidSteps,discontinuityMs:this.discontinuityMs,simulationBehind:this.backlogMs>40};
  }
  updateAuthoritativeCamera(){
   const foot=this.rigids.renderPose("player-foot",clamp(this.rigidPhaseMs/WORLD_STEP_MS,0,1));
@@ -193,15 +204,23 @@ export class NativeGameRuntime{
  async start(){
   if(this.closed)throw Error("Native game disposed");
   if(this.running)return false;
-  await this.flightController.connect();
+  // PWA background/foreground must resume the SAME compiled Flight Core,
+  // not instantiate another WASM machine and silently reset calibration.
+  if(!this.flightController.backend.ready)await this.flightController.connect();
   if(this.closed)throw Error("Native game disposed during startup");
   this.running=true;this.lastFrameAt=null;const epoch=++this.generation;
   const frame=now=>{
    if(!this.running||epoch!==this.generation)return;
    try{
+    this.beforeFrame?.(now);
     if(this.lastFrameAt!==null)this.stepBudget(Math.max(0,Math.min(2000,now-this.lastFrameAt)));
     this.lastFrameAt=now;
-    if(this.backlogMs<12)this.draw(now);
+    // A slow CPU must not starve the GPU: drawing remains possible while
+    // catch-up physics is pending. Reusing the most recent authoritative
+    // snapshots gives responsive controls/cameras without lying about sim
+    // time, switching engines, or overloading a frame with 2 seconds of work.
+    this.draw(now);
+    this.afterFrame?.(this.lastDraw,now);
    }catch(error){this.running=false;this.onError?.(error);return;}
    if(this.running&&epoch===this.generation)this.frameHandle=this.requestFrame(frame);
   };
@@ -216,11 +235,25 @@ export class NativeGameRuntime{
  }
  async updateOsmFeatures(snapshot){
   if(this.closed)throw Error("Native game disposed");
-  return this.world.updateOsmFeatures(snapshot);
+  if(!snapshot||!Array.isArray(snapshot.buildings))throw Error("native OSM needs actual source features");
+  // The exact same polygon/prism list must feed visible city geometry,
+  // 1 kHz drone collision and 60 Hz cars/jet; otherwise projectiles and
+  // movement silently pass through drawn walls.
+  const seq=++this.osmGeneration;
+  const collision=nativeBuildingCollisionSnapshot(snapshot.buildings,{
+   origin:snapshot.origin,center:snapshot.center??[0,0]
+  });
+  const shown=await this.world.updateOsmFeatures(snapshot);
+  if(this.closed||seq!==this.osmGeneration||shown?.city?.cancelled||shown?.roads?.cancelled)
+   return {cancelled:true};
+  const physics=syncNativeBuildingCollisions({flight:this.flight,rigids:this.rigids},collision);
+  this.osmCollisionOrigin=collision.originKey;
+  this.lastOsmCollision={...physics,hash:collision.hash,origin:collision.originKey};
+  return {...shown,collision:this.lastOsmCollision};
  }
  async dispose(){
   if(this.closed)return;
-  this.stop();this.closed=true;
+  this.stop();this.closed=true;this.osmGeneration++;
   await this.flightController.disconnect();
   this.world.dispose();this.rigids.destroy();this.flight.dispose();
  }

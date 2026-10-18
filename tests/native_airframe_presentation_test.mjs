@@ -27,7 +27,15 @@ near(calls.instances[0].data.transforms[13],7);
 const angled=flight.update(pose,{mode:"fpv",fpvTiltDeg:20,motors:[100,200,100,200]});
 assert.ok(angled.target[2]>angled.eye[2],"positive FPV camera mount tilt points up");
 const follow=flight.update(pose,{mode:"follow"});
-near(follow.eye[0],4+1.65);near(follow.eye[2],12+.78);
+// Production chase framing intentionally moved farther behind and higher
+// to preserve the real Box3D horizon; test physical sightline bounds rather
+// than freezing the previous, ground-filled camera art direction.
+assert.ok(follow.eye[0]>pose.position.x+2.3&&follow.eye[0]<pose.position.x+3.2,
+ "native follow must stand behind the actual -X-forward drone");
+assert.ok(follow.eye[2]>pose.position.z+1.15&&follow.eye[2]<pose.position.z+1.8,
+ "native follow must expose the real terrain/horizon above physical craft");
+assert.ok(follow.target[2]<follow.eye[2],
+ "chase optics must look toward real aircraft and world, not empty zenith");
 near(calls.camera.at(-1).near,.06);
 const third=flight.update(pose,{mode:"third",thirdDistanceM:2.48});
 assert.ok(third.eye[0]>follow.eye[0],"third camera must be farther behind drone");
