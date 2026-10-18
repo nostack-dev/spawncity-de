@@ -455,6 +455,7 @@ export class NativeSceneRenderer{
   if(this.disposed)return;
   for(const m of this.meshes.values())this.free(m);
   this.meshes.clear();if(!this.lost){for(const q of this.pending)this.gl.deleteQuery(q);this.gl.deleteProgram(this.gpu.handle);}
-  this.pending=[];this.shadow?.dispose({contextLost:this.lost});this.shadow=null;this.disposed=true;this.canvas.removeEventListener?.("webglcontextlost",this.onLost);this.canvas.removeEventListener?.("webglcontextrestored",this.onRestored);
+  this.pending=[];this.shadow?.dispose({contextLost:this.lost});this.shadow=null;
+  this.sky?.dispose({contextLost:this.lost});this.sky=null;this.disposed=true;this.canvas.removeEventListener?.("webglcontextlost",this.onLost);this.canvas.removeEventListener?.("webglcontextrestored",this.onRestored);
  }
 }
