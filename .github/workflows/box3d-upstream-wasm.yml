@@ -214,7 +214,7 @@ jobs:
           # two preview paths are staged and published. NEVER git push --force.
           mkdir -p native
           cp /tmp/spawncity-native-published/native_game.html native/index.html
-          node -e 'const fs=require("fs");fs.writeFileSync("native/build.json",JSON.stringify({sha:process.env.SOURCE_SHA,renderer:"native-webgl2",nativeReleaseVerified:false,scope:"preview-only",hardwareAcceptance:"pending",url:"https://spawncity.de/native/"})+"\\n")'
+          node -e 'const fs=require("fs");fs.writeFileSync("native/build.json",JSON.stringify({sha:process.env.SOURCE_SHA,renderer:"native-webgl2",nativeReleaseVerified:false,scope:"preview-only",hardwareAcceptance:"pending",url:"https://spawncity.de/native/"})+String.fromCharCode(10))'
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- native/index.html native/build.json
