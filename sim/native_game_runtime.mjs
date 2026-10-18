@@ -9,6 +9,7 @@ import {JET_SPEC,createAirframe,airframeStep,setFlightMode} from "./jet_flight_d
 import {NativeWorldPresenter} from "./native_world_presenter.mjs";
 import {nativeBuildingCollisionSnapshot,syncNativeBuildingCollisions} from "./native_building_collision_bridge.mjs";
 import {clearNativeActorSpawns} from "./native_spawn_clearance.mjs";
+import {chooseNativeStreetSpawn} from "./native_street_spawn.mjs";
 import {terrainNodeHeightAt} from "./terrain_craters.mjs";
 export const NATIVE_GAME_RUNTIME_VERSION="single-native-1khz-full-game-physics-v1";
 const MILLIS_PER_FLIGHT_TICK=1;
@@ -255,9 +256,31 @@ export class NativeGameRuntime{
   // made the chase camera stare at a single polygon and appear blank.
   // Move only blocked initial actors using actual Box3D setPose, never
   // removing OSM geometry/collisions or creating a parallel game world.
-  const spawnClearance=clearNativeActorSpawns(this.rigids,collision,{
-   heightAt:this.world.terrain?.heightAt??terrainNodeHeightAt,firstLoad
-  });
+  const heightAt=this.world.terrain?.heightAt??terrainNodeHeightAt;
+  const spawnClearance=clearNativeActorSpawns(this.rigids,collision,{heightAt,firstLoad});
+  // Geometry can be technically clear while the foot player is trapped in
+  // an OSM courtyard. On FIRST load only, start from an actual mapped
+  // pedestrian street and align the FPS view down its verified open corridor.
+  // No synthetic roads, no changed Box3D building walls, no later teleport.
+  if(firstLoad&&Array.isArray(snapshot.roads)&&snapshot.roads.length){
+   const foot=this.rigids.pose("player-foot");
+   const street=foot?chooseNativeStreetSpawn(snapshot.roads,collision,{
+    origin:snapshot.origin,from:foot.position.slice(0,2),kind:"foot",maxDistanceM:95
+   }):null;
+   if(street){
+    const ground=Number(heightAt(...street.position));
+    if(!Number.isFinite(ground))throw Error("native OSM pedestrian spawn has invalid physical terrain height");
+    const next=[...street.position,Math.max(ground+.97,foot.position[2])];
+    if(!this.rigids.setPose("player-foot",{position:next,yaw:street.yaw}))
+     throw Error("Box3D rejected genuine OSM street spawn");
+    const initialView=Number(this.footInput.yaw)||0;
+    if(Math.abs(initialView)<.001){
+     this.footInput.yaw=street.yaw;this.footInput.pitch=-.095;
+     this.gameplayState.walk.yaw=street.yaw;this.gameplayState.walk.pitch=-.095;
+    }
+    spawnClearance.streetFoot={...street,from:foot.position.slice(0,3),to:next};
+   }
+  }
   this.osmCollisionOrigin=collision.originKey;
   // The same collision snapshot drives camera occlusion and rigid bodies.
   this.gameplayState.carObstacleSnapshot=collision;

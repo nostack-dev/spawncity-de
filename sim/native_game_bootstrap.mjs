@@ -27,7 +27,12 @@ function setModePressed(mode){
 const friendly=n=>Number.isFinite(n)?Number(n).toFixed(1):"—";
 function updateTelemetry(game,now){
  if(now-reported<180)return;reported=now;
- const pos=game.flight.position(),spd=Math.hypot(...game.flight.linear()),gpu=game.lastDraw?.gpu;
+ // Telemetry belongs to the selected actor, not the idle drone at 0.1 m.
+ const actorId={foot:"player-foot",car:"player-car",jet:"player-jet"}[game.mode];
+ const actor=actorId?game.rigids.pose(actorId):null;
+ const pos=actor?.position??game.flight.position();
+ const velocity=actor?.velocity??game.flight.linear();
+ const spd=Math.hypot(...velocity),gpu=game.lastDraw?.gpu;
  telemetry.textContent=game.mode.toUpperCase()+" · "+friendly(spd)+" m/s · "+
   "Z "+friendly(pos[2])+" m · "+game.simulatedTicks+" ticks · "+game.rigidSteps+" rigid · "+
   (gpu?.drawCalls??"—")+" draws · backlog "+friendly(game.backlogMs)+" ms · dropped "+friendly(game.discontinuityMs)+" ms";
@@ -73,6 +78,13 @@ async function loadRealWorld(game,{source="demo"}={}){
   if(game.closed||epoch!==osmEpoch)return;
   const shown=await game.updateOsmFeatures(result);
   if(shown?.cancelled||epoch!==osmEpoch)return;
+  // Authoritative Box3D has chosen the real mapped footpath; give the ONE
+  // existing desktop/touch/gamepad input owner the same initial heading.
+  // Never override a user's own pointer/mouse look after they have turned.
+  const street=shown.collision?.spawnClearance?.streetFoot;
+  if(street&&session?.game===game&&Math.abs(session.input.yaw)<.001){
+   session.input.yaw=street.yaw;session.input.pitch=-.095;
+  }
   if(!shown?.collision?.prismCount||!result.buildings.length)
    throw Error("OSM produced no collision-safe city buildings");
   report(label+" · "+result.buildings.length+" real OSM buildings · "+
