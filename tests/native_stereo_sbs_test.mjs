@@ -29,6 +29,9 @@ assert.deepEqual(calls.map(x=>x.args.viewport),[
 assert.ok(calls[0].camera.eye[0]>0,"cross-eye places right camera on left viewport");
 assert.ok(calls[1].camera.eye[0]<0);
 assert.equal(current,cam,"restore primary game camera");
+const vertical=nativeStereoCameras({...cam,target:[0,-10,22]},{mode:"jet"});
+assert.ok(vertical.left.eye.every(Number.isFinite));
+assert.ok(vertical.right.eye.every(Number.isFinite));
 assert.throws(()=>nativeStereoCameras({...cam,target:cam.eye}),/degenerate/);
 assert.throws(()=>renderNativeStereo({...renderer,width:1},cam),/nonzero/);
 const throws={...renderer,render(){throw Error("GPU context lost");}};
