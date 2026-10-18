@@ -21,13 +21,14 @@ export class NativeGameRuntime{
    peerTimeline=null,osmHeightAt=null,clock=()=>performance.now(),
    requestFrame=fn=>requestAnimationFrame(fn),cancelFrame=id=>cancelAnimationFrame(id),
    frameBudgetMs=6,maxBacklogMs=2000,initialMode="drone",
-   onError=null}={}){
+   beforeFrame=null,afterFrame=null,onError=null}={}){
   if(!b3?.b3CreateWorld||!b3?.b3CreateBody)throw Error("NativeGameRuntime requires original Box3D WASM");
   if(typeof flightCoreFactory!=="function"||typeof presenterFactory!=="function")
    throw Error("NativeGameRuntime requires genuine Flight Core and sole WebGL2 presentation");
   if(!validMode.has(initialMode)||!(frameBudgetMs>0&&frameBudgetMs<=25)||maxBacklogMs<100)
    throw Error("Invalid native runtime scheduler configuration");
   this.b3=b3;this.clock=clock;this.requestFrame=requestFrame;this.cancelFrame=cancelFrame;
+  this.beforeFrame=beforeFrame;this.afterFrame=afterFrame;
   this.frameBudgetMs=frameBudgetMs;this.maxBacklogMs=maxBacklogMs;this.onError=onError;
   this.mode=initialMode;this.running=false;this.closed=false;this.frameHandle=null;this.generation=0;
   this.lastFrameAt=null;this.backlogMs=0;this.rigidPhaseMs=0;this.simulatedTicks=0;
@@ -203,6 +204,7 @@ export class NativeGameRuntime{
   const frame=now=>{
    if(!this.running||epoch!==this.generation)return;
    try{
+    this.beforeFrame?.(now);
     if(this.lastFrameAt!==null)this.stepBudget(Math.max(0,Math.min(2000,now-this.lastFrameAt)));
     this.lastFrameAt=now;
     // A slow CPU must not starve the GPU: drawing remains possible while
@@ -210,6 +212,7 @@ export class NativeGameRuntime{
     // snapshots gives responsive controls/cameras without lying about sim
     // time, switching engines, or overloading a frame with 2 seconds of work.
     this.draw(now);
+    this.afterFrame?.(this.lastDraw,now);
    }catch(error){this.running=false;this.onError?.(error);return;}
    if(this.running&&epoch===this.generation)this.frameHandle=this.requestFrame(frame);
   };
