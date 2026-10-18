@@ -41,19 +41,31 @@ try{
   await new Promise(r=>setTimeout(r,140));
   modes.push(mode);
  }
- await page.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
+ // Changing Puppeteer's isMobile/hasTouch on an existing page forces an
+ // implicit reload. Start an independent MOBILE WebGL2 game instead.
+ const mobilePage=await browser.newPage();
+ mobilePage.on("pageerror",e=>errors.push("mobile: "+String(e)));
+ mobilePage.on("console",m=>{if(m.type()==="error")errors.push("mobile console: "+m.text().slice(0,280));});
+ await mobilePage.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
+ await mobilePage.setContent(html,{waitUntil:"load",timeout:45000});
+ await mobilePage.waitForSelector("#gameMenuStart:not([disabled])",{timeout:10000});
+ await mobilePage.click("#gameMenuStart");
+ await mobilePage.waitForFunction(()=>document.documentElement.dataset.engine==="native-webgl2",{timeout:45000});
+ await mobilePage.waitForFunction(()=>document.getElementById("telemetry")?.textContent?.includes("ticks"),{timeout:25000});
  await new Promise(r=>setTimeout(r,220));
- const mobile=await page.evaluate(()=>{
+ const mobile=await mobilePage.evaluate(()=>{
   const c=document.querySelector("#nativeCanvas"),r=c.getBoundingClientRect();
+  const gl=c?.getContext("webgl2");
   return {width:c.width,height:c.height,cssWidth:r.width,cssHeight:r.height,
+   gl:!!gl,glError:gl?.getError(),
    gameFullscreen:Math.abs(r.width-innerWidth)<2&&Math.abs(r.height-innerHeight)<2,
    touchAction:getComputedStyle(c).touchAction};
  });
- if(!mobile.gameFullscreen||mobile.width<780||mobile.height<1600||mobile.touchAction!=="none")
+ if(!mobile.gl||mobile.glError!==0||!mobile.gameFullscreen||mobile.width<780||mobile.height<1600||mobile.touchAction!=="none")
   throw Error("Native PWA touch/DPR/full-window broken: "+JSON.stringify(mobile));
  if(errors.length)throw Error("Browser console errors: "+errors.join(" | ").slice(0,1200));
  data={...details,modes,mobile,errors,rendererProvenance:"compiled real native game, software smoke only"};
- await page.screenshot({path:folder+"/native-mobile.png",fullPage:true});
+ await mobilePage.screenshot({path:folder+"/native-mobile.png",fullPage:true});
  writeFileSync(folder+"/metrics.json",JSON.stringify(data,null,2)+"\n");
  console.log("NATIVE_FULL_BROWSER "+JSON.stringify(data));
 }catch(error){
