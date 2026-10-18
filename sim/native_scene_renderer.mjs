@@ -238,11 +238,10 @@ export class NativeSceneRenderer{
    throw Error("invalid native point light data");
   // The producer reuses its buffers each frame. Copy so a late render reads
   // the state it was explicitly handed, never mutated request data.
-  this.pointLights={
-   count:frame.count,
-   posRange:new Float32Array(frame.posRange),
-   colorIntensity:new Float32Array(frame.colorIntensity)
-  };
+  this.pointLights??={count:0,posRange:new Float32Array(24),colorIntensity:new Float32Array(24)};
+  this.pointLights.count=frame.count;
+  this.pointLights.posRange.set(frame.posRange);
+  this.pointLights.colorIntensity.set(frame.colorIntensity);
  }
  upsert(id,input){
   if(this.disposed)throw Error("disposed");
