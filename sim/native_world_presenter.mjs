@@ -4,6 +4,7 @@
 // composition entrypoint; the current live main does not use it yet.
 import {NativeSceneRenderer} from "./native_scene_renderer.mjs";
 import {NativeSceneGraph} from "./native_scene_graph.mjs";
+import {NativeEffects} from "./native_effects.mjs";
 import {NativeCityStream} from "./native_city_stream.mjs";
 import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
@@ -27,6 +28,7 @@ export class NativeWorldPresenter{
   if(!poseSource?.bodies||!poseSource?.renderPose)throw Error("native world requires authoritative Box3D runtime");
   this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
   this.sceneGraph=new NativeSceneGraph(this.renderer);
+  this.effects=new NativeEffects(this.renderer);
   this.terrain=new NativeTerrainStream(this.renderer,{...terrainOptions,...(heightAt?{heightAt}:null)});
   this.city=new NativeCityStream(this.renderer,cityOptions);
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
@@ -50,6 +52,7 @@ export class NativeWorldPresenter{
   this.osmOriginKey=null;
   this.drawStats=null;this.requestFrame=null;this.onError=null;this.frameEpoch=0;
  }
+ emitEffect(event){if(this.disposed)throw Error("native world disposed");return this.effects.emit(event);}
  setFlightCameraMode(mode,settings={}){
   if(!this.airframe)throw Error("native drone flight not configured");
   if(!["fpv","follow","third"].includes(mode))throw Error("invalid native drone camera mode");
@@ -161,9 +164,10 @@ export class NativeWorldPresenter{
      .finally(()=>{this.terrainPromise=null;});
   }
   const hierarchy=this.sceneGraph.sync();
+  const fx=this.effects.tick(now,this.camera.eye);
   const gpu=this.renderer.render();
   this.frameNumber++;
-  this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,hierarchy,
+  this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,hierarchy,effects:fx,
     terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,
     drawingWidth:viewport.width,drawingHeight:viewport.height,drawingDpr:viewport.pixelRatio,
     gameMode:this.gameMode,renderer:"native-webgl2-only"};
@@ -196,6 +200,6 @@ export class NativeWorldPresenter{
  dispose(){
   if(this.disposed)return;
   this.stop();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
-  this.peer?.dispose();this.sceneGraph.dispose();this.renderer.dispose();this.disposed=true;
+  this.peer?.dispose();this.effects.dispose();this.sceneGraph.dispose();this.renderer.dispose();this.disposed=true;
  }
 }
