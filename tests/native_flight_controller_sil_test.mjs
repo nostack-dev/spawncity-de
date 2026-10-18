@@ -27,13 +27,15 @@ function run(n){
   }
  }
 }
-run(700);
+// Real firmware requires 2,000 stationary IMU calibration samples BEFORE
+// it can accept any arming command. Never shortcut this state machine.
+run(2200);
 input.arm=true;
-run(900);
+run(1200);
 input.throttle=.45;
 run(700);
-assert.equal(fc.ticks,2300);
-assert.ok(steps>=2300);
+assert.equal(fc.ticks,4100);
+assert.ok(steps>=4100);
 assert.ok(armedFrames>0,"genuine flight controller must accept an arm command after calibration");
 assert.ok(physics.motorOmega.every(x=>x>=0&&Number.isFinite(x)));
 assert.ok(physics.batteryCurrent>=0&&Number.isFinite(physics.batteryCurrent));
