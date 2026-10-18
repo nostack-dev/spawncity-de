@@ -38,8 +38,8 @@ assert.ok((view(packets[0]).getUint16(14,true)&2)!==0,"first tick resets real fi
 assert.ok((view(packets[1]).getUint16(14,true)&2)===0,"reset must not repeat");
 const sbus=packets.filter(p=>(view(p).getUint16(14,true)&4)!==0);
 const nav=packets.filter(p=>(view(p).getUint16(14,true)&8)!==0);
-assert.equal(sbus.length,3,"SBUS updates exactly every 10 ms");
-assert.equal(nav.length,3,"NAV1 updates exactly every 10 ms");
+assert.equal(sbus.length,4,"SBUS emits first sample immediately then every 10 ms");
+assert.equal(nav.length,4,"NAV1 emits first sample immediately then every 10 ms");
 assert.ok(sbus.every(p=>p[30]===15),"real SBUS 0x0f wire preamble");
 assert.ok(nav.every(p=>view(p).getUint32(55,true)===0x3156414e),"real NAV1 magic and CRC");
 assert.ok(packets.every(p=>(view(p).getUint16(14,true)&1)!==0),"IMU delivered at 1 kHz");

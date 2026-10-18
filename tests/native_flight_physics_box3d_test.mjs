@@ -10,6 +10,12 @@ const b3=await (await import(pathToFileURL(resolve(modulePath)).href)).default()
 const params=nativeDefaultFlightParams();
 const model=createNativeFlightPhysics(b3,params);
 const assertFinite=values=>assert.ok(values.every(Number.isFinite),"non-finite physical Box3D pose: "+values);
+const imu0=model.imuRaw(.001);
+const rawImu=new DataView(imu0.buffer,imu0.byteOffset,imu0.byteLength);
+const rawAccel=[2,4,6].map(i=>rawImu.getInt16(i,false));
+const accelG=Math.hypot(...rawAccel)/2048;
+assert.ok(accelG>.85&&accelG<1.15,"at-rest accelerometer must encode physical gravity (1 g), not NaN/0 g: "+JSON.stringify(rawAccel));
+
 const atStart=model.state();
 assertFinite([atStart.x,atStart.y,atStart.z,atStart.vx,atStart.vy,atStart.vz]);
 assert.ok(atStart.z>=.02&&atStart.z<2,"airframe launches near real surface without clipping");
