@@ -198,7 +198,9 @@ export class NativeGameRuntime{
  async start(){
   if(this.closed)throw Error("Native game disposed");
   if(this.running)return false;
-  await this.flightController.connect();
+  // PWA background/foreground must resume the SAME compiled Flight Core,
+  // not instantiate another WASM machine and silently reset calibration.
+  if(!this.flightController.backend.ready)await this.flightController.connect();
   if(this.closed)throw Error("Native game disposed during startup");
   this.running=true;this.lastFrameAt=null;const epoch=++this.generation;
   const frame=now=>{
