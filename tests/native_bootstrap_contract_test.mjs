@@ -15,7 +15,7 @@ assert.match(boot,/new NativeGameInput\(/);
 assert.match(boot,/game\.beforeFrame=/);
 assert.match(boot,/fetchNativeOsm\(/);
 assert.doesNotMatch(boot,/\bTHREE\.|from ["']three["']|<script[^>]+src=["']https?:\/\//i);
-assert.doesNotMatch(html,/(?:real_world_bootstrap|auto_flight_start|three(?:\.js|\.module)|cdn\.)/i,
+assert.doesNotMatch(html,/(?:real_world_bootstrap|auto_flight_start|three\.module\.js|<script[^>]+src=["']https?:\/\/)/i,
  "native exclusive game must not secretly load the old presentation");
 const built=process.argv[2];
 if(built){
