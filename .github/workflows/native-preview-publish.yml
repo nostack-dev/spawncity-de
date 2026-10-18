@@ -55,17 +55,46 @@ jobs:
           grep -Fq 'spawncity-app-v2' oppenheimer-sw.js
           grep -Fq 'const canonical=path==="/drone_simulator.html"' oppenheimer-sw.js
           cp oppenheimer-sw.js /tmp/spawncity-native-safe-sw.js
+          # Fetch actual OSM server-side; never rely on third-party browser
+          # CORS/certificates. Retain a previously validated authentic snapshot
+          # if the public OSM API is temporarily unavailable.
+          if python3 tools/build_native_osm_snapshot.py /tmp/native-konstanz-osm.json; then
+            echo "Fresh real OpenStreetMap ways downloaded."
+          else
+            echo "::warning::OSM API unavailable. Only a previously verified authentic OSM snapshot may be reused."
+          fi
           git fetch origin gh-pages
           git checkout -B gh-pages origin/gh-pages
           cp /tmp/spawncity-native-safe-sw.js oppenheimer-sw.js
           # Preserve existing production home, game, CNAME and sw. Only these
           # two preview paths are staged and published. Existing Pages history must be preserved.
-          mkdir -p native
+          mkdir -p native/osm
+          if test -s /tmp/native-konstanz-osm.json; then
+            cp /tmp/native-konstanz-osm.json native/osm/demo-konstanz.json
+          fi
+          # Validate provenance of either the newly downloaded OSM extract or
+          # the last-good REAL OSM extract. No synthetic preview city, ever.
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path("native/osm/demo-konstanz.json")
+          if not path.is_file():
+              raise SystemExit("No verified real OSM snapshot available; refusing preview publication")
+          data=json.loads(path.read_text())
+          assert data.get("synthetic") is False
+          assert data.get("source")=="openstreetmap-api-0.6"
+          assert data.get("origin")=={"lon":9.17442,"lat":47.66022}
+          buildings=sum(1 for w in data["elements"] if w["tags"].get("building"))
+          roads=sum(1 for w in data["elements"] if w["tags"].get("highway"))
+          assert buildings>=5 and roads>=2, "real Konstanz OSM snapshot is empty"
+          assert all(w["type"]=="way" and len(w["geometry"])>=2 for w in data["elements"])
+          print("Verified authentic OSM demo:",buildings,"buildings",roads,"roads")
+          PY
           cp /tmp/spawncity-native-published/native_game.html native/index.html
           node -e 'const fs=require("fs");fs.writeFileSync("native/build.json",JSON.stringify({sha:process.env.SOURCE_SHA,renderer:"native-webgl2",nativeReleaseVerified:false,scope:"preview-only",hardwareAcceptance:"pending",url:process.env.PUBLIC_ORIGIN+"/native/"})+String.fromCharCode(10))'
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- native/index.html native/build.json oppenheimer-sw.js
+          git add -- native/index.html native/build.json native/osm/demo-konstanz.json oppenheimer-sw.js
           if git diff --cached --quiet; then
             echo "Native test candidate already published."
             exit 0
@@ -90,7 +119,12 @@ jobs:
                  -H "Cache-Control: no-cache" \
                  "${PUBLIC_ORIGIN}/native/?v=${SOURCE_SHA}-${attempt}" \
                  -o /tmp/spawncity-native-public-game.html \
-              && grep -Fq "SPAWNCITY_NATIVE_CANDIDATE_SHA:${SOURCE_SHA}" /tmp/spawncity-native-public-game.html; then
+              && grep -Fq "SPAWNCITY_NATIVE_CANDIDATE_SHA:${SOURCE_SHA}" /tmp/spawncity-native-public-game.html \
+              && curl -fsSL --retry 1 --connect-timeout 5 --max-time 15 \
+                 -H "Cache-Control: no-cache" \
+                 "${PUBLIC_ORIGIN}/native/osm/demo-konstanz.json?v=${SOURCE_SHA}-${attempt}" \
+                 -o /tmp/spawncity-public-real-osm.json \
+              && python3 -c 'import json;d=json.load(open("/tmp/spawncity-public-real-osm.json"));assert d["source"]=="openstreetmap-api-0.6" and d["synthetic"] is False and len(d["elements"])>10'; then
               echo "Verified native WebGL2 candidate at ${PUBLIC_ORIGIN}/native/ for exact SHA ${SOURCE_SHA}"
               exit 0
             fi

@@ -21,16 +21,18 @@ assert.match(preview,/cp .*native_game\.html native\/index\.html/);
 assert.match(preview,/native\/build\.json/);
 assert.match(preview,/nativeReleaseVerified:false/,"preview must not falsely assert production hardware acceptance");
 assert.match(preview,/hardwareAcceptance:"pending"/);
-assert.ok(preview.includes("git add -- native/index.html native/build.json oppenheimer-sw.js"),"publish only two preview files and protected PWA worker");
+assert.ok(preview.includes("git add -- native/index.html native/build.json native/osm/demo-konstanz.json oppenheimer-sw.js"),"publish only preview HTML, provenance, authentic OSM snapshot and protected PWA worker");
+assert.match(preview,/tools\/build_native_osm_snapshot\.py/,"generate real OSM from provider on GitHub runner");
+assert.match(preview,/native\/osm\/demo-konstanz\.json/,"ship same-origin real OSM data with preview");
 assert.match(preview,/git fetch origin gh-pages/);
 assert.match(preview,/spawncity-app-v2/);
 assert.ok(preview.includes('const canonical=path==="/drone_simulator.html"'),"PWA worker must isolate canonical cache");
 assert.match(preview,/git push origin HEAD:gh-pages/);
 assert.doesNotMatch(preview,/git push --force|git push -f\b/,"never delete existing production pages");
-assert.doesNotMatch(preview,/git add -A|git add \./,"preview must stage only the two preview files and isolated PWA worker");
+assert.doesNotMatch(preview,/git add -A|git add \./,"preview must stage only dedicated preview files and isolated PWA worker");
 assert.ok(!preview.includes("renderer_acceptance_gate.mjs --gate"),
  "preview is a separate device test, not a fake bypass of production gate");
 const prod=readFileSync(".github/workflows/deploy.yml","utf8");
 assert.match(prod,/node tests\/renderer_acceptance_gate\.mjs --gate/,
  "actual production still requires all 15 real-device acceptance scenarios");
-console.log("Native preview publishes only isolated /native/ after Chromium, retains original live game and full production hardware gate.");
+console.log("Native preview stages authentic same-origin OSM in isolated /native/, retaining original live game and full hardware gate.");
