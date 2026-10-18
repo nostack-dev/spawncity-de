@@ -17,6 +17,6 @@ try{
  await writeFile(out+"/native-scene.png",png);
  await writeFile(out+"/metrics.json",JSON.stringify(data,null,2)+"\n");
  console.log("NATIVE_SCENE_GPU_PROOF "+JSON.stringify(data));
- if(errors.length||data.glError!==0||data.stereoGlError!==0||!data.stereoEnabled||data.stereoDrawCalls!==2*data.drawCalls||data.mutableGlError!==0||!data.mutableUpdated||data.mutatedShadowDrawCalls<2||data.cachedSunFrames<45||data.culledMeshes<1||data.shadowDrawCalls<2||data.shadowResolution!==256||data.drawCalls!==4+data.osmCityChunks||data.instances!==937+data.osmCityChunks||data.osmBuildingFootprints!==2||data.indexedCityChunks<1||data.savedCityGpuBytes<=0||data.triangles<10000||data.nonBackgroundPixels<6000)process.exitCode=1;
+ if(errors.length||data.glError!==0||data.stereoGlError!==0||!data.stereoEnabled||data.stereoDrawCalls<2||data.stereoDrawCalls>2*data.drawCalls||data.stereoHalfContent?.length!==2||data.stereoHalfContent.some(v=>v<200)||data.mutableGlError!==0||!data.mutableUpdated||data.mutatedShadowDrawCalls<2||data.cachedSunFrames<45||data.culledMeshes<1||data.shadowDrawCalls<2||data.shadowResolution!==256||data.drawCalls!==4+data.osmCityChunks||data.instances!==937+data.osmCityChunks||data.osmBuildingFootprints!==2||data.indexedCityChunks<1||data.savedCityGpuBytes<=0||data.triangles<10000||data.nonBackgroundPixels<6000)process.exitCode=1;
 }catch(error){console.error("NATIVE_SCENE_GPU_ERROR",error);process.exitCode=1;}
 finally{await browser.close();}
