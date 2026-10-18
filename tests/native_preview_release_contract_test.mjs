@@ -21,13 +21,13 @@ assert.match(preview,/cp .*native_game\.html native\/index\.html/);
 assert.match(preview,/native\/build\.json/);
 assert.match(preview,/nativeReleaseVerified:false/,"preview must not falsely assert production hardware acceptance");
 assert.match(preview,/hardwareAcceptance:"pending"/);
-assert.match(preview,/git add -- native\\/index\\.html native\\/build\\.json oppenheimer-sw\\.js/);
+assert.ok(preview.includes("git add -- native/index.html native/build.json oppenheimer-sw.js"),"publish only two preview files and protected PWA worker");
 assert.match(preview,/git fetch origin gh-pages/);
 assert.match(preview,/spawncity-app-v2/);
-assert.match(preview,/const canonical=path===?\\/drone_simulator\\.html/);
+assert.ok(preview.includes('const canonical=path==="/drone_simulator.html"'),"PWA worker must isolate canonical cache");
 assert.match(preview,/git push origin HEAD:gh-pages/);
 assert.doesNotMatch(preview,/git push --force|git push -f\b/,"never delete existing production pages");
-assert.doesNotMatch(preview,/git add -A|git add \./,"preview must stage only its two own paths");
+assert.doesNotMatch(preview,/git add -A|git add \./,"preview must stage only the two preview files and isolated PWA worker");
 assert.ok(!preview.includes("renderer_acceptance_gate.mjs --gate"),
  "preview is a separate device test, not a fake bypass of production gate");
 const prod=readFileSync(".github/workflows/deploy.yml","utf8");
