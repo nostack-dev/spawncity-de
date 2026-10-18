@@ -16,8 +16,8 @@ for(const file of migrated){
  assert.doesNotMatch(source,/\bTHREE\./,"old geometry classes must be replaced: "+file);
 }
 const audit=auditRuntime();
-assert.ok(audit.threeImportCount<=69,
- "the codebase must have at least six fewer Three-importing production modules; actual="+audit.threeImportCount);
+assert.ok(audit.threeImportCount<=68,
+ "the codebase must have at least seven fewer Three-importing production modules; actual="+audit.threeImportCount);
 assert.equal(audit.nativeOnly,false,"this PR must never imply the whole engine is already native");
 console.log("real production Three imports:",audit.threeImportCount,
- "(six migrated gameplay/audio/HUD/camera modules; full native release gate stays closed)");
+ "(seven migrated modules including shield and collision camera; full native release gate stays closed)");
