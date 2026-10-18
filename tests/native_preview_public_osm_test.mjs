@@ -16,22 +16,42 @@ const browser=await puppeteer.launch({headless:true,executablePath:process.env.C
 // the native camera sees any geometry (especially car/jet modes).
 function centralWorldPixels(buffer){
  const png=PNG.sync.read(buffer),counts=new Map(),min=[255,255,255],max=[0,0,0];
+ // A sky-only gradient has hundreds of colors but essentially NO horizontal
+ // silhouette/geometry edges. Real 3-D buildings, streets, cars and walls
+ // produce lateral contrast. User screenshots showed exactly this false-green.
+ // Count adjacent horizontal samples only within the unobstructed 3D viewport.
+ let lateralEdges=0,lateralSamples=0,lateralContrast=0,rowsWithGeometry=0;
  let n=0;
- for(let y=Math.round(png.height*.23);y<Math.round(png.height*.72);y+=7){
-  for(let x=Math.round(png.width*.16);x<Math.round(png.width*.83);x+=7){
+ const stride=7;
+ for(let y=Math.round(png.height*.23);y<Math.round(png.height*.72);y+=stride){
+  let rowEdges=0;
+  const start=Math.round(png.width*.16),end=Math.round(png.width*.83);
+  for(let x=start;x<end;x+=stride){
    const offset=(y*png.width+x)*4;
    const rgb=[png.data[offset],png.data[offset+1],png.data[offset+2]];
    const key=(rgb[0]<<16)|(rgb[1]<<8)|rgb[2];
    counts.set(key,(counts.get(key)||0)+1);n++;
    rgb.forEach((v,i)=>{min[i]=Math.min(min[i],v);max[i]=Math.max(max[i],v);});
+   if(x<start+stride)continue;
+   const previous=offset-stride*4;
+   const contrast=Math.max(...rgb.map((v,i)=>Math.abs(v-png.data[previous+i])));
+   lateralContrast+=contrast;lateralSamples++;
+   if(contrast>=18){lateralEdges++;rowEdges++;}
   }
+  if(rowEdges>=2)rowsWithGeometry++;
  }
  return {uniqueColors:counts.size,pixelSamples:n,
   channelSpread:Math.max(...max.map((v,i)=>v-min[i])),
-  diverseRatio:n?(1-Math.max(...counts.values())/n):0};
+  diverseRatio:n?(1-Math.max(...counts.values())/n):0,
+  lateralEdgeRatio:lateralSamples?lateralEdges/lateralSamples:0,
+  lateralContrastMean:lateralSamples?lateralContrast/lateralSamples:0,
+  geometryRows:rowsWithGeometry};
 }
 const hasWorldPixels=p=>p.pixelSamples>200&&p.uniqueColors>6
- &&p.channelSpread>=30&&p.diverseRatio>.015;
+ &&p.channelSpread>=30&&p.diverseRatio>.015
+ // The old screenshot showed 1,300 OSM buildings + 72 GPU draws, yet only
+ // a horizontally uniform sky; sky gradients must never satisfy this gate.
+ &&p.lateralEdgeRatio>.012&&p.geometryRows>=3;
 
 const diagnostics=[];
 try{
