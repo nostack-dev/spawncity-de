@@ -37,11 +37,12 @@ jobs:
           repository: ${{ github.repository }}
       - name: Publish ONLY native test candidate, never replace production game
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           PUBLIC_ORIGIN="$(node tools/public_site.mjs origin)"
           export PUBLIC_ORIGIN
+          echo "PUBLIC_ORIGIN=${PUBLIC_ORIGIN}" >> "$GITHUB_ENV"
           test -s /tmp/spawncity-native-published/native_game.html
           grep -Fq "SPAWNCITY_NATIVE_CANDIDATE_SHA:${SOURCE_SHA}" /tmp/spawncity-native-published/native_game.html
           if grep -Eq 'THREE[.]WebGLRenderer|three[.]module[.]js' /tmp/spawncity-native-published/native_game.html; then
@@ -65,3 +66,28 @@ jobs:
           git commit -m "Publish isolated native WebGL2 device-testing build from ${SOURCE_SHA}"
           git push origin HEAD:gh-pages
           echo "Native device-testing candidate staged at ${PUBLIC_ORIGIN}/native/ (NOT full release)"
+
+      - name: Verify actual public native game SHA and preview-only provenance
+        timeout-minutes: 9
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if curl -fsSL --retry 1 --connect-timeout 5 --max-time 15 \
+                 -H "Cache-Control: no-cache" \
+                 "${PUBLIC_ORIGIN}/native/build.json?v=${SOURCE_SHA}-${attempt}" \
+                 -o /tmp/spawncity-native-public-build.json \
+              && node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/spawncity-native-public-build.json","utf8"));if(p.sha!==process.argv[1]||p.renderer!=="native-webgl2"||p.nativeReleaseVerified!==false||p.scope!=="preview-only")process.exit(1)' "${SOURCE_SHA}" \
+              && curl -fsSL --retry 1 --connect-timeout 5 --max-time 15 \
+                 -H "Cache-Control: no-cache" \
+                 "${PUBLIC_ORIGIN}/native/?v=${SOURCE_SHA}-${attempt}" \
+                 -o /tmp/spawncity-native-public-game.html \
+              && grep -Fq "SPAWNCITY_NATIVE_CANDIDATE_SHA:${SOURCE_SHA}" /tmp/spawncity-native-public-game.html; then
+              echo "Verified native WebGL2 candidate at ${PUBLIC_ORIGIN}/native/ for exact SHA ${SOURCE_SHA}"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::The native candidate has not propagated to the real public origin."
+          exit 1
