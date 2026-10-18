@@ -111,9 +111,19 @@ try{
  const modes=[];
  for(const mode of ["drone","foot","car","jet"]){
   await page.click('[data-mode="'+mode+'"]');
-  await page.waitForFunction(want=>document.querySelector('[data-mode="'+want+'"]')?.getAttribute("aria-pressed")==="true",
-   {timeout:9000},mode);
-  await new Promise(done=>setTimeout(done,420));
+  await page.waitForFunction(want=>
+   document.querySelector('[data-mode="'+want+'"]')?.getAttribute("aria-pressed")==="true"
+   &&document.querySelector("#telemetry")?.textContent?.startsWith(want.toUpperCase()+" · "),
+   {timeout:30000,polling:150},mode);
+  // With Chromium SwiftShader a real 1300-building GPU frame can take >300 ms.
+  // Never sample a stale/half-presented frame on a 420-ms arbitrary timeout.
+  // Require a SECOND completed game render after the mode switch.
+  const firstTelemetry=await page.$eval("#telemetry",el=>el.textContent);
+  await page.waitForFunction(({mode,first})=>{
+   const current=document.querySelector("#telemetry")?.textContent;
+   return current!==first&&current?.startsWith(mode.toUpperCase()+" · ");
+  },{timeout:30000,polling:150},{mode,first:firstTelemetry});
+  await page.evaluate(()=>new Promise(requestAnimationFrame));
   const observed=await page.evaluate(()=>({
    renderer:document.querySelector("#viewport")?.dataset.renderer,
    telemetry:document.querySelector("#telemetry")?.textContent,
