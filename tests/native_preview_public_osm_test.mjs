@@ -144,6 +144,17 @@ try{
    probe:window.__spawncityNativeProbe?.()??null
   }));
   const pixels=centralWorldPixels(await page.screenshot());
+  // Diagnose the real GPU depth ordering even when the screenshot happens
+  // to pass: live public OSM frame timing is nondeterministic on SwiftShader.
+  let terrainDiagnostic=null;
+  if(mode==="foot"){
+   await page.evaluate(()=>{window.__nativeDiagnosticSkipTerrain=true;});
+   await new Promise(done=>setTimeout(done,900));
+   terrainDiagnostic=centralWorldPixels(await page.screenshot());
+   await page.evaluate(()=>{window.__nativeDiagnosticSkipTerrain=false;});
+   console.log("NATIVE_FOOT_DEPTH_PROBE "+JSON.stringify({normal:pixels,withoutTerrain:terrainDiagnostic,
+    camera:observed.probe?.camera,terrain:observed.probe?.terrainStats,gpu:observed.probe?.gpu}));
+  }
   modes.push({mode,pixels,camera:observed.probe?.camera,
    meshCount:observed.probe?.meshCount,meshClasses:observed.probe?.meshClasses,
    gpu:observed.probe?.gpu,cityBuilt:observed.probe?.cityStats?.built,
