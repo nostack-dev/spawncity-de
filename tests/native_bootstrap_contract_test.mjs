@@ -14,6 +14,14 @@ assert.match(boot,/new NativeGameRuntime\(/);
 assert.match(boot,/new NativeGameInput\(/);
 assert.match(boot,/game\.beforeFrame=/);
 assert.match(boot,/fetchNativeOsm\(/);
+assert.match(html,/<select id="worldSource"/,"world source needs explicit user selection");
+assert.match(html,/<option value="demo">Real OSM demo: Konstanz/,"no GPS must still load real OSM");
+assert.match(html,/<option value="gps">My location/,"GPS is opt-in only");
+assert.match(html,/id="cityButton"/,"OSM retry must be possible without restarting Flight Core");
+assert.match(boot,/const worldSource=\$\("worldSource"\)\?\.value==="gps"\?"gps":"demo"/);
+assert.match(boot,/if\(source==="gps"\)\{\s*const fix=await preciseGeoLocation\(\)/,
+ "geolocation can run only after explicit GPS selection");
+
 assert.doesNotMatch(boot,/\bTHREE\.|from ["']three["']|<script[^>]+src=["']https?:\/\//i);
 assert.doesNotMatch(html,/(?:real_world_bootstrap|auto_flight_start|three\.module\.js|<script[^>]+src=["']https?:\/\/)/i,
  "native exclusive game must not secretly load the old presentation");
