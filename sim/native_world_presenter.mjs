@@ -5,6 +5,7 @@
 import {NativeSceneRenderer} from "./native_scene_renderer.mjs";
 import {NativeSceneGraph} from "./native_scene_graph.mjs";
 import {NativeEffects} from "./native_effects.mjs";
+import {NativeCombatEvents} from "./native_combat_events.mjs";
 import {NativeCityStream} from "./native_city_stream.mjs";
 import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
@@ -21,7 +22,7 @@ export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
 export class NativeWorldPresenter{
- constructor(canvas,{physics=null,worldPhysics=null,rigidRuntime=null,interpolationAlpha=()=>1,population=null,flight=null,flightPhysics=null,peer=null,gameplayState=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
+ constructor(canvas,{physics=null,worldPhysics=null,rigidRuntime=null,interpolationAlpha=()=>1,population=null,flight=null,flightPhysics=null,peer=null,gameplayState=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={},combatEventTarget=typeof window!=="undefined"?window:null}={}){
   if([physics,worldPhysics,rigidRuntime].filter(Boolean).length!==1)throw Error("native world requires exactly one Box3D pose authority");
   const poseSource=rigidRuntime?nativeRigidRuntimeView(rigidRuntime)
     :worldPhysics?nativeWorldPhysicsView(worldPhysics,{alpha:interpolationAlpha}):physics;
@@ -51,6 +52,8 @@ export class NativeWorldPresenter{
   this.terrainPromise=null;this.pendingCity=null;this.error=null;this.frameNumber=0;
   this.osmOriginKey=null;
   this.drawStats=null;this.requestFrame=null;this.onError=null;this.frameEpoch=0;
+  this.combatEvents=new NativeCombatEvents(this,{target:combatEventTarget,onError:error=>{this.error=error;this.onError?.(error);}});
+  this.combatEvents.connect();
  }
  emitEffect(event){if(this.disposed)throw Error("native world disposed");return this.effects.emit(event);}
  setFlightCameraMode(mode,settings={}){
@@ -199,7 +202,7 @@ export class NativeWorldPresenter{
  stop(){const was=this.running;this.running=false;this.frameEpoch++;return was;}
  dispose(){
   if(this.disposed)return;
-  this.stop();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
+  this.stop();this.combatEvents.dispose();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
   this.peer?.dispose();this.effects.dispose();this.sceneGraph.dispose();this.renderer.dispose();this.disposed=true;
  }
 }
