@@ -57,7 +57,11 @@ assert.equal(fc.ticks,4100);
 assert.ok(steps>=4100);
 const imuMeans=imuData.accelSum.map(x=>x/imuData.n),gyroMeans=imuData.gyroSum.map(x=>x/imuData.n);
 const directSample=physics.imuRaw(.001);const directView=new DataView(directSample.buffer,directSample.byteOffset,directSample.byteLength);
-const diagnostic={worldAcceleration:physics.worldAcceleration,gravityLocal:physics.localVector([0,0,9.80665]),gyroLocal:physics.localVector([1,2,3]),quat:physics.rotation(),directRaw:Array.from(directSample),directAccel:[2,4,6].map(i=>directView.getInt16(i,false))};
+const omegaBody=physics.localVector(physics.angular()),prevOmegaBody=physics.prevOmegaBody;
+const specific=physics.localVector(physics.worldAcceleration.map((v,i)=>v+(i===2?9.80665:0)));
+const independent={omegaBody,prevOmegaBody,specific,accBias:physics.noise.accBias,
+ angularWorld:physics.angular(),imuViewSameBuffer:physics.imuView.buffer===directSample.buffer};
+const diagnostic={independent,worldAcceleration:physics.worldAcceleration,gravityLocal:physics.localVector([0,0,9.80665]),gyroLocal:physics.localVector([1,2,3]),quat:physics.rotation(),directRaw:Array.from(directSample),directAccel:[2,4,6].map(i=>directView.getInt16(i,false))};
 const imuStats={diagnostic,n:imuData.n,accelMean:imuMeans,accelSd:imuData.accelSq.map((x,i)=>Math.sqrt(Math.max(0,x/imuData.n-imuMeans[i]**2))),gyroMean:gyroMeans,gyroSd:imuData.gyroSq.map((x,i)=>Math.sqrt(Math.max(0,x/imuData.n-gyroMeans[i]**2))),peakGyro:imuData.peak};
 assert.ok(armedFrames>0,"genuine flight controller must accept arm after calibration: imu="+JSON.stringify(imuStats)+" stateCounts="+JSON.stringify([...stateCounts])+" snapshots="+JSON.stringify(snapshots));
 assert.ok(physics.motorOmega.every(x=>x>=0&&Number.isFinite(x)));
