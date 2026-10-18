@@ -64,7 +64,11 @@ async function loadRealWorld(game,{source="demo"}={}){
  if(game.closed||epoch!==osmEpoch)return;
  report("Loading "+label+" · real OpenStreetMap buildings and roads…");
  try{
-  const result=await fetchNativeOsm(origin,{signal:controller.signal});
+  const demo=origin.lon===NATIVE_DEMO_CITY.origin.lon&&origin.lat===NATIVE_DEMO_CITY.origin.lat;
+  const result=await fetchNativeOsm(origin,{
+   signal:controller.signal,
+   snapshotUrl:demo?"./osm/demo-konstanz.json":null
+  });
   if(game.closed||epoch!==osmEpoch)return;
   const shown=await game.updateOsmFeatures(result);
   if(shown?.cancelled||epoch!==osmEpoch)return;
