@@ -40,7 +40,9 @@ export class NativeWorldPresenter{
   this.launchPad=new NativeLaunchPad(this.renderer,{heightAt:this.terrain.heightAt});
   this.city=new NativeCityStream(this.renderer,cityOptions);
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
-  this.rigids=new NativeRigidVisuals(this.renderer,poseSource);
+  this.rigids=new NativeRigidVisuals(this.renderer,poseSource,{
+   hiddenBodyIds:gameplayState?["player-foot"]:[]
+  });
   this.worldPhysics=rigidRuntime||worldPhysics;
   const crowdSource=typeof population?.nativePeople==="function"
    ?{people:()=>population.nativePeople(this.camera?.eye?.slice(0,2)??[0,0])}
