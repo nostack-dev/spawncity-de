@@ -3,6 +3,9 @@
 // Loads publicly available OSM ways for a selected demo city, or an explicitly
 // user-authorized GPS location. Never infers GPS or fabricates geometry.
 export const NATIVE_OSM_SOURCE_VERSION="osm-live-vector-features-v1";
+export const NATIVE_DEMO_CITY=Object.freeze({
+ name:"Konstanz (real OpenStreetMap)",origin:Object.freeze({lon:9.17442,lat:47.66022})
+});
 const DEFAULT_ENDPOINTS=Object.freeze([
  "https://overpass.private.coffee/api/interpreter",
  "https://overpass-api.de/api/interpreter",
