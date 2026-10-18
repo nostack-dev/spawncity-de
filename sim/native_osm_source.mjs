@@ -52,8 +52,30 @@ export function parseNativeOverpass(json,{maxBuildings=1300,maxRoads=800}={}){
  return {buildings,roads,source:"openstreetmap-overpass",synthetic:false};
 }
 export async function fetchNativeOsm(origin,{fetchImpl=globalThis.fetch,
- endpoints=DEFAULT_ENDPOINTS,timeoutMs=16000,radiusM=metres,signal=null}={}){
+ endpoints=DEFAULT_ENDPOINTS,timeoutMs=16000,radiusM=metres,signal=null,
+ snapshotUrl=null}={}){
  const query=nativeOverpassQuery(origin,radiusM);
+ if(snapshotUrl!==null){
+  // The public demo is generated from the authentic OSM API by Actions and
+  // published on the SAME origin as /native/. This avoids unreliable third-
+  // party browser CORS, expired certificates and Overpass rate limits.
+  if(origin.lon!==NATIVE_DEMO_CITY.origin.lon||origin.lat!==NATIVE_DEMO_CITY.origin.lat)
+   throw Error("OSM snapshot is allowed only for its exact announced demo city");
+  if(!/^(?:\\.\\/osm\\/|\\/native\\/osm\\/)[A-Za-z0-9_.-]+\\.json$/.test(snapshotUrl))
+   throw Error("OSM snapshot must be a local same-origin JSON asset");
+  const response=await fetchImpl(snapshotUrl,{method:"GET",cache:"no-store",signal});
+  if(!response.ok)throw Error("Same-origin OSM snapshot HTTP "+response.status);
+  const raw=await response.json();
+  if(raw.synthetic!==false||raw.source!=="openstreetmap-api-0.6"||
+   raw.origin?.lon!==origin.lon||raw.origin?.lat!==origin.lat)
+   throw Error("OSM snapshot provenance or city coordinates invalid");
+  const parsed=parseNativeOverpass(raw);
+  if(parsed.buildings.length===0||parsed.roads.length===0)
+   throw Error("Real same-origin OSM snapshot has no usable buildings/roads");
+  return {...parsed,source:"openstreetmap-api-0.6-snapshot",synthetic:false,
+   origin:{lon:origin.lon,lat:origin.lat},center:[0,0],revision:raw.retrievedAt,
+   retrievedAt:raw.retrievedAt};
+ }
  if(typeof fetchImpl!=="function")throw Error("native OSM needs HTTP fetch");
  if(!Array.isArray(endpoints)||!endpoints.length)throw Error("native OSM endpoint missing");
  let error=null;
