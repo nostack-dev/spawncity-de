@@ -154,4 +154,13 @@ jobs:
           CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
           PUBLIC_ORIGIN="$(node tools/public_site.mjs origin)"
           CHROME_BIN="$CHROME_BIN" node tests/native_preview_public_osm_test.mjs "${PUBLIC_ORIGIN}/native/"
+      - name: Preserve real public screenshots for independent visual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-native-public-visual
+          path: artifacts/native-public-visual/
+          if-no-files-found: warn
+          retention-days: 14
+
 
