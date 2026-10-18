@@ -107,8 +107,8 @@ try{
   }));
   const pixels=centralWorldPixels(await page.screenshot());
   modes.push({mode,pixels,camera:observed.probe?.camera,
-   meshCount:observed.probe?.meshCount,
-   cityBuilt:observed.probe?.cityStats?.built,
+   meshCount:observed.probe?.meshCount,meshClasses:observed.probe?.meshClasses,
+   gpu:observed.probe?.gpu,cityBuilt:observed.probe?.cityStats?.built,
    backlogMs:observed.probe?.backlogMs});
   if(observed.renderer!=="native-webgl2-only"||!observed.probe?.camera
    ||!(observed.probe.meshCount>50)||!(observed.probe.cityStats?.built>0)
