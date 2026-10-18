@@ -70,6 +70,7 @@ jobs:
           node tests/native_gameplay_camera_test.mjs
           node tests/native_building_collision_bridge_test.mjs
           node tests/native_spawn_clearance_test.mjs
+          node tests/native_camera_occlusion_test.mjs
           node tests/native_game_input_test.mjs
           node tests/native_launch_pad_test.mjs
           node tests/native_osm_source_test.mjs
