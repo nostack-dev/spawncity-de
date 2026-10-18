@@ -60,10 +60,24 @@ try{
  // published game remains untouched. If the real city seems blank despite
  // 1300 meshes, identify whether GPU face or depth rejection hides it.
  await page.evaluateOnNewDocument(()=>{
-  const proto=WebGL2RenderingContext.prototype;
+  const proto=WebGL2RenderingContext.prototype,terrainLocations=new WeakSet(),activeTerrain=new WeakMap();
+  const getUniform=proto.getUniformLocation;
+  proto.getUniformLocation=function(program,name){
+   const location=getUniform.call(this,program,name);
+   if(name==="uTerrain"&&location)terrainLocations.add(location);
+   return location;
+  };
+  const uniform1i=proto.uniform1i;
+  proto.uniform1i=function(location,value){
+   if(location&&terrainLocations.has(location))activeTerrain.set(this,value===1);
+   return uniform1i.call(this,location,value);
+  };
+  const useProgram=proto.useProgram;
+  proto.useProgram=function(...args){activeTerrain.set(this,false);return useProgram.apply(this,args);};
   for(const name of ["drawElementsInstanced","drawArraysInstanced"]){
    const draw=proto[name];
    proto[name]=function(...args){
+    if(window.__nativeDiagnosticSkipTerrain&&activeTerrain.get(this))return;
     if(window.__nativeDiagnosticNoCull)this.disable(this.CULL_FACE);
     if(window.__nativeDiagnosticNoDepth)this.disable(this.DEPTH_TEST);
     return draw.apply(this,args);
@@ -142,8 +156,11 @@ try{
     await page.evaluate(()=>{window.__nativeDiagnosticNoCull=true;});
     await new Promise(done=>setTimeout(done,260));
     diagnostic.noCulling=centralWorldPixels(await page.screenshot());
-    await page.evaluate(()=>{window.__nativeDiagnosticNoDepth=true;});
-    await new Promise(done=>setTimeout(done,260));
+    await page.evaluate(()=>{window.__nativeDiagnosticNoCull=false;window.__nativeDiagnosticSkipTerrain=true;});
+    await new Promise(done=>setTimeout(done,650));
+    diagnostic.skipTerrain=centralWorldPixels(await page.screenshot());
+    await page.evaluate(()=>{window.__nativeDiagnosticSkipTerrain=false;window.__nativeDiagnosticNoCull=true;window.__nativeDiagnosticNoDepth=true;});
+    await new Promise(done=>setTimeout(done,650));
     diagnostic.noCullingNoDepth=centralWorldPixels(await page.screenshot());
     await page.evaluate(()=>{window.__nativeDiagnosticNoCull=false;window.__nativeDiagnosticNoDepth=false;});
    }
