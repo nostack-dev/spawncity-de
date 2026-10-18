@@ -12,6 +12,7 @@ const input={roll:0,pitch:0,yaw:0,throttle:0,arm:false,gameMode:false};
 const fc=new NativeFlightController(physics,{factory,controls:()=>input});
 await fc.connect();
 let output=null,steps=0,armedFrames=0;
+const stateCounts=new Map();const snapshots=[];
 function run(n){
  for(let i=0;i<n;i++){
   output=fc.tick();steps++;
@@ -20,6 +21,8 @@ function run(n){
     "firmware output is genuine constrained ESC pulses");
   assert.ok(Number.isInteger(output.sequence)&&output.sequence===steps-1);
   if(output.state&1)armedFrames++;
+  stateCounts.set(output.state,(stateCounts.get(output.state)||0)+1);
+  if(steps%400===0)snapshots.push({step:steps,state:output.state,motors:[...output.motors],position:physics.position(),angular:physics.angular()});
   if(steps%200===0){
    const pose=physics.state();
    assert.ok([pose.x,pose.y,pose.z,pose.vx,pose.vy,pose.vz,
@@ -36,7 +39,7 @@ input.throttle=.45;
 run(700);
 assert.equal(fc.ticks,4100);
 assert.ok(steps>=4100);
-assert.ok(armedFrames>0,"genuine flight controller must accept an arm command after calibration");
+assert.ok(armedFrames>0,"genuine flight controller must accept arm after calibration: stateCounts="+JSON.stringify([...stateCounts])+" snapshots="+JSON.stringify(snapshots));
 assert.ok(physics.motorOmega.every(x=>x>=0&&Number.isFinite(x)));
 assert.ok(physics.batteryCurrent>=0&&Number.isFinite(physics.batteryCurrent));
 const position=physics.position();
