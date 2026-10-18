@@ -3,6 +3,7 @@
 // simulation owns ALL positions. This is an independent native game-world
 // composition entrypoint; the current live main does not use it yet.
 import {NativeSceneRenderer} from "./native_scene_renderer.mjs";
+import {NativeSceneGraph} from "./native_scene_graph.mjs";
 import {NativeCityStream} from "./native_city_stream.mjs";
 import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
@@ -25,6 +26,7 @@ export class NativeWorldPresenter{
     :worldPhysics?nativeWorldPhysicsView(worldPhysics,{alpha:interpolationAlpha}):physics;
   if(!poseSource?.bodies||!poseSource?.renderPose)throw Error("native world requires authoritative Box3D runtime");
   this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
+  this.sceneGraph=new NativeSceneGraph(this.renderer);
   this.terrain=new NativeTerrainStream(this.renderer,{...terrainOptions,...(heightAt?{heightAt}:null)});
   this.city=new NativeCityStream(this.renderer,cityOptions);
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
@@ -158,9 +160,10 @@ export class NativeWorldPresenter{
      .catch(error=>{this.error=error;this.running=false;this.onError?.(error);})
      .finally(()=>{this.terrainPromise=null;});
   }
+  const hierarchy=this.sceneGraph.sync();
   const gpu=this.renderer.render();
   this.frameNumber++;
-  this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,
+  this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,hierarchy,
     terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,
     drawingWidth:viewport.width,drawingHeight:viewport.height,drawingDpr:viewport.pixelRatio,
     gameMode:this.gameMode,renderer:"native-webgl2-only"};
@@ -193,6 +196,6 @@ export class NativeWorldPresenter{
  dispose(){
   if(this.disposed)return;
   this.stop();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
-  this.peer?.dispose();this.renderer.dispose();this.disposed=true;
+  this.peer?.dispose();this.sceneGraph.dispose();this.renderer.dispose();this.disposed=true;
  }
 }
