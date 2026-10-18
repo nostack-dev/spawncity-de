@@ -2,13 +2,13 @@
 // weapons, rotor mounts, HUD-world markers. One graphics backend and one
 // Box3D authority; there is NO Three.js scene graph or compatibility fallback.
 import {fromTRS,multiply4,identity4} from "./native_render_math.mjs";
-export const NATIVE_SCENE_GRAPH_VERSION="native-hierarchy-gpu-lifetime-v2";
+export const NATIVE_SCENE_GRAPH_VERSION="native-hierarchy-incremental-v3";
 const vec=(v,n,name)=>{if(!Array.isArray(v)&&!(v instanceof Float32Array))throw Error(name+" expects "+n+" components");if(v.length!==n||Array.from(v).some(x=>!Number.isFinite(x)))throw Error("invalid "+name);return Array.from(v);};
 export class NativeSceneGraph{
  constructor(renderer){
   if(typeof renderer?.updateInstances!=="function"||typeof renderer?.setVisible!=="function"||typeof renderer?.remove!=="function")
    throw Error("native scene graph requires a single native WebGL2 renderer");
-  this.renderer=renderer;this.nodes=new Map();this.meshOwners=new Map();this.closed=false;this.version=0;
+  this.renderer=renderer;this.nodes=new Map();this.meshOwners=new Map();this.pendingRoots=new Set();this.closed=false;this.version=0;
  }
  require(id){const node=this.nodes.get(id);if(!node)throw Error("unknown native node "+id);return node;}
  add(id,{parent=null,meshId=null,position=[0,0,0],rotation=[0,0,0,1],scale=[1,1,1],visible=true}={}){
@@ -26,11 +26,13 @@ export class NativeSceneGraph{
   if(Math.hypot(...node.rotation)<1e-10||node.scale.some(x=>x===0))throw Error("degenerate native transform");
   this.nodes.set(id,node);if(meshId!==null)this.meshOwners.set(meshId,id);
   if(parent!==null)this.nodes.get(parent).children.add(id);
-  this.version++;return id;
+  this.pendingRoots.add(id);this.version++;return id;
  }
  dirtySubtree(id){
-  const pending=[id];
-  while(pending.length){const node=this.require(pending.pop());node.dirty=true;pending.push(...node.children);}
+  // Dirty ancestors invalidate descendants at sync time. Do not walk all
+  // attachments on every changed parent pose or every stationary frame.
+  this.require(id).dirty=true;
+  this.pendingRoots.add(id);
   this.version++;
  }
  setTransform(id,{position,rotation,scale}={}){
@@ -80,14 +82,19 @@ export class NativeSceneGraph{
     this.renderer.remove(n.meshId); // Owning a GPU mesh includes releasing its VAO/VBO on despawn.
     this.meshOwners.delete(n.meshId);
    }
+   this.pendingRoots.delete(key);
    this.nodes.delete(key);
   }
   this.version++;return deleted.length;
  }
  sync(){
   if(this.closed)throw Error("native scene graph disposed");
-  let matrices=0,visibilityChanges=0;
+  let matrices=0,visibilityChanges=0,visited=0;
+  if(!this.pendingRoots.size)return {nodes:this.nodes.size,worldMatrices:0,visibilityChanges:0,visited:0,version:this.version};
+  const roots=[...this.pendingRoots],covered=new Set(roots);
+  this.pendingRoots.clear();
   const visit=(node,parentWorld,parentVisible,parentDirty)=>{
+   visited++;
    const dirty=node.dirty||parentDirty;
    if(dirty){
     node.world=multiply4(parentWorld,fromTRS(node.position,node.rotation,node.scale));
@@ -106,13 +113,28 @@ export class NativeSceneGraph{
    node.effectiveVisible=visible;node.dirty=false;
    for(const id of node.children)visit(this.require(id),node.world,visible,dirty);
   };
-  for(const node of this.nodes.values())if(node.parent===null)visit(node,identity4(),true,false);
-  return {nodes:this.nodes.size,worldMatrices:matrices,visibilityChanges,version:this.version};
+  try{
+   for(const id of roots){
+    const node=this.nodes.get(id);if(!node)continue;
+    let ancestorDirty=false;
+    for(let parent=node.parent;parent!==null;parent=this.require(parent).parent){
+     if(covered.has(parent)){ancestorDirty=true;break;}
+    }
+    if(ancestorDirty)continue;
+    const parent=node.parent===null?null:this.require(node.parent);
+    visit(node,parent?.world??identity4(),parent?.effectiveVisible??true,false);
+   }
+  }catch(error){
+   // Failed GPU writes must be retried after WebGL context recovery.
+   for(const id of roots){const node=this.nodes.get(id);if(node){node.dirty=true;this.pendingRoots.add(id);}}
+   throw error;
+  }
+  return {nodes:this.nodes.size,worldMatrices:matrices,visibilityChanges,visited,version:this.version};
  }
  worldMatrix(id){return new Float32Array(this.require(id).world);}
  dispose(){
   if(this.closed)return;
   for(const node of this.nodes.values())if(node.meshId)this.renderer.remove(node.meshId);
-  this.nodes.clear();this.meshOwners.clear();this.closed=true;
+  this.nodes.clear();this.meshOwners.clear();this.pendingRoots.clear();this.closed=true;
  }
 }
