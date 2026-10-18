@@ -8,6 +8,7 @@ import {WorldRigidBodyPhysics,WORLD_PHYSICS_CATEGORIES} from "./world_rigid_body
 import {JET_SPEC,createAirframe,airframeStep,setFlightMode} from "./jet_flight_dynamics.mjs";
 import {NativeWorldPresenter} from "./native_world_presenter.mjs";
 import {nativeBuildingCollisionSnapshot,syncNativeBuildingCollisions} from "./native_building_collision_bridge.mjs";
+import {clearNativeActorSpawns} from "./native_spawn_clearance.mjs";
 export const NATIVE_GAME_RUNTIME_VERSION="single-native-1khz-full-game-physics-v1";
 const MILLIS_PER_FLIGHT_TICK=1;
 const WORLD_STEP_MS=1000/60;
@@ -246,9 +247,18 @@ export class NativeGameRuntime{
   const shown=await this.world.updateOsmFeatures(snapshot);
   if(this.closed||seq!==this.osmGeneration||shown?.city?.cancelled||shown?.roads?.cancelled)
    return {cancelled:true};
+  const firstLoad=this.lastOsmCollision===null;
   const physics=syncNativeBuildingCollisions({flight:this.flight,rigids:this.rigids},collision);
+  // Initial SpawnCity actors were constructed before genuine OSM ways
+  // arrived. Some hard-coded [x,y] positions are inside a building, which
+  // made the chase camera stare at a single polygon and appear blank.
+  // Move only blocked initial actors using actual Box3D setPose, never
+  // removing OSM geometry/collisions or creating a parallel game world.
+  const spawnClearance=clearNativeActorSpawns(this.rigids,collision,{
+   heightAt:this.world.terrain.heightAt,firstLoad
+  });
   this.osmCollisionOrigin=collision.originKey;
-  this.lastOsmCollision={...physics,hash:collision.hash,origin:collision.originKey};
+  this.lastOsmCollision={...physics,hash:collision.hash,origin:collision.originKey,spawnClearance};
   return {...shown,collision:this.lastOsmCollision};
  }
  async dispose(){
