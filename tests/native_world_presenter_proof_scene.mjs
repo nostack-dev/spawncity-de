@@ -145,8 +145,29 @@ if(droneFrame.gameMode!=="drone"||!world.renderer.meshes.get("flight/airframe").
  throw Error("native drone FPV did not restore the same GPU airframe camera");
 if(world.renderer.gl!==initialNativeContext)throw Error("game modes silently created another GL context");
 world.gameplayState=null;
+// Exercise ACTUAL GPU scene hierarchy, not only mocked renderer methods:
+// a car's child attachment follows Box3D translation and frees VAO/VBO on despawn.
+world.renderer.upsert("proof/seat",{
+ positions:new Float32Array([0,0,0, 1,0,0, 0,1,0]),
+ material:{color:[.9,.5,.15,1],doubleSided:true}
+});
+world.sceneGraph.add("proof-car",{position:[9,7,1]});
+world.sceneGraph.add("proof-cockpit",{parent:"proof-car",meshId:"proof/seat",position:[1,0,1]});
 world.setCamera({eye:[33,-75,40],target:[0,0,3],fov:1,near:.1,far:700});
 world.draw(performance.now()+437);
+const proofSeat=world.renderer.meshes.get("proof/seat");
+if(!proofSeat||Math.abs(proofSeat.data.transforms[12]-10)>1e-5
+ ||Math.abs(proofSeat.data.transforms[14]-2)>1e-5)
+ throw Error("native scene graph failed to drive GPU child mesh from authoritative parent pose");
+world.sceneGraph.setTransform("proof-car",{position:[13,7,1]});
+world.draw(performance.now()+438);
+if(Math.abs(proofSeat.data.transforms[12]-14)>1e-5)
+ throw Error("native GPU attachment did not follow moving vehicle");
+world.sceneGraph.remove("proof-car");
+if(world.renderer.meshes.has("proof/seat")||world.sceneGraph.meshOwners.size!==0)
+ throw Error("despawn leaked native GPU attachment or graph ownership");
+
+world.draw(performance.now()+439);
 const gl=world.renderer.gl;
 gl.finish();
 const pixels=new Uint8Array(canvas.width*canvas.height*4);
