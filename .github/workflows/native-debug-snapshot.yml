@@ -1,0 +1,33 @@
+name: Native standalone reproduction snapshot
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "sim/native_*.mjs"
+      - "tests/native_*.mjs"
+      - ".github/workflows/native-debug-snapshot.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create sanitized local-reproduction package from working tree
+        run: |
+          set -eu
+          tar --exclude='*.bin' --exclude='*.wasm' --exclude='*.zip' \
+            -czf /tmp/native-source-repro.tgz sim tests esp32 \
+              tools/patch_box3d_upstream_bindings.mjs \
+              package.json .github/workflows/renderer-compare.yml \
+              .github/workflows/box3d-upstream-wasm.yml
+          mkdir -p artifacts/native-debug-snapshot
+          cp /tmp/native-source-repro.tgz artifacts/native-debug-snapshot/
+      - name: Publish reproducible source for disconnected test runners
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-native-repro
+          path: artifacts/native-debug-snapshot/native-source-repro.tgz
+          retention-days: 2
