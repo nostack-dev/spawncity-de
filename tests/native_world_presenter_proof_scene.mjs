@@ -50,6 +50,7 @@ const world=new NativeWorldPresenter(canvas,{
  cityOptions:{buildingsPerStep:2,chunkSize:100}
 });
 world.setCamera({eye:[33,-75,40],target:[0,0,3],fov:1,near:.1,far:700});
+world.emitEffect({kind:"blast",position:[1,-10,8],startMs:performance.now(),lifeMs:9000,size:2});
 const ring=(x,y)=>[[x,y],[x+8,y],[x+8,y+8],[x,y+8]];
 const buildings=[];
 for(let i=0;i<16;i++)buildings.push({key:"building-"+i,center:[-34+(i%4)*19,10+Math.floor(i/4)*19],
@@ -64,6 +65,8 @@ world.draw(performance.now());
 await world.terrainPromise;
 const first=world.draw(performance.now()+300);
 const firstDraws=first.gpu.drawCalls;
+if(!world.renderer.meshes.has("fx/particles")||first.effects?.active!==1)
+ throw Error("one native gameplay impact event did not reach sole WebGL2 GPU draw");
 const stableSun=world.draw(performance.now()+325);
 if(!stableSun.gpu.shadowReused)
  throw Error("rotor animation or unchanged crowds incorrectly invalidated expensive sunlight depth pass");
