@@ -11,7 +11,7 @@ let frameClock=1000,disposed=false,drawn=0,osmFrames=0,impacts=0;
 let nextFrame=null;
 let captured=null;
 const game=new NativeGameRuntime({id:"native-game"},{
- b3,flightCoreFactory:factory,clock:()=>frameClock+=.05,frameBudgetMs:100,
+ b3,flightCoreFactory:factory,clock:()=>frameClock+=.05,frameBudgetMs:25,
  requestFrame:fn=>(nextFrame=fn,1),
  cancelFrame:()=>nextFrame=null,
  presenterFactory:(canvas,options)=>{
