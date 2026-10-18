@@ -55,4 +55,17 @@ assert.equal(active.size,0);
 assert.throws(()=>visuals.update(),/disposed/);
 assert.ok(before>0);
 assert.throws(()=>new NativeRigidVisuals({},physics),/native renderer/);
+// A previous "green" browser run drew a huge humanoid torso through the
+// drone camera: it was a local real Box3D body at x=1, not broken WebGL2.
+// Keep its collider in the actual world but never upload a local avatar mesh.
+const self={id:"player-foot",kind:"human",halfExtents:[.23,.23,.88]};
+bodies.unshift(self);poses.set(self.id,makePose(1));
+const ownCamera=new NativeRigidVisuals(renderer,physics,{hiddenBodyIds:["player-foot"]});
+const shown=ownCamera.update();
+assert.equal(shown.skipped,1,"local foot geometry must be suppressed when first-person");
+assert.ok(physics.bodies().includes(self),"foot physical Box3D body remains active");
+assert.equal(shown.bodies,3,"only other cars/bus/jet are visible");
+assert.ok(![...ownCamera.instanceIds.values()].flat().includes(self.id));
+assert.ok(ownCamera.instanceIds.get("box3d/car").includes("taxi1"));
+ownCamera.dispose();assert.equal(active.size,0);
 console.log("Native exclusive Box3D visual adapter: exact pose interpolation source, instancing, 4 wheel joints, stable buffers, eviction, camera-independent drawing passed.");
