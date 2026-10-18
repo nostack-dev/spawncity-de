@@ -41,6 +41,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/box3d-upstream-wasm.yml"
+      - ".github/workflows/native-preview-publish.yml"
+      - "tests/native_preview_public_osm_test.mjs"
       - "sim/native_*.mjs"
       - "tests/native_*.mjs"
       - "native_game.html"
