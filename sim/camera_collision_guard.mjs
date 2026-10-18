@@ -1,8 +1,7 @@
-import * as THREE from "three";
 import {groundHeightAt} from "./terrain_craters.mjs";
 
 let installed=false,wrapped=false,baseProvider=null,guardProvider=null,lastTelemetry=-Infinity,maintenanceTimer=0;
-const anchor=new THREE.Vector3();
+const anchor={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}};
 function viewport(){return document.getElementById("viewport");}
 function bridge(){return globalThis.__arondightRealWorld||null;}
 function resolveAnchor(){const drive=globalThis.__arondightVehicleDrive;if(drive?.active&&drive.cameraAnchor){const a=drive.cameraAnchor,x=Number(a.x)||0,y=Number(a.y)||0,g=groundHeightAt(x,y);return anchor.set(x,y,Math.max(g+.45,Number(a.z)||g+.45));}const walk=globalThis.__arondightWalkMode,p=walk?.position;if(walk?.mode==="foot"&&p){const x=Number(p.x)||0,y=Number(p.y)||0,g=groundHeightAt(x,y);return anchor.set(x,y,Math.max(g+.34,(Number(p.z)||g+1.68)-.38));}return null;}
