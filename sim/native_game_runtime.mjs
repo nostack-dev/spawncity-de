@@ -132,7 +132,9 @@ export class NativeGameRuntime{
       dy=(Math.cos(a)*f-Math.sin(a)*s)*speed*dt;
     this.rigids.setTarget("player-foot",{
      position:[pose.position[0]+dx,pose.position[1]+dy,pose.position[2]],
-     speedMps:speed,response:6,yaw:a
+     // Camera forward yaw=0 points +Y; Box3D body yaw=0 points +X.
+     // Physical omni forces enable real W/A/S/D strafing without camera teleport.
+     speedMps:speed,response:6,yaw:a+Math.PI/2,omnidirectional:true
     });
    }
   }else this.rigids.clearTarget("player-foot");
