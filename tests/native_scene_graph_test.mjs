@@ -57,7 +57,7 @@ assert.ok(calls.some(x=>x[0]==="gpu-delete"&&x[1]==="car/seat"),"removing vehicl
 assert.equal(graph.meshOwners.has("car/seat"),false,"ownership must be released on despawn");
 graph.add("replacement",{meshId:"car/seat"});
 graph.sync();assert.ok(graph.meshOwners.has("car/seat"),"GPU name can be safely reused after despawn");
-assert.equal(visibility.get("car/seat"),false);
+assert.equal(visibility.get("car/seat"),true,"reused GPU mesh must become visible under its new owner");
 assert.ok(graph.nodes.has("head"),"reparented attachment survives removed original car");
 assert.equal(graph.remove("rotor"),2);
 graph.dispose();graph.dispose();
