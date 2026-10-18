@@ -9,6 +9,22 @@ const b3=await (await import(pathToFileURL(resolve(boxFile)).href)).default();
 const factory=(await import(pathToFileURL(resolve(flightFile)).href)).default;
 const physics=createNativeFlightPhysics(b3,nativeDefaultFlightParams());
 const input={roll:0,pitch:0,yaw:0,throttle:0,arm:false,gameMode:false};
+const imuData={n:0,accelSum:[0,0,0],accelSq:[0,0,0],gyroSum:[0,0,0],gyroSq:[0,0,0],peak:[0,0,0]};
+const getImu=physics.imuRaw.bind(physics);
+physics.imuRaw=(dt)=>{
+ const raw=getImu(dt);
+ if(imuData.n<2000){
+  const v=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
+  for(let k=0;k<3;k++){
+   const a=v.getInt16(2+k*2,false)/2048,g=v.getInt16(8+k*2,false)/16.4;
+   imuData.accelSum[k]+=a;imuData.accelSq[k]+=a*a;
+   imuData.gyroSum[k]+=g;imuData.gyroSq[k]+=g*g;
+   imuData.peak[k]=Math.max(imuData.peak[k],Math.abs(g));
+  }
+  imuData.n++;
+ }
+ return raw;
+};
 const fc=new NativeFlightController(physics,{factory,controls:()=>input});
 await fc.connect();
 let output=null,steps=0,armedFrames=0;
@@ -39,7 +55,9 @@ input.throttle=.45;
 run(700);
 assert.equal(fc.ticks,4100);
 assert.ok(steps>=4100);
-assert.ok(armedFrames>0,"genuine flight controller must accept arm after calibration: stateCounts="+JSON.stringify([...stateCounts])+" snapshots="+JSON.stringify(snapshots));
+const imuMeans=imuData.accelSum.map(x=>x/imuData.n),gyroMeans=imuData.gyroSum.map(x=>x/imuData.n);
+const imuStats={n:imuData.n,accelMean:imuMeans,accelSd:imuData.accelSq.map((x,i)=>Math.sqrt(Math.max(0,x/imuData.n-imuMeans[i]**2))),gyroMean:gyroMeans,gyroSd:imuData.gyroSq.map((x,i)=>Math.sqrt(Math.max(0,x/imuData.n-gyroMeans[i]**2))),peakGyro:imuData.peak};
+assert.ok(armedFrames>0,"genuine flight controller must accept arm after calibration: imu="+JSON.stringify(imuStats)+" stateCounts="+JSON.stringify([...stateCounts])+" snapshots="+JSON.stringify(snapshots));
 assert.ok(physics.motorOmega.every(x=>x>=0&&Number.isFinite(x)));
 assert.ok(physics.batteryCurrent>=0&&Number.isFinite(physics.batteryCurrent));
 const position=physics.position();
