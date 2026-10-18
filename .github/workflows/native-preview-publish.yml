@@ -146,7 +146,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
       - name: Install pinned browser driver
         run: |
-          npm install --prefix /tmp/spawncity-native-public-test --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+          npm install --prefix /tmp/spawncity-native-public-test --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0 pngjs@7.0.0
           ln -s /tmp/spawncity-native-public-test/node_modules node_modules
       - name: Prove actual OSM buildings visible AND collidable at published native URL
         run: |
