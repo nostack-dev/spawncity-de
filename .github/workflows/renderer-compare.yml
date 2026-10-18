@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/renderer-compare.yml"
+      - ".github/workflows/deploy.yml"
+      - "tests/no_three_production_dependency_test.mjs"
       - "sim/native_*.mjs"
       - "tests/native_*.mjs"
       - "tests/renderer_*.mjs"
@@ -127,6 +129,7 @@ jobs:
       - name: Check strict renderer gate logic
         run: |
           node tests/renderer_exclusive_release_contract_test.mjs
+          node tests/no_three_production_dependency_test.mjs
           node tests/renderer_acceptance_selftest.mjs
       - name: Require a full no-Three native engine with 15 hardware scenarios
         run: node tests/renderer_acceptance_gate.mjs --gate
