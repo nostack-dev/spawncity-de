@@ -1,0 +1,215 @@
+name: Deploy SpawnCity
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check standalone SpawnCity sources
+        run: |
+          set -euo pipefail
+          test -s drone_simulator.html
+          test -s drone_controller.html
+          test -s drone_simulator.webmanifest
+          test -s oppenheimer-sw.js
+          test -s sim/real_world_bootstrap.mjs
+          test -s sim/lan_vs.mjs
+          test -s sim/changelog_menu.mjs
+          test -s sim/audio/headshot_announcer.mp3
+          test -s esp32/Arondight45_DroneFC_Core.hpp
+          test -s tests/sil_wasm_smoke.mjs
+          node --check sim/real_world_bootstrap.mjs
+          node --check sim/lan_vs.mjs
+          node --check sim/changelog_menu.mjs
+          node tests/standalone_source_test.mjs
+          node tests/touchpad_pointerlock_contract_test.mjs
+          node tests/live_deploy_auth_contract_test.mjs
+          node tests/renderer_exclusive_release_contract_test.mjs
+
+      - name: Check SpawnCity site config
+        run: node tests/site_config_test.mjs
+
+      - name: Build exact shared controller runtime to WebAssembly
+        run: |
+          set -euxo pipefail
+          mkdir -p generated
+          FLAGS=(-std=c++17 -O3 -s MODULARIZE=1 -s EXPORT_ES6=1 -s INVOKE_RUN=0 -s EXIT_RUNTIME=0 -s FILESYSTEM=0 -s SINGLE_FILE=1
+            -s ALLOW_MEMORY_GROWTH=0 -s INITIAL_MEMORY=16777216 -s "EXPORTED_RUNTIME_METHODS=[\"HEAPU8\"]"
+            -s "EXPORTED_FUNCTIONS=[\"_fc_input_buffer\",\"_fc_output_buffer\",\"_fc_input_size\",\"_fc_output_size\",\"_fc_reset\",\"_fc_process\",\"_fc_protocol_version\"]")
+          have_image=0
+          for i in 1 2 3 4; do if docker pull -q emscripten/emsdk:4.0.10; then have_image=1; break; fi; sleep $((i*15)); done
+          if [ "$have_image" = 1 ]; then
+            EMXX=(docker run --rm -v "$PWD:/src" -w /src emscripten/emsdk:4.0.10 em++)
+          else
+            git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+            "$RUNNER_TEMP/emsdk/emsdk" install 4.0.10
+            "$RUNNER_TEMP/emsdk/emsdk" activate 4.0.10
+            source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+            EMXX=(em++)
+          fi
+          "${EMXX[@]}" sim/Arondight45_DroneFC_SIL_WASM.cpp "${FLAGS[@]}" -s ENVIRONMENT='web' -o generated/flight_core.mjs
+          "${EMXX[@]}" sim/Arondight45_DroneFC_SIL_WASM.cpp "${FLAGS[@]}" -s ENVIRONMENT='node' -o generated/flight_core_node.mjs
+          node tests/sil_wasm_smoke.mjs generated/flight_core_node.mjs
+
+      - name: Compile and validate exact Erin Catto Box3D for production
+        run: |
+          set -euo pipefail
+          # Do NOT silently bundle npm box3d.js: the runtime must use the
+          # artifact built from the pinned upstream C engine SHA.
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src emscripten/emsdk:6.0.2 \
+            bash tools/build_box3d_upstream_wasm.sh
+          node tests/box3d_upstream_contract_test.mjs artifacts/box3d-upstream-wasm
+          node tests/physics_validation_test.mjs
+          for test in \
+            blast_physics_box3d \
+            ground_safety_net_box3d \
+            jet_flight_box3d \
+            ragdoll_box3d \
+            terrain_tiles_box3d \
+            terrain_underground_rescue_box3d \
+            vehicle_steering_box3d \
+            world_building_collision_box3d \
+            world_building_incremental_box3d \
+            world_rigid_body_physics_box3d \
+            world_vehicle_dynamics_box3d; do
+            node "tests/${test}_test.mjs" artifacts/box3d-upstream-wasm/box3d.inline.mjs
+          done
+          (cd artifacts/box3d-upstream-wasm && sha256sum -c SHA256SUMS.txt)
+
+      - name: Bundle self-contained Pages
+        run: |
+          set -euxo pipefail
+          BUILD_DIR=/tmp/spawncity-web-build
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR"
+          cd "$BUILD_DIR"
+          npm init -y >/dev/null
+          npm install --ignore-scripts --no-audit --no-fund \
+            three@0.185.1 box3d.js@0.1.1 maplibre-gl@5.24.0 esbuild@0.25.8 mqtt@5.15.2 nostr-tools@2.24.1 \
+            qrcode-generator@1.4.4 jsqr@1.4.0 trystero@0.25.3 @trystero-p2p/mqtt@0.25.3 @trystero-p2p/torrent@0.25.3
+          ln -s "$BUILD_DIR/node_modules" "$GITHUB_WORKSPACE/node_modules"
+          cd "$GITHUB_WORKSPACE"
+          ./node_modules/.bin/esbuild sim/real_world_bootstrap.mjs --bundle --format=esm --platform=browser --target=es2022 --minify --alias:box3d.js/dist/box3d.inline.mjs="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" --alias:box3d.js/inline="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" --metafile=/tmp/spawncity-simulator.meta.json --outfile=/tmp/spawncity-simulator.bundle.mjs
+          ./node_modules/.bin/esbuild sim/controller.mjs --bundle --format=esm --platform=browser --target=es2022 --minify --outfile=/tmp/spawncity-controller.bundle.mjs
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import json
+          sha=os.environ["GITHUB_SHA"]
+          box3d=json.loads(Path("artifacts/box3d-upstream-wasm/provenance.json").read_text())
+          source_sha=box3d["upstreamSha"]
+          assert source_sha=="efca0c184d40fd6a82016983f1601c4d23965867"
+          builds=[
+              ("drone_simulator.html","<script type=\"module\" src=\"./sim/real_world_bootstrap.mjs\"></script>","/tmp/spawncity-simulator.bundle.mjs"),
+              ("drone_simulator.html","<script type=\"module\" src=\"./sim/auto_flight_start.mjs\"></script>","sim/auto_flight_start.mjs"),
+              ("drone_controller.html","<script type=\"module\" src=\"./sim/controller.mjs\"></script>","/tmp/spawncity-controller.bundle.mjs"),
+          ]
+          prefix=f"<!-- ARONDIGHT45_BUILD_SHA:{sha} --><!-- SPAWNCITY_BOX3D_SOURCE_SHA:{source_sha} -->\n"
+          for html_name,marker,bundle_name in builds:
+              path=Path(html_name); html=path.read_text(); assert marker in html, marker
+              bundle=Path(bundle_name).read_text().replace("</script","<\\/script")
+              html=html.replace(marker,"<script type=\"module\">\n"+bundle+"\n</script>")
+              if prefix not in html: html=prefix+html
+              path.write_text(html)
+          PY
+          test "$(wc -c < drone_simulator.html)" -gt 100000
+          grep -q "ARONDIGHT45_BUILD_SHA:${GITHUB_SHA}" drone_simulator.html
+          # Inline artifact has the new engine signature and is self-contained:
+          # fail deployment if esbuild accidentally selected the npm fallback.
+          node tests/production_box3d_bundle_contract_test.mjs drone_simulator.html /tmp/spawncity-simulator.meta.json
+
+          grep -q "foot-pistol-fresh-v1" drone_simulator.html
+          if grep -qi "kurzlernen" drone_simulator.html drone_controller.html; then echo "kurzlernen still in the built pages" >&2; exit 1; fi
+          grep -q "arondight45-spawncity-vs-v1" drone_simulator.html
+          grep -q "arondight45-spawncity-vs-v1" drone_controller.html
+          grep -q 'id="spawncityLayout"' drone_simulator.html
+          grep -q 'id="spawncityExitGuard"' drone_simulator.html
+          node tools/public_site.mjs build-json "$GITHUB_SHA" > build.json
+          grep -q "$GITHUB_SHA" build.json
+          rm -rf generated node_modules
+          # The pinned Emscripten container compiles as root and owns the
+          # mounted artifact directory. Remove it with runner sudo after
+          # checks, so only the inlined validated WASM ships in Pages.
+          sudo rm -rf -- artifacts/box3d-upstream-wasm
+
+      - name: Publish built site to the sole canonical repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          # GitHub Pages is configured ONCE in this repository's Settings >
+          # Pages > Deploy from a branch > gh-pages /root.
+          # GitHub's default GITHUB_TOKEN cannot enable Pages or move a custom
+          # domain (the old workflow's Pages REST calls always returned 403).
+          # No cross-repo mirror, no PAT and no separate hosting repository.
+          printf 'spawncity.de\n' > CNAME
+          touch .nojekyll
+          rm -rf /tmp/spawncity-publish
+          mkdir -p /tmp/spawncity-publish
+          tar --exclude .git --exclude node_modules -cf - . | tar -C /tmp/spawncity-publish -xf -
+          cd /tmp/spawncity-publish
+          git init -q
+          git checkout -qb gh-pages
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -A
+          git commit -qm "Publish canonical SpawnCity from ${GITHUB_SHA}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
+          echo "One-repo build published to ${GITHUB_REPOSITORY}:gh-pages"
+
+  live-e2e:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify canonical live game and complete changelog
+        timeout-minutes: 16
+        env:
+          GH_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The runner's unauthenticated GitHub API request returned HTTP 403
+          # after publication (2026-10-17, #7). Auth with the built-in,
+          # read-scoped Actions token. Keep it out of stdout and target files.
+          repo_pages="$(curl -fsSL --retry 2 \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}" | jq -r '.has_pages')"
+          if [ "$repo_pages" != "true" ]; then
+            echo "::error::Canonical repository Pages disabled. Set Settings > Pages > Deploy from branch > gh-pages /root; then transfer spawncity.de from the old Pages repo."
+            exit 1
+          fi
+          origin="$(node tools/public_site.mjs origin)"
+          # A successful Pages sync must carry the REAL renderer identity,
+          # not claim a native cutover just because native modules exist in git.
+          expected_renderer="$(node tools/public_site.mjs build-json "$GH_SHA" | jq -er '.renderer')"
+          for attempt in $(seq 1 75); do
+            if curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H "Cache-Control: no-cache" \
+                "$origin/build.json?sha=${GH_SHA}-${attempt}" -o /tmp/spawncity-build.json \
+              && node -e 'const p=require("/tmp/spawncity-build.json");if(p.sha!==process.argv[1]||p.renderer!==process.argv[2]||p.nativeReleaseVerified!==(p.renderer==="native-webgl2"))process.exit(1)' "$GH_SHA" "$expected_renderer" \
+              && curl -fsSL --retry 1 --connect-timeout 6 --max-time 20 -H "Cache-Control: no-cache" \
+                "$origin/drone_simulator.html?ci=${GH_SHA}-${attempt}" -o /tmp/spawncity-live.html \
+              && grep -q "ARONDIGHT45_BUILD_SHA:${GH_SHA}" /tmp/spawncity-live.html \
+              && grep -q "Touchpad-Mouselook in Ego-Sicht" /tmp/spawncity-live.html; then
+              echo "Verified real SpawnCity origin, source SHA and current changelog: $GH_SHA"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::The live domain did not receive the canonical build or changelog."
+          exit 1

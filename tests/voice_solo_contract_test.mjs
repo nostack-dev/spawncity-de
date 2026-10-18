@@ -1,0 +1,18 @@
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const voice=readFileSync(new URL("../sim/proximity_voice.mjs",import.meta.url),"utf8");
+const ui=readFileSync(new URL("../sim/mobile_gameplay_ui.mjs",import.meta.url),"utf8");
+assert.match(voice,/!document\.body\.classList\.contains\('solo-flight'\)/,"Voice should be limited to active gameplay, not public matchmaking");
+assert.doesNotMatch(voice,/!multiplayer\(\)\?\.connected\)\{bar\.hidden=true/,"SOLO must not hide voice buttons");
+assert.doesNotMatch(voice,/Multiplayer nötig/,"SOLO PTT must not reject a microphone gesture");
+assert.match(voice,/navigator\.mediaDevices\.getUserMedia/,"PTT must ask for microphone permission on demand");
+assert.match(voice,/generation!==inputGeneration/,"Releasing PTT during microphone permission must not leave it recording");
+assert.match(voice,/acquired\.getTracks\(\)\.forEach\(track=>track\.stop\(\)\)/,"Cancelled microphone permissions must release the stream");
+assert.match(voice,/arondight:world-reset[^\n]+releasePtt\(\);\/\* preserve/,"Reset must release the mic and preserve manual mute");
+assert.match(voice,/for\(const id of s\.getPeerIds/,"Voice transport sends only to already connected peers");
+assert.match(ui,/toggleMultiplayer\(\)/,"Public discovery stays on explicit MULTI action");
+assert.doesNotMatch(voice,/e\.code==='KeyV'[^\n]*start\(\)/,"V remains foot/drone, never voice");
+assert.match(voice,/VOICE_KEY_PTT/,"Voice has dedicated nonconflicting keyboard PTT");
+assert.match(voice,/VOICE_KEY_MUTE/,"Voice has dedicated keyboard mute");
+assert.match(voice,/globalThis\.__arondightVoiceControls=/,"Shared Xbox and keyboard voice API must exist");
+console.log("SOLO and MULTI share gameplay/voice controls; H/K, R3/R3+Y, microphone lifetime and no public SOLO advertising: pass");

@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import {NativeSceneRenderer} from "../sim/native_scene_renderer.mjs";
+
+// No synthetic GPU: stage/commit logic is exercised with stubbed GPU methods;
+// hardware draw correctness is covered by the separate Chromium proof.
+const renderer=Object.create(NativeSceneRenderer.prototype);
+const old={id:"city",vaO:"old"};
+renderer.meshes=new Map([["city",old]]);
+renderer.sceneRevision=7;renderer.disposed=false;renderer.lost=false;
+const freed=[];let uploads=0;let failUpload=false;
+renderer.free=mesh=>{freed.push(mesh);};
+renderer.upload=mesh=>{uploads++;if(failUpload)throw Error("GPU allocation failed");mesh.vao="new";};
+const invalid={positions:new Float32Array([0,0,0])};
+assert.throws(()=>renderer.upsert("city",invalid),/invalid triangles/);
+assert.equal(renderer.meshes.get("city"),old);
+assert.equal(renderer.sceneRevision,7);
+assert.equal(freed.length,0,"invalid replacement cannot free the live city mesh");
+const good={positions:new Float32Array([0,0,0,2,0,0,0,2,0])};
+failUpload=true;
+assert.throws(()=>renderer.upsert("city",good),/GPU allocation failed/);
+assert.equal(renderer.meshes.get("city"),old);
+assert.equal(renderer.sceneRevision,7);
+assert.equal(freed.length,1,"failed GPU staging must free the provisional allocation");
+assert.notEqual(freed[0],old,"failed GPU staging may not free old scene resources");
+failUpload=false;
+const replacement=renderer.upsert("city",good);
+assert.equal(renderer.meshes.get("city"),replacement);
+assert.equal(renderer.sceneRevision,8);
+assert.equal(freed.length,2);
+assert.equal(freed[1],old,"retired buffers must be freed only after successful staging");
+assert.equal(uploads,2);
+console.log("native renderer atomic GPU mesh replacement: ok");

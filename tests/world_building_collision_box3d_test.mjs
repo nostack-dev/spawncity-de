@@ -1,0 +1,124 @@
+import assert from "node:assert/strict";
+import {pathToFileURL} from "node:url";
+import {resolve} from "node:path";
+import {createWorldBuildingCollisionBodies,destroyWorldBuildingCollisionBodies,findClearBuildingLaunchPoint,resolveBox3dCameraPath,updateWorldBuildingCollisionBodies,normalizeBuildingCollisionSnapshot} from "../sim/world_building_collision_physics.mjs";
+import {PLAYER_CAPSULE_RADIUS_M,ensurePlayerQueryAcceptedByTerrain,resolvePlayerCapsuleMove} from "../sim/player_capsule_collision.mjs";
+
+const modulePath=process.argv[2];
+if(!modulePath)throw new Error("usage: node tests/world_building_collision_box3d_test.mjs <box3d.inline.mjs>");
+const imported=await import(pathToFileURL(resolve(modulePath)).href),factory=imported.default;
+if(typeof factory!=="function")throw new Error("Box3D inline module has no default factory");
+const b3=await factory();
+const worldDef=b3.b3DefaultWorldDef();worldDef.gravity=[0,0,0];worldDef.enableSleep=false;worldDef.enableContinuous=true;
+const world=b3.b3CreateWorld(worldDef);
+
+const groundDef=b3.b3DefaultBodyDef();groundDef.position=[0,0,-.05];const ground=b3.b3CreateBody(world,groundDef),groundShape=b3.b3DefaultShapeDef();groundShape.filter={categoryBits:1n,maskBits:14n,groupIndex:0};b3.b3CreateBoxShape(ground,groundShape,10,10,.05);
+
+const snapshot={hash:"fixture",footprintCount:2,prisms:[
+  {buildingKey:"launch-house",base:0,top:3,points:[[-.5,-.5],[.5,-.5],[.5,.5],[-.5,.5]]},
+  {buildingKey:"launch-house",base:0,top:3,points:[[.5,-.5],[1.5,-.5],[1.5,.5],[.5,.5]]},
+  {buildingKey:"house",base:0,top:2,points:[[2,-1],[3,-1],[3,1],[2,1]]},
+]};
+
+const safeLaunch=findClearBuildingLaunchPoint(snapshot,{clearanceM:.20});
+assert.ok(Math.hypot(...safeLaunch)>.70,`indoor launch was not moved outside the footprint: ${safeLaunch}`);
+assert.ok(safeLaunch[1]<-.65,`nearest deterministic clear launch should leave through the closest lower wall: ${safeLaunch}`);
+
+const buildings=createWorldBuildingCollisionBodies(b3,world,snapshot,{categoryBits:1n,maskBits:14n,rangefinderCategoryBits:4n,launchExclusionPoint:safeLaunch});
+assert.equal(buildings.shapeCount,3);assert.equal(buildings.prismCount,3);assert.equal(buildings.skippedLaunchPrisms,0);assert.equal(buildings.skippedLaunchBuildings,0);assert.equal(buildings.activePrisms.length,3);assert.ok(buildings.body&&b3.b3Body_IsValid(buildings.body));
+
+const rayFilter=b3.b3DefaultQueryFilter();rayFilter.categoryBits=4n;rayFilter.maskBits=1n;
+const aglGround=b3.b3World_CastRayClosest(world,[2.5,0,5],[0,0,-6],rayFilter);
+assert.equal(aglGround.hit,true);assert.ok(Math.abs(5-6*aglGround.fraction)<.03,`building roof contaminated GAME AGL: point=${aglGround.point} fraction=${aglGround.fraction}`);assert.ok(aglGround.normal[2]>.98);
+
+// Camera regression: the camera is a swept volume, not a zero-radius point ray.
+// The camera center therefore stops before wall/ground contact by its own radius
+// plus a small path margin, including diagonal corner approaches.
+const wallCamera=resolveBox3dCameraPath(b3,world,[1.5,0,1],[3.5,0,1],{queryCategoryBits:8n,terrainCategoryBits:1n,clearanceM:.03,cameraRadiusM:.15});
+assert.equal(wallCamera.collided,true);assert.ok(wallCamera.cameraRadiusM>=.149);assert.ok(wallCamera.position[0]>1.5&&wallCamera.position[0]<1.84,`camera volume crossed building wall: ${JSON.stringify(wallCamera)}`);
+const groundCamera=resolveBox3dCameraPath(b3,world,[0,0,1],[0,0,-1],{queryCategoryBits:8n,terrainCategoryBits:1n,clearanceM:.03,cameraRadiusM:.15});
+assert.equal(groundCamera.collided,true);assert.ok(groundCamera.position[2]>=.17,`camera volume clipped ground: ${JSON.stringify(groundCamera)}`);
+const cornerCamera=resolveBox3dCameraPath(b3,world,[1.4,-1.6,1],[2.6,-.4,1],{queryCategoryBits:8n,terrainCategoryBits:1n,clearanceM:.02,cameraRadiusM:.16});
+assert.equal(cornerCamera.collided,true);assert.ok(cornerCamera.position[0]<1.9||cornerCamera.position[1]<-1.1,`camera volume entered building corner: ${JSON.stringify(cornerCamera)}`);
+const clearCamera=resolveBox3dCameraPath(b3,world,[0,0,1],[0,0,2],{queryCategoryBits:8n,terrainCategoryBits:1n,clearanceM:.03,cameraRadiusM:.15});assert.equal(clearCamera.collided,false);assert.deepEqual(clearCamera.position,[0,0,2]);
+
+// FPV starts only centimetres above the stable terrain plane. The volume radius
+// must automatically shrink to the available anchor clearance instead of pinning
+// the rigid FPV camera at fraction zero on takeoff.
+const lowAnchorCamera=resolveBox3dCameraPath(b3,world,[0,0,.024],[.095,0,.084],{queryCategoryBits:8n,terrainCategoryBits:1n,clearanceM:.01,cameraRadiusM:.09});
+assert.ok(lowAnchorCamera.cameraRadiusM<.025,`low FPV anchor did not reduce camera volume: ${JSON.stringify(lowAnchorCamera)}`);assert.ok(lowAnchorCamera.position.every(Number.isFinite));
+
+// Player regression: Box3D's geometric character mover is a vertical capsule.
+// Its query filter accepts terrain/buildings only. Dynamic gameplay bodies are
+// deliberately absent from its mask, so firing/FX/vehicles do not become an
+// accidental physical blocker for the player controller.
+const playerEngine={b3,world,ground,buildingState:buildings};
+assert.equal(ensurePlayerQueryAcceptedByTerrain(playerEngine),true);
+assert.equal(typeof b3.b3World_CastMover,"function","Box3D character mover API is missing");
+const playerWall=resolvePlayerCapsuleMove(playerEngine,{x:1.40,y:0},{x:3.40,y:0});
+assert.equal(playerWall?.source,"box3d-capsule-mover-v1");assert.equal(playerWall?.blocked,true);assert.ok(playerWall.x<=2-PLAYER_CAPSULE_RADIUS_M+.03,`player capsule crossed wall: ${JSON.stringify(playerWall)}`);
+const playerClear=resolvePlayerCapsuleMove(playerEngine,{x:-2.0,y:-2.0},{x:-1.0,y:-2.0});
+assert.equal(playerClear?.blocked,false);assert.ok(Math.abs(playerClear.x+1)<1e-6&&Math.abs(playerClear.y+2)<1e-6,`clear capsule move changed unexpectedly: ${JSON.stringify(playerClear)}`);
+const dynamicDef=b3.b3DefaultBodyDef();dynamicDef.type=b3.b3BodyType.b3_dynamicBody;dynamicDef.position=[-1.5,-3,1];const dynamicBody=b3.b3CreateBody(world,dynamicDef),dynamicShape=b3.b3DefaultShapeDef();dynamicShape.filter={categoryBits:2n,maskBits:1n,groupIndex:0};b3.b3CreateBoxShape(dynamicBody,dynamicShape,.35,.35,.7);
+const throughDynamic=resolvePlayerCapsuleMove(playerEngine,{x:-2.2,y:-3},{x:-.8,y:-3});assert.equal(throughDynamic?.blocked,false,`terrain-only player filter incorrectly collided with dynamic body: ${JSON.stringify(throughDynamic)}`);b3.b3DestroyBody(dynamicBody);
+
+function makeProbe({position=[0,0,1],velocity=[8,0,0]}={}){
+  const bodyDef=b3.b3DefaultBodyDef();bodyDef.type=b3.b3BodyType.b3_dynamicBody;bodyDef.position=position;bodyDef.enableSleep=false;bodyDef.isBullet=true;
+  const body=b3.b3CreateBody(world,bodyDef),shapeDef=b3.b3DefaultShapeDef();shapeDef.filter={categoryBits:2n,maskBits:1n,groupIndex:0};shapeDef.baseMaterial.friction=.2;shapeDef.baseMaterial.restitution=0;b3.b3CreateBoxShape(body,shapeDef,.1,.1,.1);b3.b3Body_SetLinearVelocity(body,velocity);return body;
+}
+function advance(body,steps=500){for(let index=0;index<steps;index++)b3.b3World_Step(world,.001,4);const position=[0,0,0];b3.b3Body_GetPosition(position,body);return position;}
+
+const lateral=makeProbe({position:[safeLaunch[0],safeLaunch[1],1],velocity:[0,-4,0]}),lateralPosition=advance(lateral,250);assert.ok(lateralPosition[1]<safeLaunch[1]-.75,`relocated launch is not clear of the building: ${lateralPosition}`);assert.ok(lateralPosition.every(Number.isFinite));b3.b3DestroyBody(lateral);
+const blocked=makeProbe({position:[1.5,0,1]}),blockedPosition=advance(blocked);assert.ok(blockedPosition[0]<1.95,`continuous unrelated house wall collision failed: ${blockedPosition}`);assert.ok(blockedPosition.every(Number.isFinite));b3.b3DestroyBody(blocked);
+
+destroyWorldBuildingCollisionBodies(b3,buildings);assert.equal(b3.b3Body_IsValid(buildings.body),false);
+const clear=makeProbe({position:[1.5,0,1]}),clearPosition=advance(clear);assert.ok(clearPosition[0]>3.5,`destroyed house collider still blocks: ${clearPosition}`);b3.b3DestroyBody(clear);
+// Erin Catto's streamed-world lifecycle: a removed building destroys its
+// body AND its attached shape; a respawn creates a new valid body and hull.
+const filterBuildings=b3.b3DefaultQueryFilter();
+filterBuildings.categoryBits=8n;filterBuildings.maskBits=1n;
+const box=(key,top,points=[[6,-2],[7,-2],[7,-1],[6,-1]])=>({buildingKey:key,base:0,top,points});
+const makeSnapshot=(hash,prisms)=>({hash,footprintCount:prisms.length,prisms});
+const options={categoryBits:1n,maskBits:14n,rangefinderCategoryBits:4n};
+const roofHit=()=>b3.b3World_CastRayClosest(world,[6.5,-1.5,5],[0,0,-7],filterBuildings);
+const born=updateWorldBuildingCollisionBodies(b3,world,null,makeSnapshot("born",[box("test:piece",2)]),options);
+assert.equal(born.shapeCount,1);assert.equal(born.built,1);
+const oldBody=[...born.entries.values()][0].body;
+assert.ok(b3.b3Body_IsValid(oldBody));
+assert.ok(Math.abs(roofHit().fraction-3/7)<.015,"fresh Box3D roof collider is missing");
+const leveled=updateWorldBuildingCollisionBodies(b3,world,born,makeSnapshot("demolished",[]),options);
+assert.equal(leveled.shapeCount,0);
+assert.equal(leveled.entries.size,0);
+assert.equal(b3.b3Body_IsValid(oldBody),false,"demolished building's Box3D body survived");
+assert.ok(Math.abs(roofHit().fraction-5/7)<.015,"demolished collider remains after body destruction");
+const respawn=updateWorldBuildingCollisionBodies(b3,world,leveled,makeSnapshot("respawn",[box("test:new-piece",2)]),options);
+assert.equal(respawn.built,1);
+const respawnBody=[...respawn.entries.values()][0].body;
+assert.ok(b3.b3Body_IsValid(respawnBody));
+assert.ok(Math.abs(roofHit().fraction-3/7)<.015,"respawned building failed to restore its collision hull");
+const partlyDamaged=updateWorldBuildingCollisionBodies(b3,world,respawn,makeSnapshot("partial",[box("test:new-piece",1)]),options);
+assert.equal(partlyDamaged.built,1);
+assert.equal(b3.b3Body_IsValid(respawnBody),false,"original roof hull survived a geometry replacement");
+assert.ok(Math.abs(roofHit().fraction-4/7)<.015,"partial destruction did not rebuild the shortened roof");
+// Subcentimeter shape changes must not hit the old rounded-key cache.
+const beforeFine=[...partlyDamaged.entries.values()][0].body;
+const fine=updateWorldBuildingCollisionBodies(b3,world,partlyDamaged,makeSnapshot("fine",[box("test:new-piece",1.004)]),options);
+assert.equal(fine.built,1);
+assert.equal(b3.b3Body_IsValid(beforeFine),false);
+const afterFine=[...fine.entries.values()][0].body;
+assert.ok(b3.b3Body_IsValid(afterFine));
+// World positions are on the body; Hull vertices must be body-local.
+const distant=updateWorldBuildingCollisionBodies(b3,world,fine,makeSnapshot("shift",[box("shift:piece",3,[[4200,3300],[4201,3300],[4201,3301],[4200,3301]])]),options);
+assert.equal(b3.b3Body_IsValid(afterFine),false);
+const distantBody=[...distant.entries.values()][0].body;
+const bodyPosition=[0,0,0];b3.b3Body_GetPosition(bodyPosition,distantBody);
+assert.ok(Math.abs(bodyPosition[0]-4200)<.01&&Math.abs(bodyPosition[1]-3300)<.01,
+  `streamed building body must be placed at its geometry: ${bodyPosition}`);
+destroyWorldBuildingCollisionBodies(b3,distant);
+assert.equal(b3.b3Body_IsValid(distantBody),false);
+assert.equal(normalizeBuildingCollisionSnapshot({prisms:Array.from({length:600},(_,i)=>box(`large:${i}`,2,[[i,0],[i+.4,0],[i+.4,.4],[i,.4]]))}).prismCount,600,
+  "the physics snapshot must not silently cap 900 source prisms at 512");
+
+b3.b3DestroyWorld(world);
+
+console.log("WORLD Box3D building collision passed: safe outdoor launch, swept camera volume, terrain-only player capsule mover, unrelated wall contact and collider teardown.");

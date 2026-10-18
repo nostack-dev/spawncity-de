@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /drone_controller.html
+Disallow: /esp32/
+Disallow: /tests/
+Disallow: /tools/
+
+Sitemap: https://spawncity.de/sitemap.xml
