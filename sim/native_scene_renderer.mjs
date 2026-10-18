@@ -377,7 +377,7 @@ export class NativeSceneRenderer{
   }
   this.pending=rest;
  }
- render({clearColor=[.045,.07,.12,1]}={}){
+ render({clearColor=[.045,.07,.12,1],viewport=null}={}){
   if(this.disposed)throw Error("disposed native scene");
   if(this.lost)throw Error("native GL context lost; waiting for native restoration");
   const gl=this.gl,start=performance.now(),u=this.gpu.u;this.pollGpu();
@@ -389,9 +389,19 @@ export class NativeSceneRenderer{
    if(this.shadowCache?.key===key)shadowStats={drawCalls:0,resolution:this.shadow.resolution,reused:true};
    else{shadowStats=this.shadow.draw(this.meshes.values(),{focus:this.target,sunDirection:this.sunDirection});this.shadowCache={key};}
   }
-  gl.viewport(0,0,this.width,this.height);gl.clearColor(...clearColor);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  // Both stereo eyes share a drawing buffer. Scissor bounds clears and draws.
+  const rect=viewport??{x:0,y:0,width:this.width,height:this.height};
+  if(![rect.x,rect.y,rect.width,rect.height].every(Number.isInteger)
+    ||rect.width<1||rect.height<1||rect.x<0||rect.y<0
+    ||rect.x+rect.width>this.width||rect.y+rect.height>this.height)
+   throw Error("native viewport must fit inside the drawing buffer");
+  if(viewport){gl.enable(gl.SCISSOR_TEST);gl.scissor(rect.x,rect.y,rect.width,rect.height);}
+  else gl.disable(gl.SCISSOR_TEST);
+  gl.viewport(rect.x,rect.y,rect.width,rect.height);
+  gl.clearColor(...clearColor);gl.clearDepth(1);gl.depthMask(true);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(this.gpu.handle);
-  const camera=multiply4(perspective(this.fov,this.width/this.height,this.near,this.far),lookAt(this.eye,this.target,this.up));
+  const camera=multiply4(perspective(this.fov,rect.width/rect.height,this.near,this.far),lookAt(this.eye,this.target,this.up));
   gl.uniformMatrix4fv(u.uViewProjection,false,camera);
   for(const key of ["sunDirection","sunColor","skyColor","groundColor","fogColor","eye"])
    gl.uniform3fv(u["u"+key[0].toUpperCase()+key.slice(1)],new Float32Array(this[key]));
@@ -431,6 +441,7 @@ export class NativeSceneRenderer{
   if(transparent.length){gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);}
   for(const m of transparent)draw(m);
   gl.depthMask(true);gl.disable(gl.BLEND);gl.bindVertexArray(null);
+  if(viewport)gl.disable(gl.SCISSOR_TEST);
   if(timerQuery){gl.endQuery(this.timer.TIME_ELAPSED_EXT);this.pending.push(timerQuery);}
   stats.cpuMs=+(performance.now()-start).toFixed(3);this.stats=stats;return stats;
  }

@@ -19,6 +19,8 @@ import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
 import {NativePeerVisuals} from "./native_peer_visuals.mjs";
 import {nativeDrawingBufferSize,nativePointerToDrawingPixels} from "./native_viewport.mjs";
+import {renderNativeStereo,nativeStereoRay,nativeStereoPick} from "./stereo_sbs.mjs";
+import {installShaderPrewarm,disposeShaderPrewarm} from "./shader_prewarm.mjs";
 export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
@@ -29,6 +31,7 @@ export class NativeWorldPresenter{
     :worldPhysics?nativeWorldPhysicsView(worldPhysics,{alpha:interpolationAlpha}):physics;
   if(!poseSource?.bodies||!poseSource?.renderPose)throw Error("native world requires authoritative Box3D runtime");
   this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
+  installShaderPrewarm(this.renderer);
   this.sceneGraph=new NativeSceneGraph(this.renderer);
   this.effects=new NativeEffects(this.renderer);
   this.lights=lights??new NativePointLightPool();
@@ -172,7 +175,7 @@ export class NativeWorldPresenter{
   this.renderer.setPointLights(lightFrame);
   const hierarchy=this.sceneGraph.sync();
   const fx=this.effects.tick(now,this.camera.eye);
-  const gpu=this.renderer.render();
+  const gpu=renderNativeStereo(this.renderer,this.camera,{mode:this.gameMode});
   this.frameNumber++;
   this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,pointLights:lightFrame.count,hierarchy,effects:fx,
     terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,
@@ -183,7 +186,7 @@ export class NativeWorldPresenter{
  requestLight(position,opts){if(this.disposed)throw Error("native world disposed");return this.lights.request(position,opts);}
   pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");
   const pixel=nativePointerToDrawingPixels(this.renderer.canvas,x,y,this.renderer.width,this.renderer.height);
-  const visual=this.renderer.pick(pixel.x,pixel.y,options);
+  const visual=nativeStereoPick(this.renderer,this.camera,pixel.x,pixel.y,{...options,mode:this.gameMode});
   if(visual.hit){
    const bodyId=this.rigids.bodyIdForHit(visual.hit);
    if(bodyId)visual.hit={...visual.hit,bodyId,source:"native-webgl2"};
@@ -195,7 +198,7 @@ export class NativeWorldPresenter{
   if(!this.worldPhysics||typeof this.worldPhysics.raycast!=="function")
    throw Error("native game targeting requires authoritative Box3D raycast");
   const pixel=nativePointerToDrawingPixels(this.renderer.canvas,x,y,this.renderer.width,this.renderer.height);
-  const ray=this.renderer.getScreenRay(pixel.x,pixel.y);
+  const ray=nativeStereoRay(this.renderer,this.camera,pixel.x,pixel.y,{mode:this.gameMode});
   const physical=this.worldPhysics.raycast(ray.origin,ray.direction,maxDistance);
   const visual=this.pick(x,y,{maxDistance,ignoreId});
   // The Box3D result remains authoritative for gameplay damage, walls and
@@ -208,6 +211,6 @@ export class NativeWorldPresenter{
  dispose(){
   if(this.disposed)return;
   this.stop();this.combatEvents.dispose();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
-  this.peer?.dispose();this.effects.dispose();this.sceneGraph.dispose();this.renderer.dispose();this.disposed=true;
+  this.peer?.dispose();this.effects.dispose();this.sceneGraph.dispose();disposeShaderPrewarm(this.renderer);this.renderer.dispose();this.disposed=true;
  }
 }

@@ -29,3 +29,5 @@ jobs:
           node tests/retired_shield_zero_render_cost_test.mjs
           node tests/camera_collision_three_free_test.mjs
           node tests/renderer_three_reduction_test.mjs
+          node tests/native_stereo_sbs_test.mjs
+          node tests/native_shader_prewarm_test.mjs
