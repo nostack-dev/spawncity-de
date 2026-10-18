@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
-import {nativeOverpassQuery,parseNativeOverpass,fetchNativeOsm} from "../sim/native_osm_source.mjs";
+import {nativeOverpassQuery,parseNativeOverpass,fetchNativeOsm,NATIVE_DEMO_CITY} from "../sim/native_osm_source.mjs";
 const origin={lon:9.17,lat:47.66};
+assert.equal(NATIVE_DEMO_CITY.name,"Konstanz (real OpenStreetMap)");
+assert.equal(NATIVE_DEMO_CITY.origin.lat,47.66022);
+assert.equal(NATIVE_DEMO_CITY.origin.lon,9.17442);
+assert.notEqual(NATIVE_DEMO_CITY.origin,origin,"demo city must never impersonate live GPS");
+assert.ok(nativeOverpassQuery(NATIVE_DEMO_CITY.origin).includes("47.6602200"),
+ "demo must request actual OSM data for its announced WGS84 centre");
+
 assert.match(nativeOverpassQuery(origin),/way\["building"\]/);
 assert.match(nativeOverpassQuery(origin),/way\["highway"\]/);
 assert.throws(()=>nativeOverpassQuery({lon:NaN,lat:44}),/GPS/);
