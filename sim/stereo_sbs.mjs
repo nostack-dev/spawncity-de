@@ -37,7 +37,9 @@ export function nativeStereoRig(camera,{mode="drone"}={}){
 export function nativeStereoCameras(camera,opts={}){
  if(!camera?.eye||!camera?.target||camera.eye.length!==3||camera.target.length!==3)throw Error("native stereo requires live 3D camera");
  const forward=normalized(camera.target.map((x,i)=>x-camera.eye[i]));
- const right=normalized(cross(forward,camera.up||[0,0,1]));
+ // A vertical camera must still have a valid stereo eye basis.
+ const lateral=cross(forward,camera.up||[0,0,1]);
+ const right=normalized(Math.hypot(...lateral)<1e-7?cross(forward,[0,1,0]):lateral);
  const {focus,eyeSep}=nativeStereoRig(camera,opts);
  const convergence=camera.eye.map((x,i)=>x+forward[i]*focus);
  const eye=(sign)=>camera.eye.map((x,i)=>x+right[i]*sign*eyeSep/2);
@@ -45,7 +47,7 @@ export function nativeStereoCameras(camera,opts={}){
  return {left:{...camera,eye:left,target:convergence},right:{...camera,eye:righteye,target:convergence},eyeSep,focus};
 }
 export function installStereo(renderer){
- if(!renderer?.setCamera||!renderer?.render||renderer?.gl?.constructor===null)
+ if(!renderer?.gl||!renderer?.setCamera||!renderer?.render)
   throw Error("stereo requires the sole native WebGL2 renderer");
  installedOn=renderer;syncDom();return renderer;
 }
