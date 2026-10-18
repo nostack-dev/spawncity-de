@@ -10,6 +10,9 @@ on:
       - "tests/control_semantics_test.mjs"
       - "docs/box3d-upstream-wasm.md"
       - ".github/workflows/deploy.yml"
+      - "sim/native_flight_physics.mjs"
+      - "tests/native_flight_physics_box3d_test.mjs"
+      - "tests/native_flight_physics_parity_test.mjs"
       - "tests/production_box3d_bundle_contract_test.mjs"
   workflow_dispatch:
 permissions:
@@ -35,6 +38,7 @@ jobs:
         run: |
           node tests/box3d_upstream_contract_test.mjs artifacts/box3d-upstream-wasm
           node tests/physics_validation_test.mjs
+          node tests/native_flight_physics_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
           node tests/world_building_collision_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
           node tests/blast_physics_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
           node tests/jet_flight_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
@@ -51,12 +55,12 @@ jobs:
           done
           (cd artifacts/box3d-upstream-wasm && sha256sum -c SHA256SUMS.txt)
           node tests/production_box3d_deploy_source_test.mjs
-      - name: Ensure whole SpawnCity game bundles exclusively the new verified WASM
+      - name: Verify sole native WebGL2 and flight model bundle without Three.js
         run: |
           set -eux
-          # Bundle the actual shared flight-controller C++ module, not a stub.
-          # This is the PR bundle-input test; production deploy still builds
-          # the flight core separately with its pinned emsdk 4.0.10.
+          # The legacy renderer can no longer be bundled: Three.js has been
+          # removed from production. Test the real 1 kHz physics and sole
+          # native presenter here; full gameplay/device release remains gated.
           mkdir -p generated
           em++ sim/Arondight45_DroneFC_SIL_WASM.cpp -std=c++17 -O3 \
             -s MODULARIZE=1 -s EXPORT_ES6=1 -s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
@@ -65,15 +69,16 @@ jobs:
             -s 'EXPORTED_RUNTIME_METHODS=["HEAPU8"]' \
             -s 'EXPORTED_FUNCTIONS=["_fc_input_buffer","_fc_output_buffer","_fc_input_size","_fc_output_size","_fc_reset","_fc_process","_fc_protocol_version"]' \
             -s ENVIRONMENT=web -o generated/flight_core.mjs
-          npm install --prefix /tmp/spawncity-upstream-bundle --ignore-scripts --no-audit --no-fund \
-            three@0.185.1 box3d.js@0.1.1 maplibre-gl@5.24.0 esbuild@0.25.8 mqtt@5.15.2 nostr-tools@2.24.1 \
-            qrcode-generator@1.4.4 jsqr@1.4.0 trystero@0.25.3 @trystero-p2p/mqtt@0.25.3 @trystero-p2p/torrent@0.25.3
-          ln -s /tmp/spawncity-upstream-bundle/node_modules node_modules
-          ./node_modules/.bin/esbuild sim/real_world_bootstrap.mjs --bundle --format=esm --platform=browser --target=es2022 --minify \
-            --alias:box3d.js/dist/box3d.inline.mjs="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" --alias:box3d.js/inline="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" \
-            --metafile=/tmp/upstream-game.meta.json --outfile=/tmp/upstream-game.bundle.mjs
-          node tests/production_box3d_bundle_contract_test.mjs --input-only /tmp/upstream-game.meta.json
-          test "$(wc -c < /tmp/upstream-game.bundle.mjs)" -gt 1000000
+          npm install --prefix /tmp/spawncity-native-bundle --ignore-scripts --no-audit --no-fund \
+            esbuild@0.25.8
+          ln -s /tmp/spawncity-native-bundle/node_modules node_modules
+          ./node_modules/.bin/esbuild sim/native_world_presenter.mjs --bundle --format=esm --platform=browser --target=es2022 --outfile=/tmp/native-world.bundle.mjs
+          ./node_modules/.bin/esbuild sim/native_flight_physics.mjs --bundle --format=esm --platform=browser --target=es2022 --outfile=/tmp/native-flight.bundle.mjs
+          if grep -E 'three/src/|three\.module\.js|THREE\.WebGLRenderer' /tmp/native-world.bundle.mjs /tmp/native-flight.bundle.mjs; then
+            echo "Forbidden legacy Three renderer in native bundles" >&2
+            exit 1
+          fi
+          node tests/native_flight_physics_parity_test.mjs
           rm node_modules
           rm -rf generated
       - name: Upload compiled native + inline WASM and SHA-256 provenance
