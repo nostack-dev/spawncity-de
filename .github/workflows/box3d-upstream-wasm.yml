@@ -28,6 +28,8 @@ on:
       - "tests/native_osm_source_test.mjs"
       - "tests/native_bootstrap_contract_test.mjs"
       - "tests/native_full_browser_smoke.mjs"
+      - "sim/native_launch_pad.mjs"
+      - "tests/native_launch_pad_test.mjs"
       - "tests/production_box3d_bundle_contract_test.mjs"
   push:
     branches: [main]
@@ -161,7 +163,7 @@ jobs:
           path: artifacts/native-browser
       - name: Install pinned headless Chromium driver
         run: |
-          npm install --prefix /tmp/spawncity-native-browser --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+          npm install --prefix /tmp/spawncity-native-browser --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0 pngjs@7.0.0
           ln -s /tmp/spawncity-native-browser/node_modules node_modules
       - name: Boot real compiled native game and exercise WebGL2, modes and mobile DPR
         run: |
