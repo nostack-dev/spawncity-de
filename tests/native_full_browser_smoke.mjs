@@ -14,7 +14,6 @@ const browser=await puppeteer.launch({headless:true,executablePath:process.env.C
 ]});
 const errors=[];
 const folder="artifacts/native-browser-smoke";mkdirSync(folder,{recursive:true});
-let data=null;
 // The previous CI was green while the actual mobile screenshot was almost
 // solid brown: counting WebGL draws is NOT a visual-release proof.
 // Reject an unpainted native canvas before any "working renderer" claim.
