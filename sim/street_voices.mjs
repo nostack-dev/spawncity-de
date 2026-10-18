@@ -9,7 +9,7 @@
 //                                 with the sound off too.
 // Both are rate-limited globally and per source, so the street never turns into a wall of noise.
 import {AUDIO_SETTINGS_EVENT,loadAudioSettings} from "./audio_settings.mjs";
-import * as THREE from "three";
+import {worldCameraPose,projectWorldPoint} from "./world_camera_projection.mjs";
 
 export const STREET_VOICES_VERSION="street-voices-v1";
 const LINES={
@@ -22,16 +22,16 @@ const LINES={
 const MAX_HEAR_M=38,SHOUT_GAP_MS=1400,SOURCE_GAP_MS=6000,HONK_GAP_MS=1200;
 let installed=false,settings=loadAudioSettings(),ctx=null,bus=null,lastShout=-1e9,lastHonk=-1e9,deVoice=null,layer=null;
 const lastBySource=new Map(),bubbles=[];
-const tmp=new THREE.Vector3(),dir=new THREE.Vector3();
+
 const bridge=()=>globalThis.__arondightRealWorld||null;
 function camera(){const b=bridge();return b?.presentedCamera?.()||b?.threeCamera||null;}
 function hearing(){return settings.soundEnabled?Math.max(0,Math.min(1,(Number(settings.fxVolume)||0)/100)):0;}
-function distanceTo(p){const c=camera();return c?Math.hypot(p[0]-c.position.x,p[1]-c.position.y,(p[2]||0)-c.position.z):Infinity;}
+function distanceTo(p){const pose=worldCameraPose(camera());return pose?Math.hypot(p[0]-pose.position[0],p[1]-pose.position[1],(p[2]||0)-pose.position[2]):Infinity;}
 function hash(s){let h=2166136261;for(const ch of String(s))h=Math.imul(h^ch.charCodeAt(0),16777619);return(h>>>0)/4294967296;}
 function audio(){if(ctx)return ctx;const C=globalThis.AudioContext||globalThis.webkitAudioContext;if(!C)return null;try{ctx=(globalThis.__sharedAudioContext??=new C({latencyHint:"interactive"}));}catch{return null;}bus=ctx.createGain();bus.gain.value=1;bus.connect(ctx.destination);return ctx;}
-function placeListener(){const c=camera(),a=ctx;if(!c||!a)return;const L=a.listener;c.getWorldDirection(dir);const t=a.currentTime;
-  if(L.positionX){L.positionX.setValueAtTime(c.position.x,t);L.positionY.setValueAtTime(c.position.y,t);L.positionZ.setValueAtTime(c.position.z,t);L.forwardX.setValueAtTime(dir.x,t);L.forwardY.setValueAtTime(dir.y,t);L.forwardZ.setValueAtTime(dir.z,t);L.upX.setValueAtTime(0,t);L.upY.setValueAtTime(0,t);L.upZ.setValueAtTime(1,t);}
-  else{L.setPosition?.(c.position.x,c.position.y,c.position.z);L.setOrientation?.(dir.x,dir.y,dir.z,0,0,1);}}
+function placeListener(){const pose=worldCameraPose(camera()),a=ctx;if(!pose||!a)return;const L=a.listener,t=a.currentTime,[x,y,z]=pose.position,[dx,dy,dz]=pose.direction;
+  if(L.positionX){L.positionX.setValueAtTime(x,t);L.positionY.setValueAtTime(y,t);L.positionZ.setValueAtTime(z,t);L.forwardX.setValueAtTime(dx,t);L.forwardY.setValueAtTime(dy,t);L.forwardZ.setValueAtTime(dz,t);L.upX.setValueAtTime(0,t);L.upY.setValueAtTime(0,t);L.upZ.setValueAtTime(1,t);}
+  else{L.setPosition?.(x,y,z);L.setOrientation?.(dx,dy,dz,0,0,1);}}
 
 // Horn: two detuned reed tones (a real horn pair is about a major third apart) through a bright
 // band-pass; "toot" = short, "double" = two short, "long" = held.
@@ -82,6 +82,6 @@ function ensureLayer(){if(layer?.isConnected)return layer;const v=document.getEl
 #streetVoiceBubbles div.angry,#streetVoiceBubbles div.nearmiss{background:#ffe2dcf2;color:#7a0d00}#streetVoiceBubbles div.angry::after,#streetVoiceBubbles div.nearmiss::after{border-top-color:#ffe2dcf2}`;document.head.appendChild(st);return layer;}
 function bubble(position,text,mood){const l=ensureLayer();if(!l)return;while(bubbles.length>=3){const b=bubbles.shift();b.el.remove();}const el=document.createElement("div");el.className=mood;el.textContent=text;l.appendChild(el);bubbles.push({el,p:[position[0],position[1],(position[2]||0)+2.05],until:performance.now()+2100});}
 function frame(){requestAnimationFrame(frame);if(!bubbles.length)return;const c=camera(),v=document.getElementById("viewport");if(!c||!v)return;const w=v.clientWidth,h=v.clientHeight,now=performance.now();
-  for(let i=bubbles.length-1;i>=0;i--){const b=bubbles[i];if(now>b.until){b.el.remove();bubbles.splice(i,1);continue;}tmp.set(b.p[0],b.p[1],b.p[2]).project(c);const vis=tmp.z<1&&Math.abs(tmp.x)<1.1&&Math.abs(tmp.y)<1.1;b.el.style.opacity=vis?(now>b.until-350?"0":"1"):"0";if(vis)b.el.style.transform=`translate(${((tmp.x+1)/2*w).toFixed(1)}px,${((1-tmp.y)/2*h).toFixed(1)}px) translate(-50%,-100%)`;}}
+  for(let i=bubbles.length-1;i>=0;i--){const b=bubbles[i];if(now>b.until){b.el.remove();bubbles.splice(i,1);continue;}const pt=projectWorldPoint(b.p,c,{aspect:w/h});const vis=Boolean(pt?.inFront&&Math.abs(pt.x)<1.1&&Math.abs(pt.y)<1.1);b.el.style.opacity=vis?(now>b.until-350?"0":"1"):"0";if(vis)b.el.style.transform=`translate(${((pt.x+1)/2*w).toFixed(1)}px,${((1-pt.y)/2*h).toFixed(1)}px) translate(-50%,-100%)`;}}
 export function installStreetVoices(){if(installed||typeof window==="undefined")return;installed=true;addEventListener(AUDIO_SETTINGS_EVENT,e=>{settings=loadAudioSettings();if(!settings.soundEnabled)try{speechSynthesis?.cancel();}catch{}});try{speechSynthesis?.addEventListener?.("voiceschanged",()=>{deVoice=null;});}catch{}requestAnimationFrame(frame);globalThis.__arondightStreetVoices={honk,shout,version:STREET_VOICES_VERSION};}
 installStreetVoices();
