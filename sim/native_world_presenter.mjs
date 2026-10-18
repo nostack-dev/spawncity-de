@@ -9,6 +9,7 @@ import {NativeCombatEvents} from "./native_combat_events.mjs";
 import {NativePointLightPool} from "./native_point_lights.mjs";
 import {NativeCityStream} from "./native_city_stream.mjs";
 import {NativeTerrainStream} from "./native_terrain_stream.mjs";
+import {NativeLaunchPad} from "./native_launch_pad.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
 import {nativeWorldPhysicsView,nativeRigidRuntimeView} from "./native_world_physics_view.mjs";
 import {nativeFlightPoseView} from "./native_flight_pose_view.mjs";
@@ -33,6 +34,7 @@ export class NativeWorldPresenter{
   this.effects=new NativeEffects(this.renderer);
   this.lights=lights??new NativePointLightPool();
   this.terrain=new NativeTerrainStream(this.renderer,{...terrainOptions,...(heightAt?{heightAt}:null)});
+  this.launchPad=new NativeLaunchPad(this.renderer,{heightAt:this.terrain.heightAt});
   this.city=new NativeCityStream(this.renderer,cityOptions);
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
   this.rigids=new NativeRigidVisuals(this.renderer,poseSource);
@@ -207,7 +209,7 @@ export class NativeWorldPresenter{
  stop(){const was=this.running;this.running=false;this.frameEpoch++;return was;}
  dispose(){
   if(this.disposed)return;
-  this.stop();this.combatEvents.dispose();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
+  this.stop();this.combatEvents.dispose();this.launchPad.dispose();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
   this.peer?.dispose();this.effects.dispose();this.sceneGraph.dispose();this.renderer.dispose();this.disposed=true;
  }
 }
