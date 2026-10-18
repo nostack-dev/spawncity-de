@@ -166,6 +166,6 @@ try{
  writeFileSync(visualDir+"/evidence.json",JSON.stringify({
   url:address,source:"public HTTPS native OSM preview",softwareGpuEmulation:true,
   physicalDeviceAcceptance:false,frames:visualEvidence,diagnostics:diagnostics.slice(-20)
- },null,2)+"\\n");
+ },null,2)+"\n");
  await browser.close();
 }
