@@ -18,6 +18,8 @@ on:
       - "tests/native_flight_controller_sil_test.mjs"
       - "sim/native_game_runtime.mjs"
       - "tests/native_game_runtime_box3d_test.mjs"
+      - "sim/world_rigid_body_physics.mjs"
+      - "tests/native_foot_body_direction_test.mjs"
       - "tests/production_box3d_bundle_contract_test.mjs"
   workflow_dispatch:
 permissions:
@@ -85,6 +87,7 @@ jobs:
             artifacts/box3d-upstream-wasm/box3d.inline.mjs generated/flight_core_node.mjs
           node tests/native_game_runtime_box3d_test.mjs \
             artifacts/box3d-upstream-wasm/box3d.inline.mjs generated/flight_core_node.mjs
+          node tests/native_foot_body_direction_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
           npm install --prefix /tmp/spawncity-native-bundle --ignore-scripts --no-audit --no-fund \
             esbuild@0.25.8
           ln -s /tmp/spawncity-native-bundle/node_modules node_modules
