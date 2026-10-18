@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {auditRuntime} from "./renderer_acceptance_gate.mjs";
 import {NativePointLightPool,NATIVE_LIGHT_BUDGET} from "../sim/native_point_lights.mjs";
 import {NativeSceneRenderer} from "../sim/native_scene_renderer.mjs";
 import {NativeWorldPresenter} from "../sim/native_world_presenter.mjs";
@@ -53,4 +55,14 @@ assert.equal(world.requestLight([0,0,2],{color:0xffffff,intensity:5}),true);
 assert.equal(pool.resolve([0,0,0]).count,1);
 world.disposed=true;
 assert.throws(()=>world.requestLight([0,0,0]),/disposed/);
+// Verify an actual shipped module no longer imports Three. Its legacy
+// adapter lives only inside the already-Three production renderer boundary,
+// whereas the sole native WebGL2 renderer has a complete own GPU light path.
+const legacyScheduler=readFileSync("sim/dynamic_lights.mjs","utf8");
+const legacyRenderer=readFileSync("sim/real_world_bootstrap.mjs","utf8");
+assert.doesNotMatch(legacyScheduler,/from\\s*["']three["']|\\bTHREE\\./);
+assert.match(legacyRenderer,/createDynamicPointLight=function/);
+assert.match(legacyRenderer,/new THREE\\.PointLight\\(/);
+const audit=auditRuntime();
+assert.ok(audit.threeImportCount<=67,"native migration must remove a real production Three importer");
 console.log("native point lights: Three-free real game requests, 6-light GPU budget, deterministic priority, reused buffers and frame reset");
