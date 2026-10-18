@@ -545,6 +545,11 @@ class RealWorldBridge{
   }
 }
 
+// Renderer-specific factory stays INSIDE the current renderer entrypoint:
+ // dynamic game light requests no longer import Three.js themselves.
+RealWorldBridge.prototype.createDynamicPointLight=function(color,intensity,distance,decay){
+  return new THREE.PointLight(color,intensity,distance,decay);
+};
 const bridge=new RealWorldBridge();
 globalThis.__arondightRealWorld=bridge;
 // Building damage (nukes): rebuild collision + three.js solids immediately and

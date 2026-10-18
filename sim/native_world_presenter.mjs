@@ -3,6 +3,7 @@
 // simulation owns ALL positions. This is an independent native game-world
 // composition entrypoint; the current live main does not use it yet.
 import {NativeSceneRenderer} from "./native_scene_renderer.mjs";
+import {NativePointLightPool} from "./native_point_lights.mjs";
 import {NativeCityStream} from "./native_city_stream.mjs";
 import {NativeTerrainStream} from "./native_terrain_stream.mjs";
 import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
@@ -19,12 +20,13 @@ export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
 export class NativeWorldPresenter{
- constructor(canvas,{physics=null,worldPhysics=null,rigidRuntime=null,interpolationAlpha=()=>1,population=null,flight=null,flightPhysics=null,peer=null,gameplayState=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
+ constructor(canvas,{physics=null,worldPhysics=null,rigidRuntime=null,interpolationAlpha=()=>1,population=null,flight=null,flightPhysics=null,peer=null,gameplayState=null,lights=null,heightAt,rendererOptions={},terrainOptions={},cityOptions={},roadOptions={}}={}){
   if([physics,worldPhysics,rigidRuntime].filter(Boolean).length!==1)throw Error("native world requires exactly one Box3D pose authority");
   const poseSource=rigidRuntime?nativeRigidRuntimeView(rigidRuntime)
     :worldPhysics?nativeWorldPhysicsView(worldPhysics,{alpha:interpolationAlpha}):physics;
   if(!poseSource?.bodies||!poseSource?.renderPose)throw Error("native world requires authoritative Box3D runtime");
   this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
+  this.lights=lights??new NativePointLightPool();
   this.terrain=new NativeTerrainStream(this.renderer,{...terrainOptions,...(heightAt?{heightAt}:null)});
   this.city=new NativeCityStream(this.renderer,cityOptions);
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
@@ -158,15 +160,18 @@ export class NativeWorldPresenter{
      .catch(error=>{this.error=error;this.running=false;this.onError?.(error);})
      .finally(()=>{this.terrainPromise=null;});
   }
+  const lightFrame=this.lights.resolve(this.camera.eye);
+  this.renderer.setPointLights(lightFrame);
   const gpu=this.renderer.render();
   this.frameNumber++;
-  this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,
+  this.drawStats={frame:this.frameNumber,gpu,physics,people,peer,pointLights:lightFrame.count,
     terrain:this.terrain.stats,city:this.city.lastStats,roads:this.roads.live.size,
     drawingWidth:viewport.width,drawingHeight:viewport.height,drawingDpr:viewport.pixelRatio,
     gameMode:this.gameMode,renderer:"native-webgl2-only"};
   return this.drawStats;
  }
- pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");
+ requestLight(position,opts){if(this.disposed)throw Error("native world disposed");return this.lights.request(position,opts);}
+  pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");
   const pixel=nativePointerToDrawingPixels(this.renderer.canvas,x,y,this.renderer.width,this.renderer.height);
   const visual=this.renderer.pick(pixel.x,pixel.y,options);
   if(visual.hit){

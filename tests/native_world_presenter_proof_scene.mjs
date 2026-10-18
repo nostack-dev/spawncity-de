@@ -62,9 +62,17 @@ const streets=[
 await world.updateRoadFeatures(streets,{center:[0,0],revision:"native-roads",yieldFrame:()=>Promise.resolve()});
 world.draw(performance.now());
 await world.terrainPromise;
+// Genuine gameplay request: a muzzle flash lights all world geometry in the
+// SAME WebGL2 shader, then expires next frame; no Three.PointLight allocated.
+if(!world.requestLight([1,-4,7],{color:0xff4411,intensity:16,distance:45}))
+ throw Error("native light request was rejected");
 const first=world.draw(performance.now()+300);
+if(first.pointLights!==1||world.renderer.pointLights.count!==1)
+ throw Error("dynamic point light did not reach sole WebGL2 draw");
 const firstDraws=first.gpu.drawCalls;
 const stableSun=world.draw(performance.now()+325);
+if(stableSun.pointLights!==0||world.renderer.pointLights.count!==0)
+ throw Error("stale explosion light leaked into next physics frame");
 if(!stableSun.gpu.shadowReused)
  throw Error("rotor animation or unchanged crowds incorrectly invalidated expensive sunlight depth pass");
 if(!world.renderer.meshes.has("vs/airframe")||!world.renderer.meshes.has("vs/rotors"))

@@ -61,6 +61,8 @@ const FRAG="#version 300 es\n"+[
 "uniform float uSunShadowBias;",
 "uniform int uSunShadowEnabled;",
 "uniform int uHasTexture,uUnlit,uFacade;",
+"uniform int uPointLightCount;",
+"uniform vec4 uPointPosRange[6],uPointColorIntensity[6];",
 "out vec4 outColor;",
 "void main(){",
 "  vec4 texel=uHasTexture==1?texture(uTexture,vUV):vec4(1.0);",
@@ -89,7 +91,19 @@ const FRAG="#version 300 es\n"+[
 "   if(uvz.x>0.0&&uvz.x<1.0&&uvz.y>0.0&&uvz.y<1.0&&uvz.z>0.0)",
 "    shadow=texture(uSunShadowMap,vec3(uvz.xy,uvz.z-uSunShadowBias));",
 "  }",
-"  vec3 rgb=base*(uUnlit==1?vec3(1.0):hemis+uSunColor*ndl*shadow)*uExposure;",
+"  vec3 point=vec3(0.0);",
+"  if(uUnlit!=1){",
+"   for(int i=0;i<6;i++){",
+"    if(i>=uPointLightCount)break;",
+"    vec3 delta=uPointPosRange[i].xyz-vWorld;",
+"    float d2=max(dot(delta,delta),0.04);",
+"    float radius=max(0.1,uPointPosRange[i].w);",
+"    float attenuation=pow(max(0.0,1.0-d2/(radius*radius)),2.0)/(1.0+d2/(radius*radius));",
+"    float diffuse=max(dot(n,delta*inversesqrt(d2)),0.0);",
+"    point+=uPointColorIntensity[i].rgb*(uPointColorIntensity[i].a*0.12)*attenuation*diffuse;",
+"   }",
+"  }",
+"  vec3 rgb=base*(uUnlit==1?vec3(1.0):hemis+uSunColor*ndl*shadow+point)*uExposure;",
 "  rgb=(rgb*(2.51*rgb+0.03))/(rgb*(2.43*rgb+0.59)+0.14);",
 "  float fog=1.0-exp(-pow(uFogDensity*length(vWorld-uEye),2.0));",
 "  rgb=mix(rgb,uFogColor,clamp(fog,0.0,1.0));",
@@ -158,7 +172,7 @@ function program(gl){
  const v=shader(gl.VERTEX_SHADER,VERT),f=shader(gl.FRAGMENT_SHADER,FRAG),p=gl.createProgram();
  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){const e=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw Error("native program: "+e);}
- const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled"];
+ const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
  return {handle:p,u:Object.fromEntries(uniforms.map(k=>[k,gl.getUniformLocation(p,k)]))};
 }
 export class NativeSceneRenderer{
@@ -173,6 +187,7 @@ export class NativeSceneRenderer{
   this.sunDirection=[-.45,-.52,.72];this.sunColor=[.9,.82,.73];
   this.skyColor=[.48,.58,.7];this.groundColor=[.26,.27,.26];this.fogColor=[.68,.8,.88];
   this.fogDensity=.00085;this.exposure=1;this.stats=null;
+  this.pointLights={count:0,posRange:new Float32Array(24),colorIntensity:new Float32Array(24)};
   this.shadow=null;this.shadowConfig=shadows&&shadows!==false?{...shadows}:null;
   this.sceneRevision=0;this.shadowRevision=0;this.shadowCache=null;
   this.onLost=e=>{e.preventDefault();this.lost=true;this.shadow?.dispose({contextLost:true});this.shadow=null;this.shadowCache=null;};
@@ -213,6 +228,20 @@ export class NativeSceneRenderer{
  setLighting(values={}){
   for(const key of ["sunDirection","sunColor","skyColor","groundColor","fogColor","fogDensity","exposure"])
    if(values[key]!==undefined)this[key]=Array.isArray(values[key])?[...values[key]]:values[key];
+ }
+ setPointLights(frame){
+  if(this.disposed)throw Error("native renderer disposed");
+  if(!frame||!Number.isInteger(frame.count)||frame.count<0||frame.count>6
+   ||!(frame.posRange instanceof Float32Array)||frame.posRange.length!==24
+   ||!(frame.colorIntensity instanceof Float32Array)||frame.colorIntensity.length!==24
+   ||!frame.posRange.every(Number.isFinite)||!frame.colorIntensity.every(Number.isFinite))
+   throw Error("invalid native point light data");
+  // The producer reuses its buffers each frame. Copy so a late render reads
+  // the state it was explicitly handed, never mutated request data.
+  this.pointLights??={count:0,posRange:new Float32Array(24),colorIntensity:new Float32Array(24)};
+  this.pointLights.count=frame.count;
+  this.pointLights.posRange.set(frame.posRange);
+  this.pointLights.colorIntensity.set(frame.colorIntensity);
  }
  upsert(id,input){
   if(this.disposed)throw Error("disposed");
@@ -367,6 +396,9 @@ export class NativeSceneRenderer{
   for(const key of ["sunDirection","sunColor","skyColor","groundColor","fogColor","eye"])
    gl.uniform3fv(u["u"+key[0].toUpperCase()+key.slice(1)],new Float32Array(this[key]));
   gl.uniform1f(u.uFogDensity,this.fogDensity);gl.uniform1f(u.uExposure,this.exposure);gl.uniform1i(u.uTexture,0);
+  gl.uniform1i(u.uPointLightCount,this.pointLights.count);
+  gl.uniform4fv(u["uPointPosRange[0]"],this.pointLights.posRange);
+  gl.uniform4fv(u["uPointColorIntensity[0]"],this.pointLights.colorIntensity);
   gl.uniform1i(u.uSunShadowEnabled,this.shadow?1:0);gl.uniform1i(u.uSunShadowMap,1);
   if(this.shadow){
    gl.uniformMatrix4fv(u.uSunShadowProjection,false,this.shadow.matrix);

@@ -1,4 +1,3 @@
-import * as THREE from "three";
 
 // A fixed pool of point lights that never leaves the scene.
 //
@@ -15,12 +14,16 @@ export const DYNAMIC_LIGHTS_VERSION="constant-pool-v1";
 const MOBILE=typeof navigator!=="undefined"&&/android|iphone|ipad|mobile/i.test(navigator.userAgent||"");
 // street lamps at night, muzzle flashes, blasts, headlights and jetpack flames share the pool
 const POOL=MOBILE?4:6,requests=[];let lights=[],sceneRef=null,hooked=null;
-const tmp=new THREE.Vector3();
 const bridge=()=>globalThis.__arondightRealWorld||null;
 
 function ensure(scene){
-  if(scene===sceneRef&&lights.length&&lights[0].parent===scene)return true;sceneRef=scene;for(const l of lights)l.parent?.remove(l);
-  lights=Array.from({length:POOL},(_,i)=>{const l=new THREE.PointLight(0xffffff,0,30,2);l.name=`DYNAMIC_LIGHT_${i}`;l.userData.dynamicLightPool=true;l.position.set(0,0,-5000);scene.add(l);return l;});return true;
+  if(scene===sceneRef&&lights.length&&lights[0].parent===scene)return true;
+  const make=bridge()?.createDynamicPointLight;
+  if(typeof make!=="function")return false;
+  sceneRef=scene;for(const l of lights)l.parent?.remove(l);
+  // Gameplay owns requests; the legacy renderer creates its own lights.
+  // The exclusive native renderer consumes these requests as GPU uniforms.
+  lights=Array.from({length:POOL},(_,i)=>{const l=make(0xffffff,0,30,2);l.name=`DYNAMIC_LIGHT_${i}`;l.userData.dynamicLightPool=true;l.position.set(0,0,-5000);scene.add(l);return l;});return true;
 }
 // position: Vector3 or [x,y,z]; call every frame while the light should shine
 export function requestLight(position,{color=0xffffff,intensity=10,distance=30}={}){
