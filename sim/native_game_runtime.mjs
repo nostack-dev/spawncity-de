@@ -20,7 +20,7 @@ export class NativeGameRuntime{
    presenterFactory=(canvas,options)=>new NativeWorldPresenter(canvas,options),
    peerTimeline=null,osmHeightAt=null,clock=()=>performance.now(),
    requestFrame=fn=>requestAnimationFrame(fn),cancelFrame=id=>cancelAnimationFrame(id),
-   frameBudgetMs=6,maxBacklogMs=2000,initialMode="drone",
+   frameBudgetMs=6,maxBacklogMs=125,initialMode="drone",
    beforeFrame=null,afterFrame=null,onError=null}={}){
   if(!b3?.b3CreateWorld||!b3?.b3CreateBody)throw Error("NativeGameRuntime requires original Box3D WASM");
   if(typeof flightCoreFactory!=="function"||typeof presenterFactory!=="function")
@@ -153,6 +153,10 @@ export class NativeGameRuntime{
   if(!(Number.isFinite(ms)&&ms>=0)||!(stepBudget>0))throw Error("Invalid native 1 kHz scheduler");
   this.backlogMs+=ms;
   if(this.backlogMs>this.maxBacklogMs){
+   // A WebGL2 frame that takes longer than the CPU can service must NOT leave
+   // the pilot one or two seconds behind their live pointer/gamepad input.
+   // Explicitly account for wall-clock discontinuity. Firmware and Box3D
+   // still always run true 1 ms steps (never a fake variable-dt physics jump).
    this.discontinuityMs+=this.backlogMs-this.maxBacklogMs;
    this.backlogMs=this.maxBacklogMs;
   }
@@ -168,7 +172,7 @@ export class NativeGameRuntime{
    }
    if(ticks>=8&&this.clock()-began>=stepBudget)break;
   }
-  return {ticks,remainingMs:this.backlogMs,rigidSteps:this.rigidSteps,discontinuityMs:this.discontinuityMs};
+  return {ticks,remainingMs:this.backlogMs,rigidSteps:this.rigidSteps,discontinuityMs:this.discontinuityMs,simulationBehind:this.backlogMs>40};
  }
  updateAuthoritativeCamera(){
   const foot=this.rigids.renderPose("player-foot",clamp(this.rigidPhaseMs/WORLD_STEP_MS,0,1));
