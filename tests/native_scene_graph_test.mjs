@@ -10,6 +10,7 @@ graph.add("car",{position:[10,2,1]});
 graph.add("cockpit",{parent:"car",meshId:"car/seat",position:[1,0,1]});
 graph.add("head",{parent:"cockpit",meshId:"car/head",position:[0,0,.5]});
 graph.add("rotor",{meshId:"drone/rotor",position:[0,0,5]});
+assert.throws(()=>graph.add("dupe",{meshId:"drone/rotor"}),/already owned/,"one GPU mesh must not be controlled by two scene nodes");
 let stats=graph.sync();
 assert.equal(stats.nodes,4);assert.equal(stats.worldMatrices,4);
 assert.equal(positions.get("car/seat")[12],11);
