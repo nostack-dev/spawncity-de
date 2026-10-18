@@ -61,7 +61,7 @@ export async function fetchNativeOsm(origin,{fetchImpl=globalThis.fetch,
   // party browser CORS, expired certificates and Overpass rate limits.
   if(origin.lon!==NATIVE_DEMO_CITY.origin.lon||origin.lat!==NATIVE_DEMO_CITY.origin.lat)
    throw Error("OSM snapshot is allowed only for its exact announced demo city");
-  if(!/^(?:\\.\\/osm\\/|\\/native\\/osm\\/)[A-Za-z0-9_.-]+\\.json$/.test(snapshotUrl))
+  if(!/^(?:\.\/osm\/|\/native\/osm\/)[A-Za-z0-9_.-]+\.json$/.test(snapshotUrl))
    throw Error("OSM snapshot must be a local same-origin JSON asset");
   const response=await fetchImpl(snapshotUrl,{method:"GET",cache:"no-store",signal});
   if(!response.ok)throw Error("Same-origin OSM snapshot HTTP "+response.status);
