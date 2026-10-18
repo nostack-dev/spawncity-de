@@ -105,7 +105,10 @@ try{
    cityBuilt:observed.probe.cityStats.built,backlogMs:observed.probe.backlogMs,
    screenshot:mode+"-desktop.png"});
  }
- // Release desktop WebGL resources before loading the same 1,300 OSM\n // buildings on software-rendered mobile Chromium.\n await page.close();\n // Visual acceptance requires a second *real mobile-sized browser boot*, not
+ // Release desktop WebGL resources before loading the same 1,300 OSM
+ // buildings on software-rendered mobile Chromium.
+ await page.close();
+ // Visual acceptance requires a second *real mobile-sized browser boot*, not
  // a desktop screenshot resized after the fact. Viewport DPR and touch
  // capability are set before navigation; the real OSM HTTPS endpoint is used.
  const mobile=await browser.newPage();
