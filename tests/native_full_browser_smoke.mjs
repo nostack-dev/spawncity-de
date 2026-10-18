@@ -2,6 +2,7 @@
 // Runs the full SELF-CONTAINED compiled HTML with actual pinned Box3D,
 // real Emscripten Flight Core, one WebGL2 device and non-synthetic actors.
 import puppeteer from "puppeteer-core";
+import {PNG} from "pngjs";
 import {readFileSync,mkdirSync,writeFileSync} from "node:fs";
 import {resolve} from "node:path";
 const input=process.argv[2];
@@ -13,6 +14,32 @@ const browser=await puppeteer.launch({headless:true,executablePath:process.env.C
 ]});
 const errors=[];
 const folder="artifacts/native-browser-smoke";mkdirSync(folder,{recursive:true});
+let data=null;
+// The previous CI was green while the actual mobile screenshot was almost
+// solid brown: counting WebGL draws is NOT a visual-release proof.
+// Reject an unpainted native canvas before any "working renderer" claim.
+function scenePixelEvidence(pngBuffer){
+ const png=PNG.sync.read(pngBuffer),seen=new Map(),rangeLo=[255,255,255],rangeHi=[0,0,0];
+ let count=0;
+ // Ignore top telemetry, bottom controls and edges; these can make a blank
+ // WebGL surface appear colorful in a whole-page screenshot.
+ for(let y=Math.floor(png.height*.19);y<Math.floor(png.height*.73);y+=9)
+  for(let x=Math.floor(png.width*.13);x<Math.floor(png.width*.87);x+=9){
+   const i=(png.width*y+x)*4,r=png.data[i],g=png.data[i+1],b=png.data[i+2];
+   const key=(r<<16)|(g<<8)|b;seen.set(key,(seen.get(key)||0)+1);count++;
+   for(const [j,v] of [r,g,b].entries()){
+    rangeLo[j]=Math.min(rangeLo[j],v);rangeHi[j]=Math.max(rangeHi[j],v);
+   }
+  }
+ const dominant=Math.max(...seen.values()),nonDominant=1-dominant/count;
+ const spread=Math.max(...rangeHi.map((hi,i)=>hi-rangeLo[i]));
+ return {pixelSamples:count,colors:seen.size,nonDominant:+nonDominant.toFixed(5),
+  channelSpread:spread};
+}
+function assertVisibleWorld(evidence,label){
+ if(evidence.colors<3||evidence.channelSpread<40||evidence.nonDominant<.005)
+  throw Error(label+" WebGL2 rendered a blank/featureless game. "+JSON.stringify(evidence));
+}
 let data=null;
 try{
  const page=await browser.newPage();
@@ -33,6 +60,8 @@ try{
  });
  if(!details.actualWebgl2||details.canvasCount!==1||details.renderer!=="native-webgl2-only"||details.glError!==0)
   throw Error("Native-only compositor did not start with one healthy WebGL2 backbuffer: "+JSON.stringify(details));
+ const desktopPixels=scenePixelEvidence(await page.screenshot({path:folder+"/native-desktop.png"}));
+ assertVisibleWorld(desktopPixels,"desktop");
  const modes=[];
  for(const mode of ["foot","car","jet","drone"]){
   await page.click('[data-mode="'+mode+'"]');
@@ -64,8 +93,15 @@ try{
  if(!mobile.gl||mobile.glError!==0||!mobile.gameFullscreen||mobile.width<780||mobile.height<1600||mobile.touchAction!=="none")
   throw Error("Native PWA touch/DPR/full-window broken: "+JSON.stringify(mobile));
  if(errors.length)throw Error("Browser console errors: "+errors.join(" | ").slice(0,1200));
- data={...details,modes,mobile,errors,rendererProvenance:"compiled real native game, software smoke only"};
- await mobilePage.screenshot({path:folder+"/native-mobile.png",fullPage:true});
+ const mobileScreenshot=await mobilePage.screenshot({path:folder+"/native-mobile.png",fullPage:true});
+ const mobilePixels=scenePixelEvidence(mobileScreenshot);
+ assertVisibleWorld(mobilePixels,"mobile");
+ const telemetry=await mobilePage.$eval("#telemetry",el=>el.textContent);
+ const backlogMs=Number(telemetry.match(/backlog ([\d.]+)/)?.[1]);
+ if(!Number.isFinite(backlogMs)||backlogMs>150)
+  throw Error("Native pilot remains >150ms behind input; CPU physics still stalls: "+telemetry);
+ data={...details,modes,mobile,desktopPixels,mobilePixels,backlogMs,errors,
+  rendererProvenance:"compiled native browser, software smoke only"};
  writeFileSync(folder+"/metrics.json",JSON.stringify(data,null,2)+"\n");
  console.log("NATIVE_FULL_BROWSER "+JSON.stringify(data));
 }catch(error){
