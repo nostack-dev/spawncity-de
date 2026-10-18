@@ -30,15 +30,15 @@ export function worldCameraPose(camera){
  const direction=normalize([-m[8],-m[9],-m[10]]);
  return direction?{position,direction}:null;
 }
-export function projectWorldPoint(point,camera){
+export function projectWorldPoint(point,camera,{aspect=null}={}){
  const p=xyz(point);
  if(!finite3(p)||!camera)return null;
  let view,projection;
  if(finite3(camera.eye)&&finite3(camera.target)){
-  const aspect=Number(camera.aspect)||Number(camera.width)/Number(camera.height)||16/9;
+  const projectedAspect=(Number(aspect)>0?Number(aspect):0)||Number(camera.aspect)||Number(camera.width)/Number(camera.height)||16/9;
   try{
    view=lookAt(camera.eye,camera.target,camera.up??[0,0,1]);
-   projection=perspective(camera.fov,aspect,camera.near,camera.far);
+   projection=perspective(camera.fov,projectedAspect,camera.near,camera.far);
   }catch{return null;}
  }else{
   camera.updateWorldMatrix?.(true,false);
