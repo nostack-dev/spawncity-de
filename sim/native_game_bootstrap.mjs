@@ -12,6 +12,7 @@ const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("overlay"),
  status=$("status"),menuStatus=$("gameMenuStatus"),telemetry=$("telemetry");
 if(!viewport||!startButton||!menu||!status)throw Error("SpawnCity native boot requires its real fullscreen UI");
 let session=null,launching=false,reported=0,lastStatus="";
+let activeOsm=null,osmEpoch=0;
 function report(message,error=false){
  const text=String(message);
  if(text===lastStatus&&!error)return;
@@ -42,6 +43,9 @@ async function preciseGeoLocation(){
  });
 }
 async function loadRealWorld(game,{source="demo"}={}){
+ const epoch=++osmEpoch;
+ activeOsm?.abort();
+ const controller=new AbortController();activeOsm=controller;
  // A non-GPS visitor must get a REAL, playable city, not a flat empty
  // render that can still pass a GPU draw-count-only smoke test.
  // The predefined demo is explicitly labelled; it NEVER claims to be near
@@ -57,25 +61,25 @@ async function loadRealWorld(game,{source="demo"}={}){
    origin=fix;label="your GPS location";
   }
  }
- if(game.closed)return;
+ if(game.closed||epoch!==osmEpoch)return;
  report("Loading "+label+" · real OpenStreetMap buildings and roads…");
  try{
-  const result=await fetchNativeOsm(origin);
-  if(game.closed)return;
+  const result=await fetchNativeOsm(origin,{signal:controller.signal});
+  if(game.closed||epoch!==osmEpoch)return;
   const shown=await game.updateOsmFeatures(result);
-  if(shown?.cancelled)return;
+  if(shown?.cancelled||epoch!==osmEpoch)return;
   if(!shown?.collision?.prismCount||!result.buildings.length)
    throw Error("OSM produced no collision-safe city buildings");
   report(label+" · "+result.buildings.length+" real OSM buildings · "+
     result.roads.length+" roads · "+shown.collision.prismCount+" Box3D colliders");
  }catch(error){
-  if(!game.closed){
+  if(!game.closed&&epoch===osmEpoch&&!controller.signal.aborted){
    // A failed external OSM service must be visible and retryable. Never
    // silently populate buildings/roads from random synthetic fixtures.
    console.warn("Native OpenStreetMap unavailable",error);
    report("OSM connection failed · tap CITY to retry real map",true);
   }
- }
+ }finally{if(epoch===osmEpoch)activeOsm=null;}
 }
 async function launch(){
  if(launching||session)return;
@@ -169,6 +173,7 @@ document.addEventListener("visibilitychange",()=>{
  else if(!game.closed){void game.start().catch(e=>report("Resume failed: "+e.message,true));}
 });
 window.addEventListener("pagehide",()=>{
+ activeOsm?.abort();osmEpoch++;
  if(!session)return;
  const {game,input}=session;session=null;input.dispose();void game.dispose();
 });
