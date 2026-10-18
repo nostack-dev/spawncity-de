@@ -1,84 +1,75 @@
-import * as THREE from "three";
-
-// Side-by-side stereo 3D for free viewing (cross-eye / "schielen"):
-// the screen is split left | right and every frame of the main scene is drawn
-// twice from two eye cameras ~6.4 cm apart (real metres, the world is in
-// metres). Cross-eye viewing swaps the eyes: the RIGHT eye's image is on the
-// LEFT half and vice versa, so crossing the eyes fuses both halves into one
-// real 3D image — like a VR headset without the headset.
-//
-// Performance: each half renders at half width, so the pixel cost equals one
-// normal frame; only draw calls double. The shadow map is updated once per
-// frame and shared by both eyes. Bloom post-processing is bypassed while
-// stereo is on (it would otherwise run per eye at full size).
-// Toggle: Settings → CAMERA → SIDE-BY-SIDE 3D, or ?sbs=1.
-
-export const STEREO_SBS_VERSION="cross-eye-side-by-side-v2-comfort-parallax";
+// Sole native WebGL2 stereoscopy: two camera perspectives, ONE GL context.
+// Cross-eye arrangement renders the RIGHT eye into the LEFT half of the
+// same native canvas. No Three import, GPU context duplication or monkeypatch.
+export const STEREO_SBS_VERSION="native-cross-eye-one-webgl2-v3";
 export const STEREO_SETTINGS_KEY="spawnCityStereoSbsV1";
 export const STEREO_SETTINGS_EVENT="spawncity-stereo-sbs-change";
 export const STEREO_EYE_SEPARATION_M=.064;
-
-let active=false,installedOn=null,inside=false;let focus=NaN;
-// convergence distance and eye base for the current view
-function stereoRig(camera){
-  const k=2*Math.tan((Number(camera.fov)||70)*Math.PI/360)*Math.max(.3,Number(camera.aspect)||1),jet=globalThis.__jetMode?.active,foot=globalThis.__arondightWalkMode?.mode==="foot"&&!jet&&!globalThis.__arondightVehicleDrive?.active;
-  const F=jet?40:globalThis.__arondightVehicleDrive?.active?8:foot?4:6;
-  const e=foot?STEREO_EYE_SEPARATION_M:Math.max(STEREO_EYE_SEPARATION_M,Math.min(2,.013*F*k));
-  return{focus:F,eyeSep:e};
-}
-const stereo=new THREE.StereoCamera(),size=new THREE.Vector2(),vp=new THREE.Vector4(),sc=new THREE.Vector4();
-
+let active=false,installedOn=null;
+const number=(x,d)=>Number.isFinite(x)?x:d;
+const normalized=x=>{const n=Math.hypot(...x);if(!(n>1e-8))throw Error("degenerate stereo camera");return x.map(v=>v/n);};
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 export function loadStereoSetting(){
-  try{if(typeof location!=="undefined"&&/[?&]sbs=1\b/.test(location.search))return true;return localStorage.getItem(STEREO_SETTINGS_KEY)==="1";}catch{return false;}
-}
-export function setStereoEnabled(on){
-  active=Boolean(on);try{localStorage.setItem(STEREO_SETTINGS_KEY,active?"1":"0");}catch{}
-  syncDom();if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent(STEREO_SETTINGS_EVENT,{detail:{enabled:active}}));return active;
+ try{return typeof location!=="undefined"&&/[?&]sbs=1\\b/.test(location.search)
+   ||typeof localStorage!=="undefined"&&localStorage.getItem(STEREO_SETTINGS_KEY)==="1";}catch{return false;}
 }
 function syncDom(){
-  if(typeof document==="undefined")return;
-  let d=document.getElementById("stereoSbsDivider");
-  if(active&&!d){d=document.createElement("div");d.id="stereoSbsDivider";d.setAttribute("aria-hidden","true");d.style.cssText="position:fixed;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:#000;z-index:5;pointer-events:none";document.body.appendChild(d);}
-  if(d)d.style.display=active?"block":"none";
-  const v=document.getElementById("viewport");if(v)v.dataset.stereoSbs=active?"cross-eye":"off";
+ if(typeof document==="undefined")return;
+ let div=document.getElementById("stereoSbsDivider");
+ if(active&&!div){div=document.createElement("div");div.id="stereoSbsDivider";div.setAttribute("aria-hidden","true");
+  div.style.cssText="position:fixed;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:#000;z-index:5;pointer-events:none";
+  document.body.appendChild(div);}
+ if(div)div.style.display=active?"block":"none";
+ const v=document.getElementById("viewport");if(v)v.dataset.stereoSbs=active?"cross-eye":"off";
 }
-
-// Wraps renderer.render: only the main perspective view drawn to the screen
-// is split; render-target passes (sky bake, bloom internals) are untouched.
+export function setStereoEnabled(value){
+ active=Boolean(value);
+ try{if(typeof localStorage!=="undefined")localStorage.setItem(STEREO_SETTINGS_KEY,active?"1":"0");}catch{}
+ syncDom();
+ if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent(STEREO_SETTINGS_EVENT,{detail:{enabled:active}}));
+ return active;
+}
+export function nativeStereoRig(camera,{mode="drone"}={}){
+ const focus=mode==="jet"?40:mode==="car"?8:mode==="foot"?4:6;
+ const e=mode==="foot"?STEREO_EYE_SEPARATION_M:Math.max(STEREO_EYE_SEPARATION_M,Math.min(2,.013*focus*2*Math.tan(number(camera.fov,70*Math.PI/180)/2)));
+ return {focus,eyeSep:e};
+}
+export function nativeStereoCameras(camera,opts={}){
+ if(!camera?.eye||!camera?.target||camera.eye.length!==3||camera.target.length!==3)throw Error("native stereo requires live 3D camera");
+ const forward=normalized(camera.target.map((x,i)=>x-camera.eye[i]));
+ const right=normalized(cross(forward,camera.up||[0,0,1]));
+ const {focus,eyeSep}=nativeStereoRig(camera,opts);
+ const convergence=camera.eye.map((x,i)=>x+forward[i]*focus);
+ const eye=(sign)=>camera.eye.map((x,i)=>x+right[i]*sign*eyeSep/2);
+ const left=eye(-1),righteye=eye(1);
+ return {left:{...camera,eye:left,target:convergence},right:{...camera,eye:righteye,target:convergence},eyeSep,focus};
+}
 export function installStereo(renderer){
-  if(!renderer||installedOn===renderer)return;installedOn=renderer;
-  const inner=renderer.render.bind(renderer);
-  renderer.render=function(scene,camera){
-    if(!active||inside||!camera?.isPerspectiveCamera||renderer.getRenderTarget()!==null||renderer.xr?.isPresenting)return inner(scene,camera);
-    inside=true;
-    const aspect=camera.aspect,autoClear=renderer.autoClear,autoShadow=renderer.shadowMap.autoUpdate,scissorTest=renderer.getScissorTest();
-    renderer.getViewport(vp);renderer.getScissor(sc);renderer.getSize(size);
-    const W=size.x,H=size.y,half=Math.floor(W/2);
-    try{
-      camera.aspect=half/Math.max(1,H);camera.updateProjectionMatrix();camera.updateMatrixWorld();
-      // Comfortable free-viewing stereo: the zero-parallax plane (convergence) sits where the action
-      // is, and the eye base keeps the screen parallax inside the usual budget (far ~1-1.5 % of the
-      // image width behind the screen, near ~3 % in front). On foot that is real human eyes (6.4 cm,
-      // convergence 4 m); flying, the base grows (hyperstereo) so distant terrain still has depth.
-      const rig=stereoRig(camera);stereo.aspect=1;stereo.eyeSep=rig.eyeSep;focus=camera.focus;camera.focus=rig.focus;stereo.update(camera);
-      stereo.cameraL.userData.monoCamera=camera;stereo.cameraR.userData.monoCamera=camera;
-      renderer.setScissorTest(true);
-      if(autoClear){renderer.setScissor(0,0,W,H);renderer.setViewport(0,0,W,H);renderer.clear();}
-      renderer.autoClear=false;
-      // cross-eye: right eye on the left half
-      renderer.setScissor(0,0,half,H);renderer.setViewport(0,0,half,H);inner(scene,stereo.cameraR);
-      renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=false; // shadows shared by both eyes
-      renderer.setScissor(W-half,0,half,H);renderer.setViewport(W-half,0,half,H);inner(scene,stereo.cameraL);
-    }finally{
-      renderer.shadowMap.autoUpdate=autoShadow;renderer.autoClear=autoClear;
-      renderer.setScissorTest(scissorTest);renderer.setScissor(sc);renderer.setViewport(vp);
-      if(Number.isFinite(focus))camera.focus=focus;camera.aspect=aspect;camera.updateProjectionMatrix();inside=false;
-    }
-  };
-  syncDom();
+ if(!renderer?.setCamera||!renderer?.render||renderer?.gl?.constructor===null)
+  throw Error("stereo requires the sole native WebGL2 renderer");
+ installedOn=renderer;syncDom();return renderer;
 }
-
+export function renderNativeStereo(renderer,camera,{mode="drone"}={}){
+ if(!renderer||renderer!==installedOn)installStereo(renderer);
+ if(!active)return renderer.render();
+ const W=renderer.width,H=renderer.height,leftWidth=Math.floor(W/2),rightWidth=W-leftWidth;
+ if(leftWidth<1||H<1)throw Error("native stereo needs a nonzero viewport");
+ const cameras=nativeStereoCameras(camera,{mode});
+ // Eye 1 is right eye on LEFT for cross-eyed viewing. The second pass may
+ // reuse the first pass' shadow map, but clear only its own scissored half.
+ let first,second;
+ try{
+  renderer.setCamera(cameras.right);
+  first=renderer.render({viewport:{x:0,y:0,width:leftWidth,height:H}});
+  renderer.setCamera(cameras.left);
+  second=renderer.render({viewport:{x:leftWidth,y:0,width:rightWidth,height:H}});
+ }finally{renderer.setCamera(camera);}
+ return {...second,drawCalls:(first?.drawCalls||0)+(second?.drawCalls||0),
+  triangles:(first?.triangles||0)+(second?.triangles||0),stereo:true,
+  stereoEyeSeparationM:cameras.eyeSep};
+}
 active=loadStereoSetting();
-function wait(){const r=globalThis.__arondightRealWorld?.threeRenderer;if(r){installStereo(r);syncDom();}else requestAnimationFrame(wait);}
-if(typeof window!=="undefined")requestAnimationFrame(wait);
-globalThis.__stereoSBS={get active(){return active;},set active(v){setStereoEnabled(v);},install:installStereo,version:STEREO_SBS_VERSION};
+globalThis.__stereoSBS={
+ get active(){return active;},set active(v){setStereoEnabled(v);},
+ install:installStereo,version:STEREO_SBS_VERSION
+};
