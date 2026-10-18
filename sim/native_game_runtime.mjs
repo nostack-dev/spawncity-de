@@ -9,6 +9,7 @@ import {JET_SPEC,createAirframe,airframeStep,setFlightMode} from "./jet_flight_d
 import {NativeWorldPresenter} from "./native_world_presenter.mjs";
 import {nativeBuildingCollisionSnapshot,syncNativeBuildingCollisions} from "./native_building_collision_bridge.mjs";
 import {clearNativeActorSpawns} from "./native_spawn_clearance.mjs";
+import {terrainNodeHeightAt} from "./terrain_craters.mjs";
 export const NATIVE_GAME_RUNTIME_VERSION="single-native-1khz-full-game-physics-v1";
 const MILLIS_PER_FLIGHT_TICK=1;
 const WORLD_STEP_MS=1000/60;
@@ -255,7 +256,7 @@ export class NativeGameRuntime{
   // Move only blocked initial actors using actual Box3D setPose, never
   // removing OSM geometry/collisions or creating a parallel game world.
   const spawnClearance=clearNativeActorSpawns(this.rigids,collision,{
-   heightAt:this.world.terrain.heightAt,firstLoad
+   heightAt:this.world.terrain?.heightAt??terrainNodeHeightAt,firstLoad
   });
   this.osmCollisionOrigin=collision.originKey;
   this.lastOsmCollision={...physics,hash:collision.hash,origin:collision.originKey,spawnClearance};
