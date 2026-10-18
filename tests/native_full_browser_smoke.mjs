@@ -61,12 +61,20 @@ try{
   throw Error("Native-only compositor did not start with one healthy WebGL2 backbuffer: "+JSON.stringify(details));
  const desktopPixels=scenePixelEvidence(await page.screenshot({path:folder+"/native-desktop.png"}));
  assertVisibleWorld(desktopPixels,"desktop");
- const modes=[];
+ const modes=[],modePixels={},modePhysics={};
  for(const mode of ["foot","car","jet","drone"]){
   await page.click('[data-mode="'+mode+'"]');
   await page.waitForFunction(want=>document.querySelector('[data-mode="'+want+'"]')?.getAttribute("aria-pressed")==="true",
    {timeout:8000},mode);
-  await new Promise(r=>setTimeout(r,140));
+  // A mode toggle alone is not acceptance; the actual CAMERA must see
+  // non-empty Box3D-derived terrain/vehicles, including the CAR screenshot
+  // that users reported as uniformly grey while CI claimed "green".
+  await new Promise(r=>setTimeout(r,450));
+  const pixels=scenePixelEvidence(await page.screenshot({path:folder+"/native-"+mode+".png"}));
+  const scene=await page.evaluate(()=>window.__spawncityNativeProbe?.()??null);
+  modePixels[mode]=pixels;modePhysics[mode]=scene;
+  console.log("NATIVE_MODE_SCENE "+JSON.stringify({mode,pixels,scene}));
+  assertVisibleWorld(pixels,"desktop "+mode);
   modes.push(mode);
  }
  // Changing Puppeteer's isMobile/hasTouch on an existing page forces an
@@ -99,7 +107,7 @@ try{
  const backlogMs=Number(telemetry.match(/backlog ([\d.]+)/)?.[1]);
  if(!Number.isFinite(backlogMs)||backlogMs>150)
   throw Error("Native pilot remains >150ms behind input; CPU physics still stalls: "+telemetry);
- data={...details,modes,mobile,desktopPixels,mobilePixels,backlogMs,errors,
+ data={...details,modes,modePixels,modePhysics,mobile,desktopPixels,mobilePixels,backlogMs,errors,
   rendererProvenance:"compiled native browser, software smoke only"};
  writeFileSync(folder+"/metrics.json",JSON.stringify(data,null,2)+"\n");
  console.log("NATIVE_FULL_BROWSER "+JSON.stringify(data));
