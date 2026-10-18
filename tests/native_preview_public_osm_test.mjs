@@ -59,11 +59,18 @@ try{
  }));
  console.log("NATIVE_PUBLIC_OSM "+JSON.stringify({status:data.status,
   cityStats:data.probe?.cityStats,colliders:data.probe?.buildingColliders,
+  carSpawnClear:data.probe?.carSpawnClear,footSpawnClear:data.probe?.footSpawnClear,
+  relocated:data.probe?.spawnClearance?.moved?.map(x=>x.id),
   roadSegments:data.probe?.roadSegments,diagnostics:diagnostics.slice(-8)}));
  if(!data.status?.includes("real OSM buildings"))
   throw Error("Public native world has no real OSM buildings: "+data.status+" "+diagnostics.slice(-6).join(" | "));
  if(!(data.probe?.buildingColliders>0)||!(data.probe?.cityStats?.built>0))
   throw Error("Public OSM visible/collision proof missing: "+JSON.stringify(data.probe));
+ if(data.probe.carSpawnClear!==true||data.probe.footSpawnClear!==true)
+  throw Error("Real OSM building intersects player's car/foot camera collider at spawn: "+
+   JSON.stringify({car:data.probe.carSpawnClear,foot:data.probe.footSpawnClear,
+     relocated:data.probe.spawnClearance?.moved}));
+
  // Real game-mode transitions: not only changing a pressed button.
  // Camera and GPU scene must remain valid, responsive and NONBLANK on the
  // actual public Pages origin containing 1,300 real OSM building meshes.

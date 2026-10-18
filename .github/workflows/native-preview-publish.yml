@@ -4,11 +4,6 @@ on:
   workflow_run:
     workflows: ["Compile latest upstream Box3D WebAssembly"]
     types: [completed]
-  pull_request:
-    branches: [main]
-    paths:
-      - "tests/native_preview_public_osm_test.mjs"
-      - ".github/workflows/native-preview-publish.yml"
 
 # Detached from the physics compiler: only this tightly scoped, successful
 # same-repo+main candidate publishing job receives repository write permission.
@@ -160,22 +155,3 @@ jobs:
           PUBLIC_ORIGIN="$(node tools/public_site.mjs origin)"
           CHROME_BIN="$CHROME_BIN" node tests/native_preview_public_osm_test.mjs "${PUBLIC_ORIGIN}/native/"
 
-  native-public-preview-regression:
-    name: Verify existing real-world Native WebGL2 gameplay
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install pinned Chromium and PNG regression tools
-        run: |
-          npm install --prefix /tmp/spawncity-native-public-test --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0 pngjs@7.0.0
-          ln -s /tmp/spawncity-native-public-test/node_modules node_modules
-      - name: Check actual published drone, foot, car and jet scenes and OSM colliders
-        run: |
-          set -euo pipefail
-          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
-          PUBLIC_ORIGIN="$(node tools/public_site.mjs origin)"
-          CHROME_BIN="$CHROME_BIN" node tests/native_preview_public_osm_test.mjs "${PUBLIC_ORIGIN}/native/"

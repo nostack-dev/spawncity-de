@@ -6,6 +6,7 @@ import FlightCoreFactory from "../generated/flight_core.mjs";
 import {NativeGameRuntime} from "./native_game_runtime.mjs";
 import {NativeGameInput} from "./native_game_input.mjs";
 import {fetchNativeOsm,NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
+import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
 const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("overlay"),
@@ -150,6 +151,11 @@ async function launch(){
     terrainHeightAtTarget:camera?terrain.heightAt(camera.target[0],camera.target[1]):null,
     cityStats:world.city.lastStats,roadSegments:world.roads.live.size,
     buildingColliders:game.lastOsmCollision?.prismCount??0,
+    spawnClearance:game.lastOsmCollision?.spawnClearance??null,
+    carSpawnClear:game.lastOsmCollision?buildingLaunchPointClear(
+      game.rigids.buildingSnapshot,car?.position?.slice(0,2),{clearanceM:2.6}):null,
+    footSpawnClear:game.lastOsmCollision?buildingLaunchPointClear(
+      game.rigids.buildingSnapshot,foot?.position?.slice(0,2),{clearanceM:.95}):null,
     gpu:world.renderer.stats,
     meshCount:world.renderer.meshes.size,
     meshClasses:[...world.renderer.meshes.keys()].reduce((out,k)=>{
