@@ -99,6 +99,30 @@ async function launch(){
   });
   await game.start();
   session={game,input,canvas};
+  // Chromium-only diagnostic snapshot for *rendered* scene validation.
+  // Nothing is exposed to users; test observations come from actual
+  // Box3D actors and WebGL2 draw state, never from fabricated fixtures.
+  if(navigator.webdriver)window.__spawncityNativeProbe=()=>{
+   const world=game.world,camera=world.camera;
+   const car=game.rigids.pose("player-car");
+   const foot=game.rigids.pose("player-foot");
+   const terrain=world.terrain;
+   return {
+    mode:game.mode,flightZ:game.flight.position()[2],
+    carPosition:car?.position,carVelocity:car?.velocity,
+    footPosition:foot?.position,
+    camera:camera?{eye:[...camera.eye],target:[...camera.target],up:[...camera.up],
+      fov:camera.fov,near:camera.near,far:camera.far}:null,
+    terrainChunks:terrain.live.size,terrainStats:terrain.stats,
+    terrainHeightAtTarget:camera?terrain.heightAt(camera.target[0],camera.target[1]):null,
+    gpu:world.renderer.stats,
+    meshCount:world.renderer.meshes.size,
+    meshClasses:[...world.renderer.meshes.keys()].reduce((out,k)=>{
+      const type=k.split("/")[0];out[type]=(out[type]??0)+1;return out;
+    },{}),
+    backlogMs:game.backlogMs,rigidSteps:game.rigidSteps
+   };
+  };
   menu.hidden=true;
   document.documentElement.dataset.engine="native-webgl2";
   viewport.dataset.renderer="native-webgl2-only";
