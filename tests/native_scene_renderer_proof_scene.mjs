@@ -130,7 +130,16 @@ context.putImageData(image,0,0);
 // scene/shadow resources, and no additional GL context.
 setStereoEnabled(true);
 const stereoFrame=renderNativeStereo(renderer,{eye:[95,-122,115],target:[0,0,13],up:[0,0,1],near:.3,far:1000,fov:Math.PI/2.9},{mode:"jet"});
-gl.finish();const stereoGlError=gl.getError();
+gl.finish();
+const stereoPixels=new Uint8Array(width*height*4);
+gl.readPixels(0,0,width,height,gl.RGBA,gl.UNSIGNED_BYTE,stereoPixels);
+const stereoHalfContent=[0,0];
+for(let i=0;i<stereoPixels.length;i+=4){
+ const x=(i/4)%width;
+ if(Math.abs(stereoPixels[i]-12)+Math.abs(stereoPixels[i+1]-18)+Math.abs(stereoPixels[i+2]-31)>45)
+  stereoHalfContent[x<width/2?0:1]++;
+}
+const stereoGlError=gl.getError();
 setStereoEnabled(false);
 times.sort((a,b)=>a-b);
 globalThis.__nativeSceneProof={
@@ -143,7 +152,7 @@ globalThis.__nativeSceneProof={
   cpuFrameMs:stats.cpuMs,gpuTimeMs:stats.gpuMs,
   finishP50Ms:+times[Math.floor(times.length*.5)].toFixed(3),
   finishP95Ms:+times[Math.floor(times.length*.95)].toFixed(3),
-  nonBackgroundPixels:nonBackground,glError:errors,stereoDrawCalls:stereoFrame.drawCalls,stereoGlError,stereoEnabled:stereoFrame.stereo,
+  nonBackgroundPixels:nonBackground,glError:errors,stereoDrawCalls:stereoFrame.drawCalls,stereoGlError,stereoEnabled:stereoFrame.stereo,stereoHalfContent,
   renderer:String(gl.getParameter(gl.getExtension("WEBGL_debug_renderer_info")?.UNMASKED_RENDERER_WEBGL||gl.RENDERER)),
   imageDataUri:screenshot.toDataURL("image/png")
 };
