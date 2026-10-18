@@ -3,7 +3,8 @@ import {NativeSceneGraph} from "../sim/native_scene_graph.mjs";
 const calls=[],positions=new Map(),visibility=new Map();
 const gpu={
  updateInstances(id,{transforms}){assert.ok(transforms instanceof Float32Array);assert.equal(transforms.length,16);positions.set(id,[...transforms]);calls.push(["matrix",id]);},
- setVisible(id,visible){visibility.set(id,visible);calls.push(["visibility",id,visible]);}
+ setVisible(id,visible){visibility.set(id,visible);calls.push(["visibility",id,visible]);},
+ remove(id){visibility.delete(id);positions.delete(id);calls.push(["gpu-delete",id]);return true;}
 };
 const graph=new NativeSceneGraph(gpu);
 graph.add("car",{position:[10,2,1]});
@@ -52,9 +53,17 @@ assert.throws(()=>graph.setParent("rotor","rotor"),/cycle/);
 assert.throws(()=>graph.add("rotor"),/unique/);
 assert.throws(()=>graph.add("missing",{parent:"not-there"}),/unknown/);
 assert.equal(graph.remove("car"),2);
+assert.ok(calls.some(x=>x[0]==="gpu-delete"&&x[1]==="car/seat"),"removing vehicle must free its native GPU buffers");
+assert.equal(graph.meshOwners.has("car/seat"),false,"ownership must be released on despawn");
+graph.add("replacement",{meshId:"car/seat"});
+graph.sync();assert.ok(graph.meshOwners.has("car/seat"),"GPU name can be safely reused after despawn");
 assert.equal(visibility.get("car/seat"),false);
 assert.ok(graph.nodes.has("head"),"reparented attachment survives removed original car");
 assert.equal(graph.remove("rotor"),2);
 graph.dispose();graph.dispose();
+assert.equal(graph.meshOwners.size,0);
+assert.ok(calls.some(x=>x[0]==="gpu-delete"&&x[1]==="car/head"),"disposal must release reparented actor buffers");
+assert.ok(calls.some(x=>x[0]==="gpu-delete"&&x[1]==="drone/rotor"),"disposal must release GPU rotor buffers");
+assert.ok(calls.some(x=>x[0]==="gpu-delete"&&x[1]==="car/seat"),"disposal must release reused GPU buffers");
 assert.throws(()=>graph.add("after"),/disposed/);
 console.log("Native exclusive scene graph: parent and child transforms, hidden meshes, render submission dedup, reparent cycles and safe GPU cleanup passed.");
