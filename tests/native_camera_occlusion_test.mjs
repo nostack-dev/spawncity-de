@@ -27,5 +27,5 @@ assert.deepEqual(camera.target,target);
 assert.deepEqual(camera.eye,clear);
 assert.ok(camera.near>.1);
 const unchanged=nativeGameplayCamera({...state,carObstacleSnapshot:null},{aspect:16/9,now:123}).camera;
-assert.deepEqual(unchanged.eye,desired,"maps that have no buildings preserve original camera exactly");
+assert.ok(unchanged.eye.every((v,i)=>Math.abs(v-desired[i])<1e-9),"maps that have no buildings preserve original camera within floating-point precision");
 console.log("native car third-person camera clips to REAL OSM collision prisms, not through walls; roof height respected");
