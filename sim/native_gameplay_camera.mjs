@@ -4,6 +4,7 @@
 // gate has passed for all five game modes on actual devices.
 import {fpsVerticalFovDegForAspect} from "./camera_pitch_contract.mjs";
 import {rotateByQuaternion} from "./native_airframe_presentation.mjs";
+import {unobstructedNativeChaseEye} from "./native_camera_occlusion.mjs";
 export const NATIVE_GAMEPLAY_CAMERA_VERSION="box3d-mode-cameras-v1";
 const RAD=Math.PI/180;
 const valid3=v=>Array.isArray(v)&&v.length===3&&v.every(Number.isFinite);
@@ -70,7 +71,11 @@ export function nativeGameplayCamera(state,{aspect=16/9,now=performance.now()}={
   }
   const dist=clamp(finite(state.carDistanceM,5),2,12),height=clamp(finite(state.carHeightM,2.2),.5,10);
   const target=add(add(p,forward,1.05),[0,0,1.2]);
-  const eye=add(add(target,forward,-dist),[0,0,height]);
+  const desired=add(add(target,forward,-dist),[0,0,height]);
+  // As buildings stream in, a clear Box3D car can still have its trailing
+  // eye INSIDE a wall 5m behind it. Clamp the real camera before the first
+  // intersected OSM prism; never delete geometry or fly through facades.
+  const eye=unobstructedNativeChaseEye(desired,target,state.carObstacleSnapshot);
   return {mode,camera:camera(eye,target,{fovDeg:clamp(70+Math.abs(finite(car.speedMps,0))*.25,70,80),near:.22,far:5000})};
  }
  if(mode==="jet"){
