@@ -78,10 +78,37 @@ assert.equal(game.worldPhysics,undefined,"there may be no shadow second Box3D ga
 const scenery={origin:{lon:9.17,lat:47.66},buildings:[],roads:[],center:[0,0]};
 assert.equal((await game.updateOsmFeatures(scenery)).city.built,0);
 assert.equal(osmFrames,1);
+const lon=(x)=>9.17+x/(6378137*Math.PI/180*Math.cos(47.66*Math.PI/180));
+const lat=(y)=>47.66+y/(6378137*Math.PI/180);
+const city={...scenery,buildings:[{id:"building-with-real-physics",properties:{height:15},
+ geometry:{type:"Polygon",coordinates:[[
+ [lon(20),lat(0)],[lon(30),lat(0)],[lon(30),lat(12)],[lon(20),lat(12)],[lon(20),lat(0)]
+ ]]}}]};
+const loaded=await game.updateOsmFeatures(city);
+assert.ok(loaded.collision.prismCount>=1,"no synthetic geometry: genuine OSM polygon needed");
+assert.ok(game.flight.worldBuildingCollisionState?.shapeCount>=1,
+ "real 1 kHz drone must collide with buildings visible in native WebGL2");
+assert.ok(game.rigids.buildingState?.shapeCount>=1,
+ "real 60 Hz car and jet must collide with the SAME buildings");
+assert.equal(game.flight.worldBuildingCollisionSnapshot.hash,game.rigids.buildingSnapshot.hash);
+const repeated=await game.updateOsmFeatures(city);
+assert.equal(repeated.collision.flightChanged,false,"identical OSM scene cannot rebuild drone hulls");
+assert.equal(repeated.collision.rigidChanged,false,"identical OSM scene cannot rebuild car hulls");
+assert.equal(osmFrames,3);
 const before=game.simulatedTicks;
 game.stepBudget(3200,100);
 assert.ok(game.discontinuityMs>=1200,"scheduler reports physical time missed beyond 2-second backlog");
 assert.ok(game.simulatedTicks>before);
+// Regression: 1kHz physics running behind MUST NOT stall the GPU/mouselook.
+// Slow CPUs were previously allowed to skip every render while backlog >12ms.
+game.backlogMs=200;game.frameBudgetMs=.01;
+const framesBefore=drawn;
+nextFrame(5000); // first draw, only initializes scheduler clock
+const afterInitial=drawn;
+assert.equal(afterInitial,framesBefore+1);
+nextFrame(5016); // physics budget expires while backlog is still high
+assert.ok(game.backlogMs>=12,"ensure test genuinely exercises physics catch-up");
+assert.equal(drawn,afterInitial+1,"GPU must draw once per RAF even with pending physics");
 assert.equal(game.stop(),true);
 assert.equal(game.stop(),false);
 await game.dispose();
