@@ -7,6 +7,7 @@ import {NativeFlightController} from "./native_flight_controller_wasm.mjs";
 import {WorldRigidBodyPhysics,WORLD_PHYSICS_CATEGORIES} from "./world_rigid_body_physics.mjs";
 import {JET_SPEC,createAirframe,airframeStep,setFlightMode} from "./jet_flight_dynamics.mjs";
 import {NativeWorldPresenter} from "./native_world_presenter.mjs";
+import {nativeBuildingCollisionSnapshot,syncNativeBuildingCollisions} from "./native_building_collision_bridge.mjs";
 export const NATIVE_GAME_RUNTIME_VERSION="single-native-1khz-full-game-physics-v1";
 const MILLIS_PER_FLIGHT_TICK=1;
 const WORLD_STEP_MS=1000/60;
@@ -31,6 +32,7 @@ export class NativeGameRuntime{
   this.mode=initialMode;this.running=false;this.closed=false;this.frameHandle=null;this.generation=0;
   this.lastFrameAt=null;this.backlogMs=0;this.rigidPhaseMs=0;this.simulatedTicks=0;
   this.discontinuityMs=0;this.rigidSteps=0;this.frames=0;this.lastDraw=null;
+  this.osmGeneration=0;this.osmCollisionOrigin=null;this.lastOsmCollision=null;
   this.flight=createNativeFlightPhysics(b3,params);
   this.flightControls={arm:false,throttle:0,roll:0,pitch:0,yaw:0,gameMode:true,groundClearance:2,bodyPitch:0};
   this.flightController=new NativeFlightController(this.flight,{
@@ -111,6 +113,8 @@ export class NativeGameRuntime{
   if(input.gameMode!==undefined)this.flightControls.gameMode=Boolean(input.gameMode);
   if(input.foot)for(const key of footAxes)if(Number.isFinite(input.foot[key]))
    this.footInput[key]=key==="yaw"?input.foot[key]:clamp(input.foot[key],-1.5,1.5);
+  if(input.foot?.sprint!==undefined)this.footInput.sprint=Boolean(input.foot.sprint);
+  if(input.foot?.jump!==undefined)this.footInput.jump=Boolean(input.foot.jump);
   if(input.car)for(const key of carAxes)if(Number.isFinite(input.car[key]))
    this.carInput[key]=clamp(input.car[key],-1,1);
   if(input.car?.handbrake!==undefined)this.carInput.handbrake=Boolean(input.car.handbrake);
@@ -201,7 +205,11 @@ export class NativeGameRuntime{
    try{
     if(this.lastFrameAt!==null)this.stepBudget(Math.max(0,Math.min(2000,now-this.lastFrameAt)));
     this.lastFrameAt=now;
-    if(this.backlogMs<12)this.draw(now);
+    // A slow CPU must not starve the GPU: drawing remains possible while
+    // catch-up physics is pending. Reusing the most recent authoritative
+    // snapshots gives responsive controls/cameras without lying about sim
+    // time, switching engines, or overloading a frame with 2 seconds of work.
+    this.draw(now);
    }catch(error){this.running=false;this.onError?.(error);return;}
    if(this.running&&epoch===this.generation)this.frameHandle=this.requestFrame(frame);
   };
@@ -216,11 +224,25 @@ export class NativeGameRuntime{
  }
  async updateOsmFeatures(snapshot){
   if(this.closed)throw Error("Native game disposed");
-  return this.world.updateOsmFeatures(snapshot);
+  if(!snapshot||!Array.isArray(snapshot.buildings))throw Error("native OSM needs actual source features");
+  // The exact same polygon/prism list must feed visible city geometry,
+  // 1 kHz drone collision and 60 Hz cars/jet; otherwise projectiles and
+  // movement silently pass through drawn walls.
+  const seq=++this.osmGeneration;
+  const collision=nativeBuildingCollisionSnapshot(snapshot.buildings,{
+   origin:snapshot.origin,center:snapshot.center??[0,0]
+  });
+  const shown=await this.world.updateOsmFeatures(snapshot);
+  if(this.closed||seq!==this.osmGeneration||shown?.city?.cancelled||shown?.roads?.cancelled)
+   return {cancelled:true};
+  const physics=syncNativeBuildingCollisions({flight:this.flight,rigids:this.rigids},collision);
+  this.osmCollisionOrigin=collision.originKey;
+  this.lastOsmCollision={...physics,hash:collision.hash,origin:collision.originKey};
+  return {...shown,collision:this.lastOsmCollision};
  }
  async dispose(){
   if(this.closed)return;
-  this.stop();this.closed=true;
+  this.stop();this.closed=true;this.osmGeneration++;
   await this.flightController.disconnect();
   this.world.dispose();this.rigids.destroy();this.flight.dispose();
  }
