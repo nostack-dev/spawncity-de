@@ -23,6 +23,8 @@ on:
       - "sim/native_building_collision_bridge.mjs"
       - "sim/native_spawn_clearance.mjs"
       - "tests/native_spawn_clearance_test.mjs"
+      - "sim/native_camera_occlusion.mjs"
+      - "tests/native_camera_occlusion_test.mjs"
       - "sim/native_game_input.mjs"
       - "tests/native_building_collision_bridge_test.mjs"
       - "tests/native_game_input_test.mjs"
