@@ -129,6 +129,28 @@ jobs:
             artifacts/native-scene/
             artifacts/native-world/
           if-no-files-found: warn
+  native-published-geometry-edges:
+    name: Reject blank real-world native screenshots
+    # Tests the current public candidate's actually painted real OSM scene.
+    # This job does NOT authorize the separate full-production cutover.
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium PNG pixel analysis
+        run: |
+          npm install --prefix /tmp/spawncity-native-edge-qa --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0 pngjs@7.0.0
+          ln -s /tmp/spawncity-native-edge-qa/node_modules node_modules
+      - name: Prove visible geometry in the four live native preview modes
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          PUBLIC_ORIGIN="$(node tools/public_site.mjs origin)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_preview_public_osm_test.mjs "${PUBLIC_ORIGIN}/native/"
+
   full-native-release-gate:
     # Intentionally FAILS until ALL in-game Three dependencies have been
     # replaced and desktop, Android Chrome and iPhone Safari device GPU
