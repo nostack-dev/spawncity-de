@@ -26,5 +26,6 @@ jobs:
           node tests/single_repo_pages_contract_test.mjs
           node tests/jet_headshot_run_guided_contract_test.mjs
           node tests/renderer_exclusive_release_contract_test.mjs
+          node tests/retired_shield_zero_render_cost_test.mjs
           node tests/camera_collision_three_free_test.mjs
           node tests/renderer_three_reduction_test.mjs
