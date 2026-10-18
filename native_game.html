@@ -20,6 +20,8 @@ p{color:#b8cedf;line-height:1.5}
 button{color:inherit;font:inherit;touch-action:manipulation;cursor:pointer}
 #gameMenuStart{border:none;border-radius:16px;background:#ffb42d;color:#121820;font-weight:900;font-size:18px;padding:17px 52px;margin-top:12px}
 #gameMenuStart:disabled{opacity:.5}#gameMenuStatus{margin-top:16px;font-size:12px;color:#b4c5d5}
+#worldSource{display:block;width:min(100%,390px);margin:16px auto 4px;padding:11px 14px;border-radius:12px;
+border:1px solid #4c708d;background:#142c40;color:#f1fbff;font:600 14px system-ui}
 #toolbar{position:absolute;bottom:max(12px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
 display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding:8px 12px;border-radius:18px;background:#071523c9;
 border:1px solid #9dc4ef37;z-index:5;max-width:calc(100vw - 16px);backdrop-filter:blur(12px)}
@@ -31,6 +33,9 @@ border:1px solid #9dc4ef37;z-index:5;max-width:calc(100vw - 16px);backdrop-filte
 display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.08em}
 #stickLeft{left:8%}#stickRight{right:8%}
 #help{position:fixed;bottom:83px;left:50%;transform:translateX(-50%);font-size:10px;pointer-events:none;z-index:4;color:#c7d8eaca;text-align:center;white-space:nowrap}
+#osmAttribution{position:fixed;bottom:max(5px,env(safe-area-inset-bottom));left:8px;
+ z-index:4;font:10px system-ui,sans-serif;color:#d3e4f6;text-decoration:none;
+ text-shadow:0 1px 4px #001a;max-width:180px}
 @media(pointer:coarse){#sticks{display:block}#help{bottom:95px;white-space:normal;width:85vw}
 #toolbar{padding:7px;gap:4px}#toolbar button{padding:9px 10px;font-size:11px}#hud{font-size:10px}}
 @media(max-width:370px){#toolbar button{padding:8px 6px}#welcome{padding:16px}}
@@ -44,11 +49,17 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
 <div id="toolbar" role="toolbar" aria-label="Game mode and camera">
 <button data-mode="drone" aria-pressed="true">DRONE</button><button data-mode="foot" aria-pressed="false">FOOT</button>
 <button data-mode="car" aria-pressed="false">CAR</button><button data-mode="jet" aria-pressed="false">JET</button>
-<button id="armButton" aria-pressed="false">ARM</button><button id="cameraButton">CAMERA</button>
+<button id="armButton" aria-pressed="false">ARM</button><button id="cameraButton">CAMERA</button><button id="cityButton" title="Reload real OpenStreetMap city">CITY</button>
 <button id="fullscreenButton" title="Fullscreen">⛶</button>
 </div>
+<a id="osmAttribution" href="https://www.openstreetmap.org/copyright"
+ target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
 <div id="overlay" role="dialog" aria-label="Launch SpawnCity">
 <div id="welcome"><h1>SPAWNCITY</h1><p>One native WebGL2 renderer. Genuine Box3D physics and original 1 kHz Flight Core.</p>
+<select id="worldSource" aria-label="Choose the source of real OpenStreetMap buildings">
+<option value="demo">Real OSM demo: Konstanz · no GPS</option>
+<option value="gps">My location · request GPS permission</option>
+</select>
 <button id="gameMenuStart" type="button">START</button><div id="gameMenuStatus" role="status">READY — no Three.js</div>
 </div></div>
 <script type="module" src="./sim/native_game_bootstrap.mjs"></script>

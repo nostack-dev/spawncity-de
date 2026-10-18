@@ -5,13 +5,14 @@ import Box3DFactory from "box3d.js/dist/box3d.inline.mjs";
 import FlightCoreFactory from "../generated/flight_core.mjs";
 import {NativeGameRuntime} from "./native_game_runtime.mjs";
 import {NativeGameInput} from "./native_game_input.mjs";
-import {fetchNativeOsm} from "./native_osm_source.mjs";
+import {fetchNativeOsm,NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
 const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("overlay"),
  status=$("status"),menuStatus=$("gameMenuStatus"),telemetry=$("telemetry");
 if(!viewport||!startButton||!menu||!status)throw Error("SpawnCity native boot requires its real fullscreen UI");
 let session=null,launching=false,reported=0,lastStatus="";
+let activeOsm=null,osmEpoch=0;
 function report(message,error=false){
  const text=String(message);
  if(text===lastStatus&&!error)return;
@@ -41,21 +42,44 @@ async function preciseGeoLocation(){
    ()=>resolve(null),{enableHighAccuracy:true,timeout:12000,maximumAge:0});
  });
 }
-async function loadRealWorld(game){
- const origin=await preciseGeoLocation();
- if(!origin){report("Native game ready · GPS unavailable · real terrain only");return;}
- report("Loading real OSM buildings and streets…");
- try{
-  const result=await fetchNativeOsm(origin);
-  if(game.closed)return;
-  const shown=await game.updateOsmFeatures(result);
-  if(shown?.cancelled)return;
-  report("Real OSM · "+result.buildings.length+" buildings · "+
-    result.roads.length+" streets · "+shown.collision.prismCount+" Box3D colliders");
- }catch(error){
-  if(!game.closed){console.warn("optional OSM source",error);
-   report("World online · OSM offline (no synthetic city)");}
+async function loadRealWorld(game,{source="demo"}={}){
+ const epoch=++osmEpoch;
+ activeOsm?.abort();
+ const controller=new AbortController();activeOsm=controller;
+ // A non-GPS visitor must get a REAL, playable city, not a flat empty
+ // render that can still pass a GPU draw-count-only smoke test.
+ // The predefined demo is explicitly labelled; it NEVER claims to be near
+ // the player. Geolocation is requested ONLY if "gps" was chosen on Start.
+ let origin=NATIVE_DEMO_CITY.origin;
+ let label=NATIVE_DEMO_CITY.name;
+ if(source==="gps"){
+  const fix=await preciseGeoLocation();
+  if(!fix){
+   if(game.closed)return;
+   report("GPS denied · switching to real Konstanz demo");
+  }else{
+   origin=fix;label="your GPS location";
+  }
  }
+ if(game.closed||epoch!==osmEpoch)return;
+ report("Loading "+label+" · real OpenStreetMap buildings and roads…");
+ try{
+  const result=await fetchNativeOsm(origin,{signal:controller.signal});
+  if(game.closed||epoch!==osmEpoch)return;
+  const shown=await game.updateOsmFeatures(result);
+  if(shown?.cancelled||epoch!==osmEpoch)return;
+  if(!shown?.collision?.prismCount||!result.buildings.length)
+   throw Error("OSM produced no collision-safe city buildings");
+  report(label+" · "+result.buildings.length+" real OSM buildings · "+
+    result.roads.length+" roads · "+shown.collision.prismCount+" Box3D colliders");
+ }catch(error){
+  if(!game.closed&&epoch===osmEpoch&&!controller.signal.aborted){
+   // A failed external OSM service must be visible and retryable. Never
+   // silently populate buildings/roads from random synthetic fixtures.
+   console.warn("Native OpenStreetMap unavailable",error);
+   report("OSM connection failed · tap CITY to retry real map",true);
+  }
+ }finally{if(epoch===osmEpoch)activeOsm=null;}
 }
 async function launch(){
  if(launching||session)return;
@@ -85,6 +109,10 @@ async function launch(){
    input.arm=!input.arm;input.sample();
    $("armButton").setAttribute("aria-pressed",String(input.arm));
   });
+  $("cityButton")?.addEventListener("click",()=>{
+   if(!session||session.game.closed)return;
+   void loadRealWorld(game,{source:session.worldSource});
+  });
   $("cameraButton")?.addEventListener("click",()=>{
    const current=game.world.flightCameraMode??"follow";
    const next=current==="follow"?"fpv":current==="fpv"?"third":"follow";
@@ -98,13 +126,40 @@ async function launch(){
    }catch(error){report("Fullscreen not permitted on this browser");}
   });
   await game.start();
-  session={game,input,canvas};
+  const worldSource=$("worldSource")?.value==="gps"?"gps":"demo";
+  session={game,input,canvas,worldSource};
+  // Chromium-only diagnostic snapshot for *rendered* scene validation.
+  // Nothing is exposed to users; test observations come from actual
+  // Box3D actors and WebGL2 draw state, never from fabricated fixtures.
+  if(navigator.webdriver)window.__spawncityNativeProbe=()=>{
+   const world=game.world,camera=world.camera;
+   const car=game.rigids.pose("player-car");
+   const foot=game.rigids.pose("player-foot");
+   const terrain=world.terrain;
+   return {
+    mode:game.mode,flightZ:game.flight.position()[2],
+    carPosition:car?.position,carVelocity:car?.velocity,
+    footPosition:foot?.position,
+    camera:camera?{eye:[...camera.eye],target:[...camera.target],up:[...camera.up],
+      fov:camera.fov,near:camera.near,far:camera.far}:null,
+    terrainChunks:terrain.live.size,terrainStats:terrain.stats,
+    terrainHeightAtTarget:camera?terrain.heightAt(camera.target[0],camera.target[1]):null,
+    cityStats:world.city.lastStats,roadSegments:world.roads.live.size,
+    buildingColliders:game.lastOsmCollision?.prismCount??0,
+    gpu:world.renderer.stats,
+    meshCount:world.renderer.meshes.size,
+    meshClasses:[...world.renderer.meshes.keys()].reduce((out,k)=>{
+      const type=k.split("/")[0];out[type]=(out[type]??0)+1;return out;
+    },{}),
+    backlogMs:game.backlogMs,rigidSteps:game.rigidSteps
+   };
+  };
   menu.hidden=true;
   document.documentElement.dataset.engine="native-webgl2";
   viewport.dataset.renderer="native-webgl2-only";
   setModePressed("drone");
   report("Native WebGL2 · real 1 kHz Flight Core running");
-  void loadRealWorld(game);
+  void loadRealWorld(game,{source:worldSource});
  }catch(error){
   console.error("native bootstrap",error);
   input?.dispose();await game?.dispose?.().catch(()=>{});
@@ -120,6 +175,7 @@ document.addEventListener("visibilitychange",()=>{
  else if(!game.closed){void game.start().catch(e=>report("Resume failed: "+e.message,true));}
 });
 window.addEventListener("pagehide",()=>{
+ activeOsm?.abort();osmEpoch++;
  if(!session)return;
  const {game,input}=session;session=null;input.dispose();void game.dispose();
 });

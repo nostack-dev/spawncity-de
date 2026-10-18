@@ -1,11 +1,15 @@
 // Real OpenStreetMap source for the native engine. Only genuine Overpass
 // ways; NEVER synthetic buildings/roads, no MapLibre second WebGL context.
-// Requests occur after the user explicitly authorizes GPS. If unavailable
-// the real Box3D game still plays on its physical terrain.
+// Loads publicly available OSM ways for a selected demo city, or an explicitly
+// user-authorized GPS location. Never infers GPS or fabricates geometry.
 export const NATIVE_OSM_SOURCE_VERSION="osm-live-vector-features-v1";
+export const NATIVE_DEMO_CITY=Object.freeze({
+ name:"Konstanz (real OpenStreetMap)",origin:Object.freeze({lon:9.17442,lat:47.66022})
+});
 const DEFAULT_ENDPOINTS=Object.freeze([
+ "https://overpass.private.coffee/api/interpreter",
  "https://overpass-api.de/api/interpreter",
- "https://overpass.kumi.systems/api/interpreter"
+ "https://overpass.osm.jp/api/interpreter"
 ]);
 const metres=400;
 const isLL=(lon,lat)=>Number.isFinite(lon)&&Number.isFinite(lat)&&Math.abs(lon)<=180&&Math.abs(lat)<=85;
@@ -60,11 +64,14 @@ export async function fetchNativeOsm(origin,{fetchImpl=globalThis.fetch,
   signal?.addEventListener?.("abort",onAbort,{once:true});
   const timer=setTimeout(()=>timeout.abort(),timeoutMs);
   try{
-   const response=await fetchImpl(endpoint,{method:"POST",
-    headers:{"Content-Type":"application/x-www-form-urlencoded"},
-    body:"data="+encodeURIComponent(query),signal:timeout.signal});
+   // A simple GET avoids third-party browser preflight and is cacheable.
+   // Never send a GPS fix unless the user selected the location explicitly.
+   const url=endpoint+(endpoint.includes("?")?"&":"?")+"data="+encodeURIComponent(query);
+   const response=await fetchImpl(url,{method:"GET",signal:timeout.signal});
    if(!response.ok)throw Error("OSM HTTP "+response.status);
    const result=parseNativeOverpass(await response.json());
+   if(result.buildings.length===0&&result.roads.length===0)
+    throw Error("OSM returned no usable buildings or roads");
    return {...result,origin:{lon:Number(origin.lon),lat:Number(origin.lat)},
     center:[0,0],revision:String(Date.now())};
   }catch(e){error=e;if(signal?.aborted)throw e;}
