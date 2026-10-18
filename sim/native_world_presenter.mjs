@@ -20,6 +20,7 @@ import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
 import {NativePeerVisuals} from "./native_peer_visuals.mjs";
 import {nativeDrawingBufferSize,nativePointerToDrawingPixels} from "./native_viewport.mjs";
 import {renderNativeStereo,nativeStereoRay,nativeStereoPick} from "./stereo_sbs.mjs";
+import {installShaderPrewarm,disposeShaderPrewarm} from "./shader_prewarm.mjs";
 export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
@@ -30,6 +31,7 @@ export class NativeWorldPresenter{
     :worldPhysics?nativeWorldPhysicsView(worldPhysics,{alpha:interpolationAlpha}):physics;
   if(!poseSource?.bodies||!poseSource?.renderPose)throw Error("native world requires authoritative Box3D runtime");
   this.renderer=new NativeSceneRenderer(canvas,rendererOptions);
+  installShaderPrewarm(this.renderer);
   this.sceneGraph=new NativeSceneGraph(this.renderer);
   this.effects=new NativeEffects(this.renderer);
   this.lights=lights??new NativePointLightPool();
@@ -209,6 +211,6 @@ export class NativeWorldPresenter{
  dispose(){
   if(this.disposed)return;
   this.stop();this.combatEvents.dispose();this.city.dispose();this.roads.dispose();this.terrain.dispose();this.rigids.dispose();this.people?.dispose();this.airframe?.dispose();
-  this.peer?.dispose();this.effects.dispose();this.sceneGraph.dispose();this.renderer.dispose();this.disposed=true;
+  this.peer?.dispose();this.effects.dispose();this.sceneGraph.dispose();disposeShaderPrewarm(this.renderer);this.renderer.dispose();this.disposed=true;
  }
 }
