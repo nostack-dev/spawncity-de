@@ -28,7 +28,7 @@ const legacy={
 };
 const p=worldCameraPose(legacy);
 assert.deepEqual(p.position,eye);
-assert.deepEqual(p.direction,[0,1,0]);
+p.direction.forEach((n,i)=>close(n,[0,1,0][i])); // IEEE signed zeros are geometrically identical
 pt=projectWorldPoint([4,10,2],legacy);
 const np=projectWorldPoint([4,10,2],native,{aspect:1});
 assert.ok(pt?.inFront);
