@@ -27,8 +27,10 @@ assert.equal(syncNativeBuildingCollisions({flight,rigids},p).prismCount,p.prismC
 assert.equal(a.hash,b.hash);
 assert.deepEqual(calls,["flight","rigids"]);
 const before=a,beforeB=b;
-rigids.syncBuildings=next=>{if(next.hash===p.hash)throw Error("simulated rigid world collision failure");b=next;return true;};
-assert.throws(()=>syncNativeBuildingCollisions({flight,rigids},p),/simulated/);
+const p2=nativeBuildingCollisionSnapshot(features.slice(0,1),{origin});
+assert.notEqual(p2.hash,before.hash);
+rigids.syncBuildings=next=>{if(next.hash===p2.hash)throw Error("simulated rigid world collision failure");b=next;return true;};
+assert.throws(()=>syncNativeBuildingCollisions({flight,rigids},p2),/simulated/);
 assert.equal(a.hash,before.hash,"1 kHz flight colliders rolled back");
 assert.equal(b.hash,beforeB.hash,"60 Hz vehicle colliders rolled back");
 assert.throws(()=>syncNativeBuildingCollisions({flight:null,rigids},p),/BOTH/);
