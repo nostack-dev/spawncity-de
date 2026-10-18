@@ -68,6 +68,10 @@ jobs:
           node tests/native_point_lights_test.mjs
           node tests/native_airframe_presentation_test.mjs
           node tests/native_gameplay_camera_test.mjs
+          node tests/native_scene_graph_test.mjs
+          node tests/native_scene_graph_scaling_test.mjs
+          node tests/native_effects_test.mjs
+          node tests/native_combat_events_test.mjs
           node tests/native_gameplay_visibility_test.mjs
           node tests/native_rigid_visuals_test.mjs
           node tests/native_world_physics_view_test.mjs
@@ -75,6 +79,8 @@ jobs:
           node tests/native_gameplay_targeting_test.mjs
           node tests/native_osm_world_integration_test.mjs
           node tests/native_flight_pose_view_test.mjs
+          node tests/native_flight_physics_parity_test.mjs
+          node tests/native_flight_control_wasm_test.mjs
           node tests/native_road_geometry_test.mjs
           node tests/native_road_stream_test.mjs
           node tests/native_pedestrian_visuals_test.mjs
