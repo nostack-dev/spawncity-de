@@ -19,7 +19,7 @@ import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
 import {NativePeerVisuals} from "./native_peer_visuals.mjs";
 import {nativeDrawingBufferSize,nativePointerToDrawingPixels} from "./native_viewport.mjs";
-import {renderNativeStereo} from "./stereo_sbs.mjs";
+import {renderNativeStereo,nativeStereoRay,nativeStereoPick} from "./stereo_sbs.mjs";
 export const NATIVE_WORLD_PRESENTER_VERSION="native-sole-presenter-v1";
 const finite3=p=>p?.length===3&&Array.from(p).every(Number.isFinite);
 const nextFrame=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>requestAnimationFrame(resolve)):Promise.resolve();
@@ -184,7 +184,7 @@ export class NativeWorldPresenter{
  requestLight(position,opts){if(this.disposed)throw Error("native world disposed");return this.lights.request(position,opts);}
   pick(x,y,options){if(!this.camera)throw Error("native camera unavailable");
   const pixel=nativePointerToDrawingPixels(this.renderer.canvas,x,y,this.renderer.width,this.renderer.height);
-  const visual=this.renderer.pick(pixel.x,pixel.y,options);
+  const visual=nativeStereoPick(this.renderer,this.camera,pixel.x,pixel.y,{...options,mode:this.gameMode});
   if(visual.hit){
    const bodyId=this.rigids.bodyIdForHit(visual.hit);
    if(bodyId)visual.hit={...visual.hit,bodyId,source:"native-webgl2"};
@@ -196,7 +196,7 @@ export class NativeWorldPresenter{
   if(!this.worldPhysics||typeof this.worldPhysics.raycast!=="function")
    throw Error("native game targeting requires authoritative Box3D raycast");
   const pixel=nativePointerToDrawingPixels(this.renderer.canvas,x,y,this.renderer.width,this.renderer.height);
-  const ray=this.renderer.getScreenRay(pixel.x,pixel.y);
+  const ray=nativeStereoRay(this.renderer,this.camera,pixel.x,pixel.y,{mode:this.gameMode});
   const physical=this.worldPhysics.raycast(ray.origin,ray.direction,maxDistance);
   const visual=this.pick(x,y,{maxDistance,ignoreId});
   // The Box3D result remains authoritative for gameplay damage, walls and
