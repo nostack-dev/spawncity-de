@@ -65,6 +65,7 @@ jobs:
           node tests/native_gameplay_camera_test.mjs
           node tests/native_scene_graph_test.mjs
           node tests/native_scene_graph_scaling_test.mjs
+          node tests/native_effects_test.mjs
           node tests/native_gameplay_visibility_test.mjs
           node tests/native_rigid_visuals_test.mjs
           node tests/native_world_physics_view_test.mjs
