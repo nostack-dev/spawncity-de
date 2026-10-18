@@ -21,7 +21,7 @@ jobs:
           tar --exclude='*.bin' --exclude='*.wasm' --exclude='*.zip' \
             -czf /tmp/native-source-repro.tgz sim tests esp32 \
               tools/patch_box3d_upstream_bindings.mjs \
-              package.json .github/workflows/renderer-compare.yml \
+              .github/workflows/renderer-compare.yml \
               .github/workflows/box3d-upstream-wasm.yml
           mkdir -p artifacts/native-debug-snapshot
           cp /tmp/native-source-repro.tgz artifacts/native-debug-snapshot/
