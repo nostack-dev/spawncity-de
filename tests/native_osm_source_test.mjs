@@ -50,4 +50,41 @@ await assert.rejects(()=>fetchNativeOsm(origin,{
 }),/unavailable/);
 assert.equal(parseNativeOverpass({elements:[]}).buildings.length,0);
 
-console.log("native game fetches actual OSM geometry and never substitutes a fabricated city");
+
+const snapshot={
+ origin:NATIVE_DEMO_CITY.origin,source:"openstreetmap-api-0.6",
+ retrievedAt:"2026-10-18T08:00:00+00:00",synthetic:false,elements:[way,road]
+};
+let localRequests=0;
+const local=async(url,opts)=>{
+ localRequests++;
+ assert.equal(url,"./osm/demo-konstanz.json");
+ assert.equal(opts.method,"GET");
+ assert.equal(opts.cache,"no-store");
+ return {ok:true,json:async()=>snapshot};
+};
+const demo=await fetchNativeOsm(NATIVE_DEMO_CITY.origin,{
+ snapshotUrl:"./osm/demo-konstanz.json",fetchImpl:local
+});
+assert.equal(localRequests,1,"Demo must not call third-party Overpass");
+assert.equal(demo.buildings.length,1);
+assert.equal(demo.roads.length,1);
+assert.equal(demo.source,"openstreetmap-api-0.6-snapshot");
+assert.equal(demo.synthetic,false);
+assert.equal(demo.retrievedAt,snapshot.retrievedAt);
+await assert.rejects(()=>fetchNativeOsm(origin,{
+ snapshotUrl:"./osm/demo-konstanz.json",fetchImpl:local
+}),/exact announced demo/);
+await assert.rejects(()=>fetchNativeOsm(NATIVE_DEMO_CITY.origin,{
+ snapshotUrl:"https://example.org/forge.json",fetchImpl:local
+}),/same-origin/);
+await assert.rejects(()=>fetchNativeOsm(NATIVE_DEMO_CITY.origin,{
+ snapshotUrl:"./osm/demo-konstanz.json",
+ fetchImpl:async()=>({ok:true,json:async()=>({...snapshot,synthetic:true})})
+}),/provenance/);
+await assert.rejects(()=>fetchNativeOsm(NATIVE_DEMO_CITY.origin,{
+ snapshotUrl:"./osm/demo-konstanz.json",
+ fetchImpl:async()=>({ok:false,status:404})
+}),/HTTP 404/);
+
+console.log("native game fetches genuine same-origin OSM demo and never substitutes fabricated city");
