@@ -10,7 +10,7 @@ const number=(x,d)=>Number.isFinite(x)?x:d;
 const normalized=x=>{const n=Math.hypot(...x);if(!(n>1e-8))throw Error("degenerate stereo camera");return x.map(v=>v/n);};
 const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 export function loadStereoSetting(){
- try{return typeof location!=="undefined"&&/[?&]sbs=1\\b/.test(location.search)
+ try{return typeof location!=="undefined"&&/[?&]sbs=1\b/.test(location.search)
    ||typeof localStorage!=="undefined"&&localStorage.getItem(STEREO_SETTINGS_KEY)==="1";}catch{return false;}
 }
 function syncDom(){
