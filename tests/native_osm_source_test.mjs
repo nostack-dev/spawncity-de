@@ -20,9 +20,11 @@ assert.equal(parsed.buildings[0].geometry.type,"Polygon");
 assert.equal(parsed.roads[0].geometry.type,"LineString");
 assert.throws(()=>parseNativeOverpass({elements:null}),/Overpass/);
 let requests=0;
-const mock=async(endpoint,{method,body})=>{
- requests++;assert.equal(method,"POST");assert.ok(body.startsWith("data="));
- if(endpoint.endsWith("/one"))return {ok:false,status:503};
+const mock=async(url,{method,signal})=>{
+ requests++;assert.equal(method,"GET");assert.ok(url.includes("?data="));
+ assert.ok(decodeURIComponent(url.split("?data=")[1]).includes('way["building"]'));
+ assert.ok(signal instanceof AbortSignal);
+ if(url.includes("/one?"))return {ok:false,status:503};
  return {ok:true,json:async()=>fixture};
 };
 const loaded=await fetchNativeOsm(origin,{endpoints:["https://example.org/one","https://example.org/two"],
@@ -32,7 +34,13 @@ assert.equal(loaded.origin.lon,9.17);
 assert.equal(loaded.buildings.length,1);
 assert.equal(loaded.roads.length,1);
 assert.equal(loaded.synthetic,false);
+assert.equal(loaded.source,"openstreetmap-overpass");
 assert.throws(()=>nativeOverpassQuery(origin,3000),/radius/);
 await assert.rejects(()=>fetchNativeOsm(origin,{endpoints:["http://localhost"],fetchImpl:mock}),/HTTPS/);
 await assert.rejects(()=>fetchNativeOsm(origin,{endpoints:["https://example.org/one"],fetchImpl:mock}),/unavailable/);
+await assert.rejects(()=>fetchNativeOsm(origin,{
+ endpoints:["https://example.org/empty"],fetchImpl:async()=>({ok:true,json:async()=>({elements:[]})})
+}),/unavailable/);
+assert.equal(parseNativeOverpass({elements:[]}).buildings.length,0);
+
 console.log("native game fetches actual OSM geometry and never substitutes a fabricated city");
