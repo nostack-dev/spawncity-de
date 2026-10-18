@@ -13,6 +13,25 @@ const browser=await puppeteer.launch({headless:true,executablePath:process.env.C
  "--use-gl=angle","--use-angle=swiftshader","--enable-unsafe-swiftshader"
 ]});
 const errors=[];
+const observedOsmRequests=[];
+// The compiled HTML is loaded with page.setContent(), whose origin is
+// opaque ("null"). Third-party Overpass CORS rejects THAT CI origin even
+// when real origin spawncity.de is allowed. This test validates game startup,
+// GPU output and graceful world-source failure deterministically.
+// Return an explicitly EMPTY map, never fabricated OSM buildings. A separate
+// source/geometry test owns parsing and native collision acceptance.
+async function mockUnavailableOsm(page,label){
+ await page.setRequestInterception(true);
+ page.on("request",request=>{
+  const url=request.url();
+  if(/^https:\/\/(?:overpass\.|overpass-api\.)/.test(url)&&url.includes("/api/interpreter")){
+   observedOsmRequests.push({label,url});
+   request.respond({status:200,contentType:"application/json",
+    headers:{"access-control-allow-origin":"*"},
+    body:JSON.stringify({elements:[]})}).catch(e=>errors.push("OSM interception: "+String(e)));
+  }else request.continue().catch(e=>errors.push("request: "+String(e)));
+ });
+}
 const folder="artifacts/native-browser-smoke";mkdirSync(folder,{recursive:true});
 // The previous CI was green while the actual mobile screenshot was almost
 // solid brown: counting WebGL draws is NOT a visual-release proof.
@@ -42,11 +61,14 @@ function assertVisibleWorld(evidence,label){
 let data=null;
 try{
  const page=await browser.newPage();
+ await mockUnavailableOsm(page,"desktop");
  page.on("pageerror",e=>errors.push(String(e)));
  page.on("console",m=>{if(m.type()==="error")errors.push("console: "+m.text().slice(0,280));});
  await page.setViewport({width:1280,height:720,deviceScaleFactor:1});
  await page.setContent(html,{waitUntil:"load",timeout:45000});
  await page.waitForSelector("#gameMenuStart:not([disabled])",{timeout:10000});
+ if(await page.$eval("#worldSource",el=>el.value)!=="demo")
+  throw Error("no-GPS preview must explicitly start with REAL OSM Konstanz demo");
  await page.click("#gameMenuStart");
  await page.waitForFunction(()=>document.documentElement.dataset.engine==="native-webgl2",{timeout:45000});
  await page.waitForFunction(()=>document.getElementById("telemetry")?.textContent?.includes("ticks"),{timeout:25000});
@@ -80,6 +102,7 @@ try{
  // Changing Puppeteer's isMobile/hasTouch on an existing page forces an
  // implicit reload. Start an independent MOBILE WebGL2 game instead.
  const mobilePage=await browser.newPage();
+ await mockUnavailableOsm(mobilePage,"mobile");
  mobilePage.on("pageerror",e=>errors.push("mobile: "+String(e)));
  mobilePage.on("console",m=>{if(m.type()==="error")errors.push("mobile console: "+m.text().slice(0,280));});
  await mobilePage.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
@@ -99,6 +122,12 @@ try{
  });
  if(!mobile.gl||mobile.glError!==0||!mobile.gameFullscreen||mobile.width<780||mobile.height<1600||mobile.touchAction!=="none")
   throw Error("Native PWA touch/DPR/full-window broken: "+JSON.stringify(mobile));
+ // The optional map service is intentionally empty in this local/opaque
+ // browser CI run; verify that 1 kHz flight/GPU never stalls or fabricates
+ // a city and that the user can retry fetching actual OpenStreetMap.
+ if(!observedOsmRequests.some(r=>r.label==="desktop")
+   ||!observedOsmRequests.some(r=>r.label==="mobile"))
+  throw Error("native boot did not attempt the real OSM demo without GPS");
  if(errors.length)throw Error("Browser console errors: "+errors.join(" | ").slice(0,1200));
  const mobileScreenshot=await mobilePage.screenshot({path:folder+"/native-mobile.png",fullPage:true});
  const mobilePixels=scenePixelEvidence(mobileScreenshot);
@@ -108,7 +137,7 @@ try{
  if(!Number.isFinite(backlogMs)||backlogMs>150)
   throw Error("Native pilot remains >150ms behind input; CPU physics still stalls: "+telemetry);
  data={...details,modes,modePixels,modePhysics,mobile,desktopPixels,mobilePixels,backlogMs,errors,
-  rendererProvenance:"compiled native browser, software smoke only"};
+  rendererProvenance:"compiled native browser, software smoke only",osmCITreatment:"empty HTTP response, not proof of live network",osmAttempts:observedOsmRequests.length};
  writeFileSync(folder+"/metrics.json",JSON.stringify(data,null,2)+"\n");
  console.log("NATIVE_FULL_BROWSER "+JSON.stringify(data));
 }catch(error){
