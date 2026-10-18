@@ -2,13 +2,13 @@
 // weapons, rotor mounts, HUD-world markers. One graphics backend and one
 // Box3D authority; there is NO Three.js scene graph or compatibility fallback.
 import {fromTRS,multiply4,identity4} from "./native_render_math.mjs";
-export const NATIVE_SCENE_GRAPH_VERSION="native-hierarchy-v1";
+export const NATIVE_SCENE_GRAPH_VERSION="native-hierarchy-gpu-lifetime-v2";
 const vec=(v,n,name)=>{if(!Array.isArray(v)&&!(v instanceof Float32Array))throw Error(name+" expects "+n+" components");if(v.length!==n||Array.from(v).some(x=>!Number.isFinite(x)))throw Error("invalid "+name);return Array.from(v);};
 export class NativeSceneGraph{
  constructor(renderer){
-  if(typeof renderer?.updateInstances!=="function"||typeof renderer?.setVisible!=="function")
+  if(typeof renderer?.updateInstances!=="function"||typeof renderer?.setVisible!=="function"||typeof renderer?.remove!=="function")
    throw Error("native scene graph requires a single native WebGL2 renderer");
-  this.renderer=renderer;this.nodes=new Map();this.closed=false;this.version=0;
+  this.renderer=renderer;this.nodes=new Map();this.meshOwners=new Map();this.closed=false;this.version=0;
  }
  require(id){const node=this.nodes.get(id);if(!node)throw Error("unknown native node "+id);return node;}
  add(id,{parent=null,meshId=null,position=[0,0,0],rotation=[0,0,0,1],scale=[1,1,1],visible=true}={}){
@@ -17,14 +17,15 @@ export class NativeSceneGraph{
   if(parent!==null)this.require(parent);
   if(meshId!==null){
    if(typeof meshId!=="string"||!meshId.trim())throw Error("invalid native GPU mesh ID");
-   if([...this.nodes.values()].some(node=>node.meshId===meshId))
+   if(this.meshOwners.has(meshId))
     throw Error("native GPU mesh already owned by another scene node");
   }
   const node={id,parent,children:new Set(),meshId,position:vec(position,3,"position"),
    rotation:vec(rotation,4,"rotation"),scale:vec(scale,3,"scale"),visible:Boolean(visible),
    effectiveVisible:false,world:identity4(),dirty:true,updated:false};
   if(Math.hypot(...node.rotation)<1e-10||node.scale.some(x=>x===0))throw Error("degenerate native transform");
-  this.nodes.set(id,node);if(parent!==null)this.nodes.get(parent).children.add(id);
+  this.nodes.set(id,node);if(meshId!==null)this.meshOwners.set(meshId,id);
+  if(parent!==null)this.nodes.get(parent).children.add(id);
   this.version++;return id;
  }
  dirtySubtree(id){
@@ -73,7 +74,14 @@ export class NativeSceneGraph{
   const collect=n=>{for(const child of n.children)collect(this.require(child));deleted.push(n.id);};
   collect(root);
   if(root.parent!==null)this.require(root.parent).children.delete(id);
-  for(const key of deleted){const n=this.nodes.get(key);if(n.meshId)this.renderer.setVisible(n.meshId,false);this.nodes.delete(key);}
+  for(const key of deleted){
+   const n=this.nodes.get(key);
+   if(n.meshId){
+    this.renderer.remove(n.meshId); // Owning a GPU mesh includes releasing its VAO/VBO on despawn.
+    this.meshOwners.delete(n.meshId);
+   }
+   this.nodes.delete(key);
+  }
   this.version++;return deleted.length;
  }
  sync(){
@@ -104,7 +112,7 @@ export class NativeSceneGraph{
  worldMatrix(id){return new Float32Array(this.require(id).world);}
  dispose(){
   if(this.closed)return;
-  for(const node of this.nodes.values())if(node.meshId)this.renderer.setVisible(node.meshId,false);
-  this.nodes.clear();this.closed=true;
+  for(const node of this.nodes.values())if(node.meshId)this.renderer.remove(node.meshId);
+  this.nodes.clear();this.meshOwners.clear();this.closed=true;
  }
 }
