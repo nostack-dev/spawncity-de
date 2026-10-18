@@ -22,6 +22,11 @@ on:
       - "sim/native_game_input.mjs"
       - "tests/native_building_collision_bridge_test.mjs"
       - "tests/native_game_input_test.mjs"
+      - "native_game.html"
+      - "sim/native_game_bootstrap.mjs"
+      - "sim/native_osm_source.mjs"
+      - "tests/native_osm_source_test.mjs"
+      - "tests/native_bootstrap_contract_test.mjs"
       - "tests/production_box3d_bundle_contract_test.mjs"
   workflow_dispatch:
 permissions:
@@ -95,6 +100,24 @@ jobs:
           ./node_modules/.bin/esbuild sim/native_world_presenter.mjs --bundle --format=esm --platform=browser --target=es2022 --outfile=/tmp/native-world.bundle.mjs
           ./node_modules/.bin/esbuild sim/native_flight_physics.mjs --bundle --format=esm --platform=browser --target=es2022 --outfile=/tmp/native-flight.bundle.mjs
           ./node_modules/.bin/esbuild sim/native_game_runtime.mjs --bundle --format=esm --platform=browser --target=es2022 --outfile=/tmp/native-game.bundle.mjs
+          # The exact pinned Box3D upstream + real Flight Core are compiled
+          # INTO ONE standalone browser entry; no CDN/fallback/second GPU.
+          ./node_modules/.bin/esbuild sim/native_game_bootstrap.mjs --bundle --format=esm --platform=browser --target=es2022 --minify \
+            --alias:box3d.js/dist/box3d.inline.mjs="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" \
+            --outfile=/tmp/native-game-browser.bundle.mjs
+          mkdir -p artifacts/native-browser
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          page=Path("native_game.html").read_text()
+          marker='<script type="module" src="./sim/native_game_bootstrap.mjs"></script>'
+          assert marker in page
+          code=Path("/tmp/native-game-browser.bundle.mjs").read_text().replace("</script","<\\/script")
+          page=page.replace(marker,'<script type="module">\n'+code+'\n</script>')
+          page='<!-- SPAWNCITY_NATIVE_CANDIDATE_SHA:'+os.environ.get("GITHUB_SHA","CI")+' -->\n'+page
+          Path("artifacts/native-browser/native_game.html").write_text(page)
+          PY
+          node tests/native_bootstrap_contract_test.mjs artifacts/native-browser/native_game.html
           if grep -E 'three/src/|three\.module\.js|THREE\.WebGLRenderer' /tmp/native-world.bundle.mjs /tmp/native-flight.bundle.mjs /tmp/native-game.bundle.mjs; then
             echo "Forbidden legacy Three renderer in native bundles" >&2
             exit 1
@@ -102,6 +125,12 @@ jobs:
           node tests/native_flight_physics_parity_test.mjs
           rm node_modules
           rm -rf generated
+      - name: Upload self-contained native browser game for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-native-webgl2-browser
+          path: artifacts/native-browser/native_game.html
+          retention-days: 14
       - name: Upload compiled native + inline WASM and SHA-256 provenance
         if: always()
         uses: actions/upload-artifact@v4
