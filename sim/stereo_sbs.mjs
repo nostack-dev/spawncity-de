@@ -1,6 +1,7 @@
 // Sole native WebGL2 stereoscopy: two camera perspectives, ONE GL context.
 // Cross-eye arrangement renders the RIGHT eye into the LEFT half of the
 // same native canvas. No Three import, GPU context duplication or monkeypatch.
+import {screenRay,pickNativeMeshes} from "./native_scene_picking.mjs";
 export const STEREO_SBS_VERSION="native-cross-eye-one-webgl2-v3";
 export const STEREO_SETTINGS_KEY="spawnCityStereoSbsV1";
 export const STEREO_SETTINGS_EVENT="spawncity-stereo-sbs-change";
@@ -45,6 +46,19 @@ export function nativeStereoCameras(camera,opts={}){
  const eye=(sign)=>camera.eye.map((x,i)=>x+right[i]*sign*eyeSep/2);
  const left=eye(-1),righteye=eye(1);
  return {left:{...camera,eye:left,target:convergence},right:{...camera,eye:righteye,target:convergence},eyeSep,focus};
+}
+export function nativeStereoRay(renderer,camera,x,y,{mode="drone"}={}){
+ if(!renderer||!(renderer.width>0&&renderer.height>0))throw Error("native ray needs drawing buffer");
+ if(!Number.isFinite(x)||!Number.isFinite(y))throw Error("nonfinite stereo screen coordinates");
+ if(!active)return screenRay(camera,x,y,renderer.width,renderer.height);
+ const split=Math.floor(renderer.width/2);
+ if(split<1)throw Error("stereo viewport too narrow");
+ const cameras=nativeStereoCameras(camera,{mode});
+ if(x<split)return screenRay(cameras.right,x,y,split,renderer.height);
+ return screenRay(cameras.left,x-split,y,renderer.width-split,renderer.height);
+}
+export function nativeStereoPick(renderer,camera,x,y,{mode="drone",maxDistance=1500,ignoreId=null}={}){
+ return pickNativeMeshes(renderer.meshes,nativeStereoRay(renderer,camera,x,y,{mode}),{maxDistance,ignoreId});
 }
 export function installStereo(renderer){
  if(!renderer?.gl||!renderer?.setCamera||!renderer?.render)
