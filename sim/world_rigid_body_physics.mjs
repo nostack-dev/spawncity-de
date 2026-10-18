@@ -55,9 +55,9 @@ export class WorldRigidBodyPhysics{
     return record;
   }
   removeBody(id){const key=String(id||""),record=this.records.get(key);if(!record)return false;if(record.wheels)detachWheels(this,record);this.records.delete(key);this.shapeRecords.delete(shapeKey(record.shape));for(const sh of record.extraShapes||[])this.shapeRecords.delete(shapeKey(sh));if(record.body&&this.b3.b3Body_IsValid(record.body))this.b3.b3DestroyBody(record.body);return true;}
-  setTarget(id,{position,speedMps=0,response=3.2,maxAccelerationMps2,yaw=null}={}){
+  setTarget(id,{position,speedMps=0,response=3.2,maxAccelerationMps2,yaw=null,omnidirectional=false}={}){
     const record=this.records.get(String(id||""));if(!record||!finiteVector(position))return false;
-    const target=record.target||(record.target={position:[0,0,0],speedMps:0,response:3.2,maxAccelerationMps2:6,yaw:null});target.position[0]=position[0];target.position[1]=position[1];target.position[2]=position[2];target.speedMps=Math.max(0,Number(speedMps)||0);target.response=clamp(response,.2,10);target.maxAccelerationMps2=clamp(maxAccelerationMps2??(record.drone?13:6),.5,30);target.yaw=Number.isFinite(yaw)?Number(yaw):null;return true;
+    const target=record.target||(record.target={position:[0,0,0],speedMps:0,response:3.2,maxAccelerationMps2:6,yaw:null});target.position[0]=position[0];target.position[1]=position[1];target.position[2]=position[2];target.speedMps=Math.max(0,Number(speedMps)||0);target.response=clamp(response,.2,10);target.maxAccelerationMps2=clamp(maxAccelerationMps2??(record.drone?13:6),.5,30);target.yaw=Number.isFinite(yaw)?Number(yaw):null;target.omnidirectional=Boolean(omnidirectional);return true;
   }
   clearTarget(id){const record=this.records.get(String(id||""));if(!record)return false;record.target=null;return true;}
   // Player driving is accepted only for the real chassis + wheel-joint model.
@@ -138,12 +138,23 @@ export class WorldRigidBodyPhysics{
     if(record.wheels){const rotation=b3.b3Body_GetRotation(record.stepRotation,body);driveWheeled(this,record,dt,{position,velocity,rotation});}
     else if(record.target){
       const offset=record.target.position.map((value,index)=>value-position[index]),horizontal=Math.hypot(offset[0],offset[1]),distance=record.drone?length3(offset):horizontal;
-      if(distance>.03){
+      if(distance>.03||record.target.omnidirectional){
         const targetYaw=record.target.yaw??Math.atan2(offset[1],offset[0]),rotation=b3.b3Body_GetRotation(record.stepRotation,body),bodyYaw=quaternionYaw(rotation),yawError=wrap(targetYaw-bodyYaw),gain=record.target.response,maxAcceleration=record.target.maxAccelerationMps2;
         let force;
         if(record.drone){
           const vertical=offset[2]/Math.max(.01,distance),horizontalScale=Math.sqrt(Math.max(0,1-vertical*vertical)),desired=[Math.cos(targetYaw)*record.target.speedMps*horizontalScale,Math.sin(targetYaw)*record.target.speedMps*horizontalScale,vertical*record.target.speedMps],maxForce=record.massKg*maxAcceleration;
           force=limitedVector([(desired[0]-velocity[0])*record.massKg*gain,(desired[1]-velocity[1])*record.massKg*gain,(desired[2]-velocity[2])*record.massKg*gain],maxForce);
+        }else if(record.target.omnidirectional){
+          // On-foot FPS movement is camera-relative, including strafing.
+          // Drive this SAME authoritative Box3D body using physical forces,
+          // never teleport its camera or use vehicle-only forward traction.
+          const speed=record.target.speedMps;
+          const dirX=horizontal>.02?offset[0]/horizontal:0;
+          const dirY=horizontal>.02?offset[1]/horizontal:0;
+          const desired=[dirX*speed,dirY*speed];
+          const cap=record.massKg*maxAcceleration;
+          force=limitedVector([(desired[0]-velocity[0])*record.massKg*gain,
+            (desired[1]-velocity[1])*record.massKg*gain,0],cap);
         }else{
           const forwardX=Math.cos(bodyYaw),forwardY=Math.sin(bodyYaw),rightX=-forwardY,rightY=forwardX,forwardSpeed=velocity[0]*forwardX+velocity[1]*forwardY,lateralSpeed=velocity[0]*rightX+velocity[1]*rightY,alignment=Math.max(0,Math.cos(yawError)),turnSpeedScale=.12+.88*alignment*alignment,desiredForwardSpeed=record.target.speedMps*turnSpeedScale,longitudinalAccel=clamp((desiredForwardSpeed-forwardSpeed)*gain,-maxAcceleration,maxAcceleration),lateralAccel=clamp(-lateralSpeed*16,-22,22);
           force=[record.massKg*(forwardX*longitudinalAccel+rightX*lateralAccel),record.massKg*(forwardY*longitudinalAccel+rightY*lateralAccel),0];
