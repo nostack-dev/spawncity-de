@@ -98,3 +98,25 @@ jobs:
           done
           echo "::error::The native candidate has not propagated to the real public origin."
           exit 1
+
+  native-preview-real-osm:
+    name: Validate real OSM city on public native preview
+    needs: native-preview-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Install pinned browser driver
+        run: |
+          npm install --prefix /tmp/spawncity-native-public-test --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+          ln -s /tmp/spawncity-native-public-test/node_modules node_modules
+      - name: Prove actual OSM buildings visible AND collidable at published native URL
+        run: |
+          set -euo pipefail
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          PUBLIC_ORIGIN="$(node tools/public_site.mjs origin)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_preview_public_osm_test.mjs "${PUBLIC_ORIGIN}/native/"
