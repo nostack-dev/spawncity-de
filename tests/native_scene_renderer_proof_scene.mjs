@@ -1,4 +1,5 @@
 import {NativeSceneRenderer} from "../sim/native_scene_renderer.mjs";
+import {renderNativeStereo,setStereoEnabled} from "../sim/stereo_sbs.mjs";
 import {fromTRS} from "../sim/native_render_math.mjs";
 import {buildNativeCityGeometry} from "../sim/native_city_geometry.mjs";
 import {buildNativeTerrainTile} from "../sim/native_terrain_geometry.mjs";
@@ -125,6 +126,12 @@ const screenshot=document.createElement("canvas");screenshot.width=width;screens
 const context=screenshot.getContext("2d"),image=context.createImageData(width,height);
 for(let y=0;y<height;y++)image.data.set(pixels.subarray((height-1-y)*width*4,(height-y)*width*4),y*width*4);
 context.putImageData(image,0,0);
+// Real WebGL2 stereo proof: two scissored eyes into one canvas, same GPU
+// scene/shadow resources, and no additional GL context.
+setStereoEnabled(true);
+const stereoFrame=renderNativeStereo(renderer,{eye:[95,-122,115],target:[0,0,13],up:[0,0,1],near:.3,far:1000,fov:Math.PI/2.9},{mode:"jet"});
+gl.finish();const stereoGlError=gl.getError();
+setStereoEnabled(false);
 times.sort((a,b)=>a-b);
 globalThis.__nativeSceneProof={
   schema:"native-webgl2-scene-nonproduction-proof-v1",
@@ -136,7 +143,7 @@ globalThis.__nativeSceneProof={
   cpuFrameMs:stats.cpuMs,gpuTimeMs:stats.gpuMs,
   finishP50Ms:+times[Math.floor(times.length*.5)].toFixed(3),
   finishP95Ms:+times[Math.floor(times.length*.95)].toFixed(3),
-  nonBackgroundPixels:nonBackground,glError:errors,
+  nonBackgroundPixels:nonBackground,glError:errors,stereoDrawCalls:stereoFrame.drawCalls,stereoGlError,stereoEnabled:stereoFrame.stereo,
   renderer:String(gl.getParameter(gl.getExtension("WEBGL_debug_renderer_info")?.UNMASKED_RENDERER_WEBGL||gl.RENDERER)),
   imageDataUri:screenshot.toDataURL("image/png")
 };
