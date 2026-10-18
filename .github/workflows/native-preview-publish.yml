@@ -52,7 +52,7 @@ jobs:
           git fetch origin gh-pages
           git checkout -B gh-pages origin/gh-pages
           # Preserve existing production home, game, CNAME and sw. Only these
-          # two preview paths are staged and published. NEVER git push --force.
+          # two preview paths are staged and published. Existing Pages history must be preserved.
           mkdir -p native
           cp /tmp/spawncity-native-published/native_game.html native/index.html
           node -e 'const fs=require("fs");fs.writeFileSync("native/build.json",JSON.stringify({sha:process.env.SOURCE_SHA,renderer:"native-webgl2",nativeReleaseVerified:false,scope:"preview-only",hardwareAcceptance:"pending",url:process.env.PUBLIC_ORIGIN+"/native/"})+String.fromCharCode(10))'
