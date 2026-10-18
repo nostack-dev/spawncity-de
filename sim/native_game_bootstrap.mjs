@@ -27,7 +27,14 @@ function setModePressed(mode){
 const friendly=n=>Number.isFinite(n)?Number(n).toFixed(1):"—";
 function updateTelemetry(game,now){
  if(now-reported<180)return;reported=now;
- const pos=game.flight.position(),spd=Math.hypot(...game.flight.linear()),gpu=game.lastDraw?.gpu;
+ // In foot/car/jet mode the HUD must report the ACTUAL selected actor,
+ // not the idle drone sitting at ~0.1m. This previously made a blank
+ // FOOT screenshot appear to indicate a below-ground player.
+ const actorId={foot:"player-foot",car:"player-car",jet:"player-jet"}[game.mode];
+ const pose=actorId?game.rigids.pose(actorId):null;
+ const pos=pose?.position??game.flight.position();
+ const speed=pose?.velocity??game.flight.linear();
+ const spd=Math.hypot(...speed),gpu=game.lastDraw?.gpu;
  telemetry.textContent=game.mode.toUpperCase()+" · "+friendly(spd)+" m/s · "+
   "Z "+friendly(pos[2])+" m · "+game.simulatedTicks+" ticks · "+game.rigidSteps+" rigid · "+
   (gpu?.drawCalls??"—")+" draws · backlog "+friendly(game.backlogMs)+" ms · dropped "+friendly(game.discontinuityMs)+" ms";
