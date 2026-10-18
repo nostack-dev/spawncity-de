@@ -24,7 +24,7 @@ if(built){
  assert.doesNotMatch(candidate,/src=["']\.\/sim\/native_game_bootstrap\.mjs/,"must embed compiled pinned WASM, not request missing source");
  assert.ok(candidate.includes('id="gameMenuStart"'));
  assert.ok(candidate.includes("SPAWNCITY_NATIVE_CANDIDATE_SHA:"));
- assert.ok(candidate.includes("NativeGameRuntime")||candidate.includes("single-native-1khz-full-game-physics-v1"));
+ assert.ok(candidate.includes("native-webgl2-only"),"browser package must contain the actual native presenter, not only menu markup");
  assert.doesNotMatch(candidate,/THREE\.WebGLRenderer|three\.module\.js|@vite|unpkg|cdnjs/i);
 }
 console.log("single native browser entry: genuine pinned Box3D, Flight Core, WebGL2, OSM, input, no legacy fallback");
