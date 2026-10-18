@@ -56,6 +56,20 @@ const hasWorldPixels=p=>p.pixelSamples>200&&p.uniqueColors>6
 const diagnostics=[];
 try{
  const page=await browser.newPage();
+ // Diagnostic instrumentation is installed ONLY in Chromium E2E. The actual
+ // published game remains untouched. If the real city seems blank despite
+ // 1300 meshes, identify whether GPU face or depth rejection hides it.
+ await page.evaluateOnNewDocument(()=>{
+  const proto=WebGL2RenderingContext.prototype;
+  for(const name of ["drawElementsInstanced","drawArraysInstanced"]){
+   const draw=proto[name];
+   proto[name]=function(...args){
+    if(window.__nativeDiagnosticNoCull)this.disable(this.CULL_FACE);
+    if(window.__nativeDiagnosticNoDepth)this.disable(this.DEPTH_TEST);
+    return draw.apply(this,args);
+   };
+  }
+ });
  page.on("pageerror",err=>diagnostics.push("pageerror: "+String(err).slice(0,220)));
  page.on("console",m=>{
   if(["error","warning"].includes(m.type()))diagnostics.push(m.type()+": "+m.text().slice(0,280));
@@ -112,9 +126,20 @@ try{
    backlogMs:observed.probe?.backlogMs});
   if(observed.renderer!=="native-webgl2-only"||!observed.probe?.camera
    ||!(observed.probe.meshCount>50)||!(observed.probe.cityStats?.built>0)
-   ||!hasWorldPixels(pixels))
+   ||!hasWorldPixels(pixels)){
+   const diagnostic={};
+   if(mode==="foot"){
+    await page.evaluate(()=>{window.__nativeDiagnosticNoCull=true;});
+    await new Promise(done=>setTimeout(done,260));
+    diagnostic.noCulling=centralWorldPixels(await page.screenshot());
+    await page.evaluate(()=>{window.__nativeDiagnosticNoDepth=true;});
+    await new Promise(done=>setTimeout(done,260));
+    diagnostic.noCullingNoDepth=centralWorldPixels(await page.screenshot());
+    await page.evaluate(()=>{window.__nativeDiagnosticNoCull=false;window.__nativeDiagnosticNoDepth=false;});
+   }
    throw Error("Actual public native "+mode+" gameplay view blank or disconnected: "+
-    JSON.stringify(modes.at(-1)));
+    JSON.stringify({...modes.at(-1),diagnostic}));
+  }
   if(!(observed.probe.backlogMs<135))
    throw Error("Native "+mode+" physics latency unbounded: "+observed.probe.backlogMs);
  }
