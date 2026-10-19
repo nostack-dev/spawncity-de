@@ -1,11 +1,9 @@
 // Production-shaped browser bootstrap for one native WebGL2 game.
 // Both WASM engines are compiled from this repository's pinned original
-// sources, with no CDN, THREE, legacy graphics path or second renderer.
+// sources. Presentation, input and OSM enter through the sealed engine only.
 import Box3DFactory from "box3d.js/dist/box3d.inline.mjs";
 import FlightCoreFactory from "../generated/flight_core.mjs";
-import {NativeGameRuntime} from "./native_game_runtime.mjs";
-import {NativeGameInput} from "./native_game_input.mjs";
-import {fetchNativeOsm,NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
+import {NativeGameRuntime,NativeGameInput,fetchNativeOsm,NATIVE_DEMO_CITY} from "./native_engine.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);

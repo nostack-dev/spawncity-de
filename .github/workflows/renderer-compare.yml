@@ -147,6 +147,8 @@ jobs:
           node tests/renderer_exclusive_release_contract_test.mjs
           node tests/no_three_production_dependency_test.mjs
           node tests/renderer_acceptance_selftest.mjs
+          node --check sim/native_engine.mjs
+          node tests/native_engine_seal_test.mjs
       - name: Require a full no-Three native engine with 15 hardware scenarios
         run: node tests/renderer_acceptance_gate.mjs --gate
       - name: Retain exact missing migration blockers
