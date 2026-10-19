@@ -20,7 +20,7 @@ Packages other than the pinned `box3d.js` runtime are rejected.
 
 That seal is the engine. It is not the game cutover. The live
 `drone_simulator.html` modules that still import Three stay outside the graph
-so they can be ported one system at a time onto `NATIVE_ENGINE_REPLACEMENTS`
+so they can be ported one system at a time onto the exports of `sim/native_engine.mjs`
 (renderer, scene graph, camera, pick, lights, instancing, particles, loop).
 Do not add a Three shim, a second canvas, or a `?render=` fallback to make a
 partial port look shipped. `renderer_acceptance_gate.mjs --gate` remains the

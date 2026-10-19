@@ -79,24 +79,22 @@ assert.ok(inside.has("native_world_presenter.mjs"));
 assert.ok(inside.has("native_game_runtime.mjs"));
 assert.ok(inside.size>=40,"engine closure collapsed: "+inside.size);
 
-const replacements={
- "THREE.WebGLRenderer":["native_scene_renderer.mjs","class NativeSceneRenderer"],
- "THREE.Scene":["native_scene_graph.mjs","class NativeSceneGraph"],
- "THREE.PerspectiveCamera":["native_world_presenter.mjs","setCamera("],
- "THREE.Raycaster":["native_world_presenter.mjs","pick(x,y,options)"],
- "Box3D gameplay ray":["native_world_presenter.mjs","pickGameplay(x,y"],
- "THREE.PointLight":["native_world_presenter.mjs","requestLight(position,opts)"],
- "THREE.InstancedMesh":["native_scene_renderer.mjs","upsert(id,input)"],
- "weapon particles":["native_effects.mjs","emit({kind"],
- "attachment hierarchy":["native_scene_graph.mjs","add(id,"],
- "game loop owner":["native_game_runtime.mjs","class NativeGameRuntime"]
-};
-const declared=[...engine.match(/NATIVE_ENGINE_REPLACEMENTS=Object\.freeze\((\{[\s\S]*?\})\)/)[1].matchAll(/"([^"]+)":/g)].map(m=>m[1]);
-assert.deepEqual(declared,Object.keys(replacements));
-for(const [key,[file,needle]] of Object.entries(replacements)){
- assert.equal(engine.includes('"'+key+'"'),true,"replacement missing "+key);
- assert.ok(readFileSync(join(root,file),"utf8").includes(needle),key+" does not point at a real engine method");
-}
+assert.doesNotMatch(engine,/THREE\.WebGLRenderer|three\.module\.js|@vite|unpkg|cdnjs/i,
+ "the sealed engine is bundled into /native/ and must not carry legacy loader names");
+const targets=[
+ ["native_scene_renderer.mjs","class NativeSceneRenderer"],
+ ["native_scene_graph.mjs","class NativeSceneGraph"],
+ ["native_world_presenter.mjs","setCamera("],
+ ["native_world_presenter.mjs","pick(x,y,options)"],
+ ["native_world_presenter.mjs","pickGameplay(x,y"],
+ ["native_world_presenter.mjs","requestLight(position,opts)"],
+ ["native_scene_renderer.mjs","upsert(id,input)"],
+ ["native_effects.mjs","emit({kind"],
+ ["native_scene_graph.mjs","add(id,"],
+ ["native_game_runtime.mjs","class NativeGameRuntime"]
+];
+for(const [file,needle] of targets)
+ assert.ok(readFileSync(join(root,file),"utf8").includes(needle),"engine surface missing "+file+" "+needle);
 const boot=readFileSync(join(root,"native_game_bootstrap.mjs"),"utf8");
 assert.match(boot,/from "\.\/native_engine\.mjs"/);
 assert.doesNotMatch(boot,/from "\.\/native_game_runtime\.mjs"|from "\.\/native_game_input\.mjs"|from "\.\/native_osm_source\.mjs"/);
