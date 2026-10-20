@@ -36,7 +36,9 @@ jobs:
             -s 'EXPORTED_RUNTIME_METHODS=["HEAPU8"]' \
             -s 'EXPORTED_FUNCTIONS=["_fc_input_buffer","_fc_output_buffer","_fc_input_size","_fc_output_size","_fc_reset","_fc_process","_fc_protocol_version"]' \
             -s ENVIRONMENT=web -o generated/flight_core.mjs
-          npm install --prefix /tmp/spawncity-native-bundle --ignore-scripts --no-audit --no-fund esbuild@0.25.8
+          npm install --prefix /tmp/spawncity-native-bundle --ignore-scripts --no-audit --no-fund \
+            esbuild@0.25.8 mqtt@5.15.2 nostr-tools@2.24.1 \
+            trystero@0.25.3 @trystero-p2p/mqtt@0.25.3 @trystero-p2p/torrent@0.25.3
           ln -s /tmp/spawncity-native-bundle/node_modules node_modules
           ./node_modules/.bin/esbuild sim/native_game_bootstrap.mjs --bundle --format=esm --platform=browser --target=es2022 --minify \
             --alias:box3d.js/dist/box3d.inline.mjs="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" \
