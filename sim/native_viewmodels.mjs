@@ -42,11 +42,18 @@ export function syncNativeViewmodel(game){
     shown=key;
   }
   const hold=HOLD[key]||HOLD.smg;
+  globalThis.__nativeViewmodelHold=hold;
+  const ads=Math.max(0,Math.min(1,Number(globalThis.__arondightAds?.t)||0));
+  const shotAge=performance.now()-(Number(globalThis.__nativeLastShotAt)||-1e9);
+  const recoil=shotAge>=0&&shotAge<90?Math.sin(shotAge/90*Math.PI):0;
   const eye=cam.eye,forward=unit([cam.target[0]-eye[0],cam.target[1]-eye[1],cam.target[2]-eye[2]]);
   const right=unit(cross(forward,cam.up||[0,0,1]));
   const lift=unit(cross(right,forward));
   const back=[-forward[0],-forward[1],-forward[2]];
-  const pos=add(add(add(eye,right,hold.right),lift,-hold.down),forward,hold.forward);
+  const rightM=hold.right*(1-ads*.85);
+  const downM=hold.down*(1-ads*.7);
+  const forwardM=hold.forward-recoil*.06+ads*.08;
+  const pos=add(add(add(eye,right,rightM),lift,-downM),forward,forwardM);
   const transforms=new Float32Array([
     right[0],right[1],right[2],0,
     lift[0],lift[1],lift[2],0,
