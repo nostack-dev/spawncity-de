@@ -5,6 +5,7 @@ import {bulletImpulse} from "./ballistics.mjs";
 import {fromTRS} from "./native_render_math.mjs";
 import {findXboxGamepad} from "./xbox_gamepad.mjs";
 import {nativeFireShot,tickNativeFireFx} from "./native_fire_fx.mjs";
+import {hitNativePeople} from "./native_city_life.mjs";
 import {ORIGINAL_MISSILE,ORIGINAL_GUIDED,ORIGINAL_GRENADE} from "./native_actor_meshes.mjs";
 
 export const NATIVE_WEAPONS_VERSION="live-rates-box3d-ray-v1";
@@ -54,7 +55,8 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
   function shootHitscan(now,range,kind,clientX,clientY){
     const ray=aim(clientX,clientY);if(!ray)return false;
     const hit=game.rigids.raycast(ray.origin,ray.direction,range);
-    const end=hit?.point||add(ray.origin,ray.direction,Math.min(range,80));
+    const person=hitNativePeople(ray.origin,ray.direction,range);
+    const end=person?.point||hit?.point||add(ray.origin,ray.direction,Math.min(range,80));
     tracer(ray.origin,end,game.mode,game.mode==="foot"?state.foot:state.drone,clientX,clientY);
     if(hit&&hit.id!==selfId(game.mode))impact(hit,kind,ray.direction);
     if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,at:now}}));
