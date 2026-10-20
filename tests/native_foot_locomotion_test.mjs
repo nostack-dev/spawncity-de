@@ -1,0 +1,16 @@
+import assert from "node:assert/strict";
+import {createFootMotion,stepFootMotion,FOOT_JUMP_V,FOOT_WALK_MPS,FOOT_SPRINT_MPS,FOOT_JET_BURST_S} from "../sim/native_foot_locomotion.mjs";
+const m=createFootMotion();
+const ground=stepFootMotion(m,{now:0,dt:1/60,jumpHeld:true,grounded:true,vz:0,gapM:0});
+assert.ok(Math.abs(ground.dvz-FOOT_JUMP_V)<1e-9,"a grounded press leaves the ground at 3.6 m/s");
+assert.equal(FOOT_WALK_MPS,5.5);assert.equal(FOOT_SPRINT_MPS,8.1);
+const air=createFootMotion();air.fuel=1;
+stepFootMotion(air,{now:0,dt:1/60,jumpHeld:false,grounded:false,vz:-1,gapM:4});
+const burst=stepFootMotion(air,{now:20,dt:1/60,jumpHeld:true,grounded:false,vz:-1,gapM:4});
+assert.equal(burst.thrusting,true);
+assert.ok(air.fuel<1,"a jetpack burst burns fuel");
+assert.ok(air.burstLeft<FOOT_JET_BURST_S);
+const hard=createFootMotion();hard.airborne=true;hard.vz=-10;
+const land=stepFootMotion(hard,{now:1000,dt:1/60,grounded:true,vz:0,gapM:0});
+assert.ok(land.landImpact>7.7,"a hard landing reports the fall speed");
+console.log("native foot handling: live walk/sprint, 3.6 m/s jump, jetpack burst and fall impact");

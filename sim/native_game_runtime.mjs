@@ -5,6 +5,7 @@
 import {createNativeFlightPhysics,nativeDefaultFlightParams} from "./native_flight_physics.mjs";
 import {NativeFlightController} from "./native_flight_controller_wasm.mjs";
 import {WorldRigidBodyPhysics,WORLD_PHYSICS_CATEGORIES} from "./world_rigid_body_physics.mjs";
+import {createFootMotion,stepFootMotion,paintJetpackFuel,FOOT_WALK_MPS,FOOT_SPRINT_MPS,FOOT_FALL_SAFE_MPS,FOOT_FALL_LETHAL_MPS} from "./native_foot_locomotion.mjs";
 import {JET_SPEC,createAirframe,airframeStep,setFlightMode} from "./jet_flight_dynamics.mjs";
 import {NativeWorldPresenter} from "./native_world_presenter.mjs";
 import {nativeBuildingCollisionSnapshot,syncNativeBuildingCollisions} from "./native_building_collision_bridge.mjs";
@@ -45,7 +46,7 @@ export class NativeGameRuntime{
   this.rigids=new WorldRigidBodyPhysics(b3,{onImpact:detail=>this.onImpact(detail)});
   this.jetAirframe=createAirframe();
   this.rigids.addBody({id:"player-foot",kind:"human",wheeled:false,position:[1,0,.97],
-   massKg:82,halfExtents:[.23,.23,.88],gravityScale:1});
+   massKg:82,halfExtents:[.23,.23,.88],gravityScale:1,linearDamping:0});
   this.rigids.addBody({id:"player-car",kind:"car",position:[8,1,.9],
    massKg:1420,halfExtents:[1.78,.82,.42],yaw:0});
   this.rigids.addBody({id:"player-jet",kind:"aircraft",position:[-24,0,JET_SPEC.gearHeight+.1],
@@ -57,6 +58,7 @@ export class NativeGameRuntime{
     })
    })});
   this.footInput={forward:0,strafe:0,sprint:false,jump:false,yaw:0,pitch:0};
+  this.footMotion=createFootMotion();
   this.carInput={pedal:0,steer:0,handbrake:true};
   this.jetInput={lift:0,yawIn:0,pitchIn:0,rollIn:0,brake:0};
   this.spectator=false;
@@ -130,18 +132,28 @@ export class NativeGameRuntime{
   if(this.mode==="foot"){
    const pose=this.rigids.pose("player-foot");
    if(pose){
-    const a=this.footInput.yaw,f=this.footInput.forward,s=this.footInput.strafe;
-    const speed=this.footInput.sprint?7:4;
-    const dx=(Math.sin(a)*f+Math.cos(a)*s)*speed*dt,
-      dy=(Math.cos(a)*f-Math.sin(a)*s)*speed*dt;
+    const half=pose.groundOffset||.88;
+    const probe=this.rigids.raycast([pose.position[0],pose.position[1],pose.position[2]+.3],[.001,.001,-1],half+1.4,{maskBits:WORLD_PHYSICS_CATEGORIES.terrain});
+    const gap=probe?pose.position[2]-half-probe.point[2]:1;
+    const grounded=Boolean(probe)&&gap<.18&&pose.velocity[2]<1.6;
+    const motion=stepFootMotion(this.footMotion,{now:performance.now(),dt,jumpHeld:this.footInput.jump,grounded,vz:pose.velocity[2],gapM:Math.max(0,gap),dead:Boolean(globalThis.__arondightPlayerDamageModel?.dead)});
+    if(motion.landImpact>FOOT_FALL_SAFE_MPS){
+     const span=FOOT_FALL_LETHAL_MPS-FOOT_FALL_SAFE_MPS;
+     globalThis.__arondightPlayerDamageModel?.damage?.(Math.round(100*Math.min(1,(motion.landImpact-FOOT_FALL_SAFE_MPS)/span)));
+    }
+    if(motion.dvz)this.rigids.applyImpulse("player-foot",[0,0,82*motion.dvz]);
+    const a=this.footInput.yaw,f=this.footInput.forward,s=this.footInput.strafe,mag=Math.hypot(f,s);
+    const speed=mag>.05?(this.footInput.sprint?FOOT_SPRINT_MPS:FOOT_WALK_MPS):0;
+    const dx=mag>.05?(Math.sin(a)*f+Math.cos(a)*s)/mag:0;
+    const dy=mag>.05?(Math.cos(a)*f-Math.sin(a)*s)/mag:0;
     this.rigids.setTarget("player-foot",{
      position:[pose.position[0]+dx,pose.position[1]+dy,pose.position[2]],
-     // Camera forward yaw=0 points +Y; Box3D body yaw=0 points +X.
-     // Physical omni forces enable real W/A/S/D strafing without camera teleport.
-     speedMps:speed,response:6,yaw:a+Math.PI/2,omnidirectional:true
+     speedMps:speed,response:grounded?14:6,maxAccelerationMps2:motion.maxAccel,
+     yaw:a+Math.PI/2,omnidirectional:true
     });
    }
-  }else this.rigids.clearTarget("player-foot");
+   paintJetpackFuel(this.footMotion,{onFoot:true});
+  }else{this.rigids.clearTarget("player-foot");paintJetpackFuel(this.footMotion,{onFoot:false});}
   if(this.mode==="car")
    // Live car: D is +1 and turns right. This rack's positive angle is a left turn.
    this.rigids.setDrive("player-car",{...this.carInput,steer:-this.carInput.steer,maxSpeed:36,maxReverse:9});
