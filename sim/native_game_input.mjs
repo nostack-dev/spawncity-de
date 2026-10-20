@@ -3,11 +3,15 @@
 // applyGameStick and the AGL height law turn it into Flight Core commands,
 // and foot / car / jet use the same keys as the live game.
 import "./desktop_controls.mjs";
+import "./foot_touch_controller.mjs";
+import "./pad_actions.mjs";
 import {applyGameStick,stepGroundClearanceTarget,clearanceRateMps,clearanceLeadM,MIN_GAME_CLEARANCE_M,MAX_GAME_CLEARANCE_M} from "./control_semantics.mjs";
-import {shapeFirstPersonMove,loadFirstPersonControlSettings} from "./first_person_control_settings.mjs";
-import {FPS_PITCH_LIMIT_RAD,wrapFpsAngleRad} from "./fps_control_math.mjs";
+import {shapeFirstPersonMove,loadFirstPersonControlSettings,firstPersonLookDelta,firstPersonLookAxes,firstPersonLookSensitivity,buildFirstPersonLookProfile} from "./first_person_control_settings.mjs";
+import {FPS_CONTROL_PROFILE,FPS_PITCH_LIMIT_RAD,wrapFpsAngleRad,fpsTouchLookDelta,shapeFpsStick,fpsStickVelocity} from "./fps_control_math.mjs";
 import {findXboxGamepad,sampleXboxGamepad} from "./xbox_gamepad.mjs";
 import {loadVehicleControlSettings} from "./vehicle_control_settings.mjs";
+import {installNativeFlightTouch,readNativeFlightTouch} from "./native_flight_touch.mjs";
+import {claimSticks,releaseSticks,sticks} from "./shared_sticks.mjs";
 export const NATIVE_GAME_INPUT_VERSION="native-game-input-v1";
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,Number(x)||0));
 const deadzone=(v,d=.12)=>Math.abs(v)<=d?0:Math.sign(v)*Math.min(1,(Math.abs(v)-d)/(1-d));
@@ -57,11 +61,32 @@ export class NativeGameInput{
   this.handlers=[];this.root=stickRoot;this.pointerLocked=false;
   this.main=Boolean(globalThis.__arondightDesktopInput)&&this.win===globalThis.window;
   this.prevArm=false;this.prevCam=false;this.heightHeld=false;this.mouseStick={x:0,y:0};this.lastMs=0;
+  this.touchMove={x:0,y:0};this.touchSprint=false;this.jumpHeld=false;this.stickOwner=null;this.vehicleFire=false;
   if(this.main){
+   installNativeFlightTouch();
+   import("./xbox_control_mode.mjs");
+   const jump=this.doc.getElementById?.("footJump");
+   jump?.addEventListener("pointerdown",e=>{this.jumpHeld=true;e.preventDefault();});
+   for(const type of ["pointerup","pointercancel"])jump?.addEventListener(type,()=>{this.jumpHeld=false;});
    this.walk={mode:"drone",
     setMode:mode=>{try{runtime.setMode(mode==="foot"?"foot":"drone");}catch{}this.syncModeClasses();},
+    beginTouchLook(){},endTouchLook(){},
+    setTouchMove:(x,y,{sprint=false}={})=>{
+     const shaped=shapeFirstPersonMove(x,y,loadFirstPersonControlSettings());
+     this.touchMove=shaped;this.touchSprint=Boolean(sprint);
+    },
+    applyTouchLook:({dx=0,dy=0,speedPxS}={})=>{
+     const s=loadFirstPersonControlSettings(),input=firstPersonLookDelta(dx,dy,s),look=fpsTouchLookDelta(input.x,input.y,{speedPxS}),sens=firstPersonLookSensitivity(s);
+     this.yaw=wrapFpsAngleRad(this.yaw+look.yaw*sens.yaw);
+     this.pitch=clamp(this.pitch+look.pitch*sens.pitch,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
+    },
+    applyTouchLookStick:({x=0,y=0,dt=1/60}={})=>{
+     const s=loadFirstPersonControlSettings(),profile={...buildFirstPersonLookProfile(FPS_CONTROL_PROFILE,s),innerDeadzone:.025};
+     const axes=firstPersonLookAxes(x,y,s),stick=shapeFpsStick(axes.x,axes.y,profile),velocity=fpsStickVelocity(stick,profile,{touch:true}),sens=firstPersonLookSensitivity(s);
+     this.yaw=wrapFpsAngleRad(this.yaw+velocity.yaw*sens.yaw*dt);
+     this.pitch=clamp(this.pitch+velocity.pitch*sens.pitch*dt,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
+    },
     applyMouseLook:({dx,dy}={})=>{
-     // player_walk_mode_v4.applyMouseLook: 0.0026 rad/count, first-person sensitivity.
      if(this.runtime.mode!=="foot")return null;
      const s=loadFirstPersonControlSettings();
      const h=(Number(s.horizontalLookSensitivityPercent)||100)/100;
@@ -87,7 +112,7 @@ export class NativeGameInput{
     const move=new Set(["KeyW","KeyA","KeyS","KeyD","Space","ShiftLeft","ShiftRight","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
     if(move.has(e.code)){this.keys.add(e.code);e.preventDefault?.();return;}
     if(e.code==="KeyV"&&mode==="foot"){try{runtime.setMode("drone");}catch{}e.preventDefault?.();return;}
-    if(e.code==="KeyF"){
+    if(e.code==="KeyF"||e.code==="KeyE"){
      try{runtime.setMode(mode==="foot"?"car":"foot");}catch{}
      e.preventDefault?.();return;
     }
@@ -182,6 +207,13 @@ export class NativeGameInput{
   const dt=this.lastMs?clamp((now-this.lastMs)/1000,1/240,.1):1/60;
   this.lastMs=now;
   const mode=this.runtime.mode;
+  const desktop=Boolean(this.doc.body?.classList.contains("desktop-input"));
+  if(!desktop&&(mode==="car"||mode==="jet")){
+   if(this.stickOwner!==mode){
+    claimSticks({name:mode,labels:mode==="jet"?{move:"STEIGEN / SCHUB",look:"KNÜPPEL",fire:"KANONE"}:{move:"GAS",look:"LENKEN",fire:"BRAKE"},onFire:v=>{this.vehicleFire=Boolean(v);}});
+    this.stickOwner=mode;
+   }
+  }else if(this.stickOwner){releaseSticks();this.stickOwner=null;this.vehicleFire=false;}
   const held=code=>this.keys.has(code);
   const base={arm:this.arm,gameMode:true,groundClearance:this.clearance,throttle:0,roll:0,pitch:0,yaw:0,bodyPitch:0,
    foot:{forward:0,strafe:0,yaw:this.yaw,pitch:this.pitch,sprint:false,jump:false},
@@ -190,8 +222,15 @@ export class NativeGameInput{
   if(mode==="drone"){
    const d=globalThis.__arondightDesktopDroneInput;
    const pad=sampleXboxGamepad(findXboxGamepad(this.navigator?.getGamepads?.()));
+   const touch=readNativeFlightTouch();
    const desktopFlying=Boolean(d?.active)&&(d.left.x||d.left.y||Math.abs(d.right.x)>.02||Math.abs(d.right.y)>.02||d.heightAxis||d.arm||d.camera);
-   if(pad&&!desktopFlying){
+   if(touch.touching&&!desktopFlying){
+    applyGameStick(base,"left",touch.left,touch.settings);
+    applyGameStick(base,"right",touch.right,touch.settings);
+    this.steerHeight(touch.height);
+    base.groundClearance=this.clearance;base.arm=this.arm;
+    globalThis.__nativeFlightClearanceLabel?.(this.clearance.toFixed(1)+" m");
+   }else if(pad&&!desktopFlying){
     applyGameStick(base,"left",pad.left);
     applyGameStick(base,"right",pad.aim?{x:0,y:0}:pad.right);
     this.steerHeight(pad.heightAxis);
@@ -213,32 +252,33 @@ export class NativeGameInput{
   }else if(mode==="foot"){
    // player_walk_mode_v4.update: keys plus the shaped first-person stick.
    const fps=loadFirstPersonControlSettings();
+   const stick=this.touchMove||{x:0,y:0};
    const pad=findXboxGamepad(this.navigator?.getGamepads?.());
-   const stick=pad?shapeFirstPersonMove(pad.axes?.[0],pad.axes?.[1],fps):{x:0,y:0};
-   let forward=-stick.y+(held("KeyW")?1:0)-(held("KeyS")?1:0);
-   let strafe=stick.x+(held("KeyD")?1:0)-(held("KeyA")?1:0);
+   const padMove=pad?shapeFirstPersonMove(pad.axes?.[0],pad.axes?.[1],fps):{x:0,y:0};
+   let forward=-stick.y-padMove.y+(held("KeyW")?1:0)-(held("KeyS")?1:0);
+   let strafe=stick.x+padMove.x+(held("KeyD")?1:0)-(held("KeyA")?1:0);
    const mag=Math.hypot(forward,strafe);
    if(mag>1){forward/=mag;strafe/=mag;}
    base.foot.forward=forward;base.foot.strafe=strafe;
-   base.foot.sprint=held("ShiftLeft")||held("ShiftRight")||(pad?Math.max(0,Number(pad.buttons?.[10]?.value)||(pad.buttons?.[10]?.pressed?1:0))>.5:false);
-   base.foot.jump=held("Space")||(pad?Math.max(0,Number(pad.buttons?.[0]?.value)||(pad.buttons?.[0]?.pressed?1:0))>.5:false);
+   base.foot.sprint=held("ShiftLeft")||held("ShiftRight")||this.touchSprint||(pad?Math.max(0,Number(pad.buttons?.[10]?.value)||(pad.buttons?.[10]?.pressed?1:0))>.5:false);
+   base.foot.jump=held("Space")||this.jumpHeld||(pad?Math.max(0,Number(pad.buttons?.[0]?.value)||(pad.buttons?.[0]?.pressed?1:0))>.5:false);
    base.foot.yaw=this.yaw;base.foot.pitch=this.pitch;
   }else if(mode==="car"){
    // gta_runtime_v1.updateVehicle, written into the engine drive instead of a second car.
    const car=loadVehicleControlSettings();
    const pad=findXboxGamepad(this.navigator?.getGamepads?.());
-   let steer=(held("KeyA")?-1:0)+(held("KeyD")?1:0);
-   let gas=held("KeyW")?1:0,brake=held("KeyS")?1:0;
+   let steer=(held("KeyA")?-1:0)+(held("KeyD")?1:0)+(this.stickOwner==="car"?sticks.look.x:0);
+   let gas=Math.max(held("KeyW")?1:0,this.stickOwner==="car"?Math.max(0,-sticks.move.y):0),brake=Math.max(held("KeyS")?1:0,this.vehicleFire&&this.stickOwner==="car"?1:0);
    if(pad){steer+=clamp(pad.axes?.[0],-1,1);gas=Math.max(gas,clamp(pad.buttons?.[7]?.value||0,0,1));brake=Math.max(brake,clamp(pad.buttons?.[6]?.value||0,0,1));}
    const scale=car.throttleSensitivityPercent/100,turn=car.steeringSensitivityPercent/100;
    base.car.pedal=clamp((gas-brake)*scale,-1,1);
    base.car.steer=clamp(steer*turn,-1,1);
    base.car.handbrake=held("Space");
   }else if(mode==="jet"){
-   let lift=(held("KeyW")?1:0)-(held("KeyS")?1:0);
-   let yawIn=(held("KeyD")?1:0)-(held("KeyA")?1:0);
-   let pitchIn=(held("ArrowUp")?-1:0)+(held("ArrowDown")?1:0);
-   let rollIn=(held("ArrowRight")?1:0)-(held("ArrowLeft")?1:0);
+   let lift=(held("KeyW")?1:0)-(held("KeyS")?1:0)-(this.stickOwner==="jet"?sticks.move.y:0);
+   let yawIn=(held("KeyD")?1:0)-(held("KeyA")?1:0)+(this.stickOwner==="jet"?sticks.move.x:0);
+   let pitchIn=(held("ArrowUp")?-1:0)+(held("ArrowDown")?1:0)+(this.stickOwner==="jet"?sticks.look.y:0);
+   let rollIn=(held("ArrowRight")?1:0)-(held("ArrowLeft")?1:0)+(this.stickOwner==="jet"?sticks.look.x:0);
    const desk=globalThis.__arondightDesktopInput;
    if(desk?.active&&desk.locked){
     const d=desk.takeMouseDelta?.()||{x:0,y:0};
