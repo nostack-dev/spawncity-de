@@ -118,7 +118,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     const canvas=game.world.renderer?.canvas;
     if(document.pointerLockElement===canvas){
       if(game.mode==="foot"){state.held=true;foot.fireAt({clientX:e.clientX,clientY:e.clientY});}
-      else if(game.mode==="jet")state.jetHeld=true;
+      else if(game.mode==="jet"||game.mode==="car"){state.held=true;state.jetHeld=game.mode==="jet";}
       return;
     }
     if(e.pointerType==="mouse")return;
@@ -159,10 +159,13 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
       const pad=findXboxGamepad(typeof navigator==="undefined"?null:navigator.getGamepads?.());
       const rt=pad?Math.max(0,Number(pad.buttons?.[7]?.value)||(pad.buttons?.[7]?.pressed?1:0))>.5:false;
       if(game.mode==="drone"&&(sample?.fire||state.touchFire||rt))fireDrone(now);
-      if(game.mode==="foot"&&(state.held||rt)&&state.foot==="smg")foot.fireAt({});
-      if(game.mode==="foot"&&rt&&!state.padFire&&state.foot!=="smg")foot.fireAt({});
+      if(game.mode==="foot"&&(state.held||rt)){
+        if(state.foot==="smg"||state.foot==="glock")foot.fireAt({});
+        else if(rt&&!state.padFire)foot.fireAt({});
+      }
       state.padFire=rt;
-      if(game.mode==="jet"&&state.jetHeld&&now>=state.nextDrone){if(shootHitscan(now,650,"5.56"))state.nextDrone=now+92;}
+      if(game.mode==="jet"&&(state.jetHeld||rt||sample?.fire)&&now>=state.nextDrone){if(shootHitscan(now,650,"5.56"))state.nextDrone=now+92;}
+      if(game.mode==="car"&&(state.held||rt)&&now>=state.nextDrone){if(shootHitscan(now,180,"9mm"))state.nextDrone=now+110;}
       const dt=Math.min(.05,1/60);
       for(let i=rounds.length-1;i>=0;i--){
         const p=rounds[i];

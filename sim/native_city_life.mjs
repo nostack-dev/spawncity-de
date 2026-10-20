@@ -1,7 +1,7 @@
 // The live city, on native. People are the original pedestrian_agents.
 // Cars ride the original traffic routes. No invented crowd.
 import {buildTrafficRoute} from "./world_traffic_routes.mjs";
-import {createPedestrianNetwork,seedRouteAgents,stepAgent,frighten} from "./pedestrian_agents.mjs";
+import {createPedestrianNetwork,seedRouteAgents,stepAgent,frighten,provoke} from "./pedestrian_agents.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeStreetLamps} from "./native_street_lamps.mjs";
 import {ORIGINAL_SEDAN} from "./native_original_vehicles.mjs";
@@ -67,9 +67,24 @@ export function hitNativePeople(origin,dir,range){
     if(px*px+py*py+pz*pz<.45*.45){best=a;bestT=t;}
   }
   if(!best)return null;
-  best.alive=false;best.knocked=true;
+  best.hp=(best.hp??100)-34;
+  const reaction=provoke(best,performance.now(),{shot:true,by:{x:origin[0],y:origin[1]}});
+  if(best.hp<=0){best.alive=false;best.knocked=true;}
+  frightenAround(best.x,best.y,16,performance.now(),1.2);
   globalThis.__arondightWantedSystem?.reportCrime?.({id:`person-${best.id}-${Math.round(performance.now())}`,kind:"person-hit",severity:1});
-  return {id:best.id,point:[origin[0]+dir[0]*bestT,origin[1]+dir[1]*bestT,origin[2]+dir[2]*bestT]};
+  return {id:best.id,point:[origin[0]+dir[0]*bestT,origin[1]+dir[1]*bestT,origin[2]+dir[2]*bestT],reaction};
+}
+function frightenAround(x,y,radius,now,strength=1){
+  for(const a of people){
+    if(!a.alive||a.knocked)continue;
+    const d=Math.hypot(a.x-x,a.y-y);
+    if(d<radius)frighten(a,x,y,now,{strength:strength*(1-d/radius*.5)});
+  }
+}
+if(typeof window!=="undefined"){
+  addEventListener("arondight:weapon-fired",()=>{
+    const p=playerPos();frightenAround(p[0],p[1],10,performance.now(),1);
+  });
 }
 export function tickNativeCityLife(game,now=performance.now()){
   if(!net)return;
