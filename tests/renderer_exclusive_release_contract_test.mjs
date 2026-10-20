@@ -6,8 +6,10 @@ import assert from "node:assert/strict";
 import {readFileSync,readdirSync,existsSync} from "node:fs";
 
 const read=p=>readFileSync(p,"utf8");
-const bootstrap=read("sim/real_world_bootstrap.mjs");
-const simulator=read("sim/simulator.mjs");
+const bootPath=existsSync("sim/real_world_bootstrap.mjs")?"sim/real_world_bootstrap.mjs":"legacy-three/sim/real_world_bootstrap.mjs";
+const simPath=existsSync("sim/simulator.mjs")?"sim/simulator.mjs":"legacy-three/sim/simulator.mjs";
+const bootstrap=read(bootPath);
+const simulator=read(simPath);
 const runtime=bootstrap+"\n"+simulator;
 for(const pattern of [
   /NativeCitySlice|nativeCityFallback|nativeCityRequested/,

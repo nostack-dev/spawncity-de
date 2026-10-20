@@ -16,6 +16,7 @@ import {nativeFlightPoseView} from "./native_flight_pose_view.mjs";
 import {nativeGameplayCamera,nativeLiveGameplayState} from "./native_gameplay_camera.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
+import {NativeStreetLamps} from "./native_street_lamps.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
 import {NativePeerVisuals} from "./native_peer_visuals.mjs";
@@ -40,6 +41,7 @@ export class NativeWorldPresenter{
   this.launchPad=new NativeLaunchPad(this.renderer,{heightAt:this.terrain.heightAt});
   this.city=new NativeCityStream(this.renderer,cityOptions);
   this.roads=new NativeRoadStream(this.renderer,{heightAt:this.terrain.heightAt,...roadOptions});
+  this.lamps=new NativeStreetLamps(this.renderer,{heightAt:this.terrain.heightAt});
   this.rigids=new NativeRigidVisuals(this.renderer,poseSource,{
    hiddenBodyIds:gameplayState?["player-foot"]:[]
   });
@@ -103,7 +105,7 @@ export class NativeWorldPresenter{
   // Changing GPS origin changes EVERY Box3D-relative metre coordinate:
   // never render stale GPU tiles from a previous coordinate system.
   if(this.osmOriginKey!==key){
-   this.city.clear();this.roads.clear();this.osmOriginKey=key;
+   this.city.clear();this.roads.clear();this.lamps.clear();this.osmOriginKey=key;
   }
   this.roads.options.project=project;
   const opts=yieldFrame?{yieldFrame}:{};
@@ -111,6 +113,7 @@ export class NativeWorldPresenter{
    this.city.ingestFeatures(buildings,{project,center,revision:key+"|"+revision,damageTop,...opts}),
    this.roads.ingest(roads,{center,revision:key+"|"+revision,...opts})
   ]);
+  if(street?.roadLines)this.lamps.setRoads(street.roadLines);
   return {origin:key,city,roads:street};
  }
  start({requestFrame=globalThis.requestAnimationFrame?.bind(globalThis),onError=null}={}){
@@ -175,6 +178,7 @@ export class NativeWorldPresenter{
      .catch(error=>{this.error=error;this.running=false;this.onError?.(error);})
      .finally(()=>{this.terrainPromise=null;});
   }
+  this.lamps.contribute(this.lights,this.camera.eye);
   const lightFrame=this.lights.resolve(this.camera.eye);
   this.renderer.setPointLights(lightFrame);
   const hierarchy=this.sceneGraph.sync();

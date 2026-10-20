@@ -32,15 +32,13 @@ for(const mut of [
  assert.equal(verifyRendererEvidence(sample).pass,false,"incomplete or regressed native comparison must be rejected");
 }
 const audit=auditRuntime();
-assert.equal(audit.nativeOnly,false,"existing Three-dependent main game must NOT be incorrectly released as Three-free");
-assert.ok(audit.threeImportCount>20&&audit.threeCalls>200,"runtime source inspection should cover whole sim directory");
-assert.ok(audit.threeRendererConstructors>=1,"detect the remaining legacy production WebGLRenderer");
+assert.equal(audit.threeImportCount,0,"the replace branch has moved every Three module out of sim/");
+assert.equal(audit.threeRendererConstructors,0,"the legacy WebGLRenderer is no longer in sim/");
 assert.equal(audit.bundlesThree,false,"only the pinned legacy three@0.185.1 may be installed");
-assert.equal(audit.legacyThreePinned,true,"the legacy game build must pin three@0.185.1");
-assert.equal(audit.nativeOnly,false,"removing npm Three without porting imports never qualifies as a native release");
+assert.equal(audit.legacyThreePinned,true,"deploy still pins Three until the cutover is real");
+assert.equal(audit.nativeOnly,true,"sim/ is Three-free; that is not a device proof");
 const legacy=releaseDecision(audit,verifyRendererEvidence(null));
-assert.equal(legacy.mode,"legacy-production");
-assert.equal(legacy.pass,true,"the legacy game may publish while the native cutover is not claimed");
+assert.equal(legacy.pass,false,"a Three-free sim with the production pin and no device proof must not ship");
 assert.equal(legacy.nativeCutover,false);
 const blocked=releaseDecision({nativeOnly:true,bundlesThree:false,legacyThreePinned:false},verifyRendererEvidence(null));
 assert.equal(blocked.mode,"native-cutover");

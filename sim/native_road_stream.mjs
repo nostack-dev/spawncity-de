@@ -60,7 +60,7 @@ export class NativeRoadStream{
   for(const key of [...this.live.keys()])
     if(!required.has(key)){this.renderer.remove(key);this.live.delete(key);removed++;}
   this.lastRevision=revision;this.lastCenter=[...center];this.dirty=false;
-  return {roads:result.value.roads,triangles:result.value.triangles,
+  return {roads:result.value.roads,triangles:result.value.triangles,roadLines:result.value.roadLines,
     uploaded,removed,chunks:this.live.size,bytesSaved,bytesUploaded,unchanged:false};
  }
  clear(){

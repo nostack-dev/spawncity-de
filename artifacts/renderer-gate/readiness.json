@@ -1,0 +1,623 @@
+{
+  "audit": {
+    "files": 266,
+    "threeImportCount": 65,
+    "threeImports": [
+      "box3d_collider_debug.mjs",
+      "building_interiors.mjs",
+      "character_model.mjs",
+      "cows.mjs",
+      "crowd_characters.mjs",
+      "direct_fire_missiles.mjs",
+      "facade_marks.mjs",
+      "fighter_jets.mjs",
+      "first_person_controller_v5.mjs",
+      "first_person_weapon_runtime_v3.mjs",
+      "flak_battery.mjs",
+      "flight_fire_fx.mjs",
+      "gameplay_final_runtime.mjs",
+      "gameplay_final_runtime_v2.mjs",
+      "gameplay_polish.mjs",
+      "gameplay_polish_lite.mjs",
+      "gangsters.mjs",
+      "gps_live_mode.mjs",
+      "gta_runtime_v1.mjs",
+      "guided_missile.mjs",
+      "jet_mode.mjs",
+      "military_response.mjs",
+      "neon_bloom.mjs",
+      "nuke_destruction.mjs",
+      "peer_drone_model.mjs",
+      "pigeons.mjs",
+      "ping_marker.mjs",
+      "player_car_mode.mjs",
+      "player_vehicle_runtime.mjs",
+      "player_vehicle_runtime_v2.mjs",
+      "player_walk_mode.mjs",
+      "player_walk_mode_v4.mjs",
+      "police_ground_units.mjs",
+      "race_track.mjs",
+      "real_world_bootstrap.mjs",
+      "sandbox_game.mjs",
+      "simulator.mjs",
+      "spawn_visibility_guard.mjs",
+      "street_lamps.mjs",
+      "stylized_world_style.mjs",
+      "tow_service.mjs",
+      "training_showcase.mjs",
+      "training_test_level_v2.mjs",
+      "vehicle_models.mjs",
+      "viewmodel_arms.mjs",
+      "vs_combat_presentation.mjs",
+      "vs_multiplayer.mjs",
+      "walk_world_experience_hotfix.mjs",
+      "wanted_police_drones.mjs",
+      "weapon_models.mjs",
+      "world_action_feedback.mjs",
+      "world_building_depth_occlusion.mjs",
+      "world_car_explosion.mjs",
+      "world_city_buildings.mjs",
+      "world_city_roads.mjs",
+      "world_critical_damage_fx.mjs",
+      "world_ground.mjs",
+      "world_impacts.mjs",
+      "world_liveliness.mjs",
+      "world_map_full.mjs",
+      "world_person_ragdoll.mjs",
+      "world_population.mjs",
+      "world_procedural_population.mjs",
+      "world_water.mjs",
+      "zombie_nights.mjs"
+    ],
+    "threeCalls": 2259,
+    "shaderHooks": 75,
+    "threeRendererConstructors": 1,
+    "bundlesThree": false,
+    "legacyThreePinned": true,
+    "modules": [
+      {
+        "path": "sim/box3d_collider_debug.mjs",
+        "importsThree": true,
+        "threeCalls": 21,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/building_interiors.mjs",
+        "importsThree": true,
+        "threeCalls": 49,
+        "shaderHooks": 6,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/character_model.mjs",
+        "importsThree": true,
+        "threeCalls": 16,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/cows.mjs",
+        "importsThree": true,
+        "threeCalls": 25,
+        "shaderHooks": 3,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/crowd_characters.mjs",
+        "importsThree": true,
+        "threeCalls": 24,
+        "shaderHooks": 3,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/direct_fire_missiles.mjs",
+        "importsThree": true,
+        "threeCalls": 12,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/facade_marks.mjs",
+        "importsThree": true,
+        "threeCalls": 21,
+        "shaderHooks": 3,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/fighter_jets.mjs",
+        "importsThree": true,
+        "threeCalls": 81,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/first_person_controller_v5.mjs",
+        "importsThree": true,
+        "threeCalls": 42,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/first_person_weapon_runtime_v3.mjs",
+        "importsThree": true,
+        "threeCalls": 35,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/flak_battery.mjs",
+        "importsThree": true,
+        "threeCalls": 51,
+        "shaderHooks": 2,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/flight_fire_fx.mjs",
+        "importsThree": true,
+        "threeCalls": 33,
+        "shaderHooks": 1,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/fpv_optical_stabilizer.mjs",
+        "importsThree": false,
+        "threeCalls": 7,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/gameplay_final_runtime.mjs",
+        "importsThree": true,
+        "threeCalls": 56,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/gameplay_final_runtime_v2.mjs",
+        "importsThree": true,
+        "threeCalls": 149,
+        "shaderHooks": 1,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/gameplay_polish.mjs",
+        "importsThree": true,
+        "threeCalls": 9,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/gameplay_polish_lite.mjs",
+        "importsThree": true,
+        "threeCalls": 7,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/gangsters.mjs",
+        "importsThree": true,
+        "threeCalls": 12,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/gps_live_mode.mjs",
+        "importsThree": true,
+        "threeCalls": 23,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/gta_runtime_v1.mjs",
+        "importsThree": true,
+        "threeCalls": 28,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/guided_missile.mjs",
+        "importsThree": true,
+        "threeCalls": 37,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/jet_mode.mjs",
+        "importsThree": true,
+        "threeCalls": 91,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/military_response.mjs",
+        "importsThree": true,
+        "threeCalls": 57,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/native_building_collision_bridge.mjs",
+        "importsThree": false,
+        "threeCalls": 1,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/native_scene_bvh.mjs",
+        "importsThree": false,
+        "threeCalls": 1,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/native_scene_picking.mjs",
+        "importsThree": false,
+        "threeCalls": 1,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/neon_bloom.mjs",
+        "importsThree": true,
+        "threeCalls": 10,
+        "shaderHooks": 3,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/nuke_destruction.mjs",
+        "importsThree": true,
+        "threeCalls": 83,
+        "shaderHooks": 4,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/nuke_shock_field.mjs",
+        "importsThree": false,
+        "threeCalls": 0,
+        "shaderHooks": 2,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/peer_drone_model.mjs",
+        "importsThree": true,
+        "threeCalls": 31,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/pigeons.mjs",
+        "importsThree": true,
+        "threeCalls": 28,
+        "shaderHooks": 2,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/ping_marker.mjs",
+        "importsThree": true,
+        "threeCalls": 16,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/player_car_mode.mjs",
+        "importsThree": true,
+        "threeCalls": 22,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/player_runtime_hotfix.mjs",
+        "importsThree": false,
+        "threeCalls": 0,
+        "shaderHooks": 1,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/player_vehicle_runtime.mjs",
+        "importsThree": true,
+        "threeCalls": 40,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/player_vehicle_runtime_v2.mjs",
+        "importsThree": true,
+        "threeCalls": 65,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/player_walk_mode.mjs",
+        "importsThree": true,
+        "threeCalls": 32,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/player_walk_mode_v4.mjs",
+        "importsThree": true,
+        "threeCalls": 50,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/police_ground_units.mjs",
+        "importsThree": true,
+        "threeCalls": 48,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/race_track.mjs",
+        "importsThree": true,
+        "threeCalls": 23,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/real_world_bootstrap.mjs",
+        "importsThree": true,
+        "threeCalls": 43,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/render_fast_paths.mjs",
+        "importsThree": false,
+        "threeCalls": 0,
+        "shaderHooks": 2,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/sandbox_game.mjs",
+        "importsThree": true,
+        "threeCalls": 30,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/simulator.mjs",
+        "importsThree": true,
+        "threeCalls": 68,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 1
+      },
+      {
+        "path": "sim/spawn_visibility_guard.mjs",
+        "importsThree": true,
+        "threeCalls": 16,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/street_lamps.mjs",
+        "importsThree": true,
+        "threeCalls": 29,
+        "shaderHooks": 4,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/stylized_world_style.mjs",
+        "importsThree": true,
+        "threeCalls": 58,
+        "shaderHooks": 11,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/tow_service.mjs",
+        "importsThree": true,
+        "threeCalls": 24,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/training_showcase.mjs",
+        "importsThree": true,
+        "threeCalls": 29,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/training_test_level_v2.mjs",
+        "importsThree": true,
+        "threeCalls": 11,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/vehicle_models.mjs",
+        "importsThree": true,
+        "threeCalls": 15,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/viewmodel_arms.mjs",
+        "importsThree": true,
+        "threeCalls": 22,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/vs_combat_presentation.mjs",
+        "importsThree": true,
+        "threeCalls": 10,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/vs_multiplayer.mjs",
+        "importsThree": true,
+        "threeCalls": 20,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/walk_world_experience_hotfix.mjs",
+        "importsThree": true,
+        "threeCalls": 6,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/wanted_police_drones.mjs",
+        "importsThree": true,
+        "threeCalls": 81,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/weapon_models.mjs",
+        "importsThree": true,
+        "threeCalls": 65,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_action_feedback.mjs",
+        "importsThree": true,
+        "threeCalls": 9,
+        "shaderHooks": 1,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_building_depth_occlusion.mjs",
+        "importsThree": true,
+        "threeCalls": 30,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_camera_projection.mjs",
+        "importsThree": false,
+        "threeCalls": 1,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_car_explosion.mjs",
+        "importsThree": true,
+        "threeCalls": 27,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_city_buildings.mjs",
+        "importsThree": true,
+        "threeCalls": 29,
+        "shaderHooks": 2,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_city_roads.mjs",
+        "importsThree": true,
+        "threeCalls": 10,
+        "shaderHooks": 2,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_critical_damage_fx.mjs",
+        "importsThree": true,
+        "threeCalls": 11,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_ground.mjs",
+        "importsThree": true,
+        "threeCalls": 10,
+        "shaderHooks": 1,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_impacts.mjs",
+        "importsThree": true,
+        "threeCalls": 58,
+        "shaderHooks": 7,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_liveliness.mjs",
+        "importsThree": true,
+        "threeCalls": 55,
+        "shaderHooks": 4,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_map_full.mjs",
+        "importsThree": true,
+        "threeCalls": 8,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_person_ragdoll.mjs",
+        "importsThree": true,
+        "threeCalls": 29,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_population.mjs",
+        "importsThree": true,
+        "threeCalls": 24,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_procedural_population.mjs",
+        "importsThree": true,
+        "threeCalls": 80,
+        "shaderHooks": 9,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/world_water.mjs",
+        "importsThree": true,
+        "threeCalls": 8,
+        "shaderHooks": 1,
+        "threeRendererConstructors": 0
+      },
+      {
+        "path": "sim/zombie_nights.mjs",
+        "importsThree": true,
+        "threeCalls": 6,
+        "shaderHooks": 0,
+        "threeRendererConstructors": 0
+      }
+    ],
+    "nativeOnly": false
+  },
+  "proof": {
+    "pass": false,
+    "failures": [
+      "missing renderer proof schema",
+      "production path must be native-webgl2; an experimental static batch is not the game renderer",
+      "desktop/drone: expected exactly one real-game scenario",
+      "desktop/foot: expected exactly one real-game scenario",
+      "desktop/car: expected exactly one real-game scenario",
+      "desktop/jet: expected exactly one real-game scenario",
+      "desktop/multiplayer: expected exactly one real-game scenario",
+      "android-chrome/drone: expected exactly one real-game scenario",
+      "android-chrome/foot: expected exactly one real-game scenario",
+      "android-chrome/car: expected exactly one real-game scenario",
+      "android-chrome/jet: expected exactly one real-game scenario",
+      "android-chrome/multiplayer: expected exactly one real-game scenario",
+      "iphone-safari/drone: expected exactly one real-game scenario",
+      "iphone-safari/foot: expected exactly one real-game scenario",
+      "iphone-safari/car: expected exactly one real-game scenario",
+      "iphone-safari/jet: expected exactly one real-game scenario",
+      "iphone-safari/multiplayer: expected exactly one real-game scenario"
+    ],
+    "scenarios": 0,
+    "required": 15
+  },
+  "decision": {
+    "pass": true,
+    "mode": "legacy-production",
+    "nativeCutover": false,
+    "reason": "legacy game may publish; native cutover is not claimed"
+  },
+  "pass": true
+}

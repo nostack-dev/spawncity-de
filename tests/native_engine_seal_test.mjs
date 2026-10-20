@@ -65,15 +65,17 @@ while(stack.length){
 const inside=new Set([...seen].map(file=>relative(root,file)));
 for(const banned of ["simulator.mjs","real_world_bootstrap.mjs","drone_simulator.html"])
  assert.equal(inside.has(banned),false,banned+" must stay outside the sealed engine");
+const legacyRoot=resolve("legacy-three/sim");
 const threeRe=/(?:from\s*["']three(?:\/[^"']*)?["']|import\s*["']three(?:\/[^"']*)?["'])/;
 const legacy=[];
-for(const name of readdirSync(root)){
+for(const name of readdirSync(legacyRoot)){
  if(!name.endsWith(".mjs"))continue;
- const src=readFileSync(join(root,name),"utf8");
+ const src=readFileSync(join(legacyRoot,name),"utf8");
  if(!threeRe.test(src))continue;
  legacy.push(name);
  assert.equal(inside.has(name),false,"legacy Three module leaked into the engine: "+name);
 }
+assert.equal(readdirSync(root).filter(name=>name.endsWith(".mjs")).some(name=>threeRe.test(readFileSync(join(root,name),"utf8"))),false,"sim/ must stay Three-free on the replace branch");
 assert.ok(inside.has("native_scene_renderer.mjs"));
 assert.ok(inside.has("native_world_presenter.mjs"));
 assert.ok(inside.has("native_game_runtime.mjs"));
@@ -99,8 +101,9 @@ const boot=readFileSync(join(root,"native_game_bootstrap.mjs"),"utf8");
 assert.match(boot,/from "\.\/native_engine\.mjs"/);
 assert.doesNotMatch(boot,/from "\.\/native_game_runtime\.mjs"|from "\.\/native_game_input\.mjs"|from "\.\/native_osm_source\.mjs"/);
 const audit=auditRuntime();
-assert.equal(audit.nativeOnly,false,"sealing the engine must not pretend the live game is already native");
-assert.ok(audit.threeImportCount===legacy.length&&legacy.length>0,"legacy Three game modules remain for a later migration");
+assert.equal(audit.threeImportCount,0,"the replace branch keeps Three only under legacy-three/");
+assert.equal(audit.nativeOnly,true,"sim/ itself no longer imports Three");
+assert.equal(legacy.length,64,"one module is ported; 64 Three specs remain");
 console.log(JSON.stringify({
  engine:"sealed",
  contract:"spawncity-native-engine-v1",

@@ -16,7 +16,6 @@ import "./military_response.mjs";
 import "./zombie_nights.mjs";
 import "./dynamic_lights.mjs";
 import "./shader_prewarm.mjs";
-import "./street_lamps.mjs";
 import "./cows.mjs";
 import "./pigeons.mjs";
 import "./jetpack_audio.mjs";
