@@ -25,7 +25,7 @@ export function installNativeSession(game){
   peers=new NativePeerVisuals(game.world.renderer,{timeline,connected:()=>Boolean(finder?.active),mode:()=>"drone"});
   const button=document.createElement("button");
   button.type="button";button.id="gameMenuShare";button.textContent="MULTIPLAYER";
-  document.getElementById("gameMenuStart")?.after(button);
+  document.getElementById("welcome")?.append(button);
   button.addEventListener("click",async()=>{
     if(finder)return;
     finder=new LanVsFinder({onPose:(pose)=>timeline.push(pose)});

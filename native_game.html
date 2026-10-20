@@ -14,19 +14,17 @@ font:600 12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;text-shadow:0 
 #hud strong{font-size:13px;font-weight:800;letter-spacing:.08em}#hud span{font-size:10px;letter-spacing:.14em;color:#9fb4c6}
 #telemetry{margin-top:2px;color:#d5e2ee99;font-size:10px;max-width:42vw}
 #status{margin-top:2px;color:#d7ffe6;max-width:46vw;font-size:12px}
-#gameMenu{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:#06101cee;backdrop-filter:blur(15px)}
+#gameMenu{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:#010806ee}
 #gameMenu[hidden]{display:none}
-.gm-title{display:flex;gap:10px;justify-content:center;font:900 italic 42px/1 system-ui,sans-serif;letter-spacing:.04em}
+.gm-center{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.gm-title{display:flex;gap:10px;justify-content:center;font:900 italic 56px/1 Inter,system-ui,sans-serif;letter-spacing:.04em;color:#f4f7f8}
 .gm-title span:last-child{color:#ffb02e}
-.gm-sub{margin:8px 0 14px;font:700 12px/1 system-ui,sans-serif;letter-spacing:.28em;color:#b9c3cc}
-#welcome{padding:28px;max-width:min(94vw,480px);text-align:center}
-h1{font-size:clamp(38px,9vw,68px);letter-spacing:-3px;margin:0 0 10px;font-weight:950}
-p{color:#b8cedf;line-height:1.5}
-button{color:inherit;font:inherit;touch-action:manipulation;cursor:pointer}
-#gameMenuStart{border:none;border-radius:16px;background:#ffb42d;color:#121820;font-weight:900;font-size:18px;padding:17px 52px;margin-top:12px}
-#gameMenuStart:disabled{opacity:.5}#gameMenuStatus{margin-top:16px;font-size:12px;color:#b4c5d5}
-#worldSource{display:block;width:min(100%,390px);margin:16px auto 4px;padding:11px 14px;border-radius:12px;
-border:1px solid #4c708d;background:#142c40;color:#f1fbff;font:600 14px system-ui}
+.gm-sub{margin:4px 0 10px;font:700 12px/1 Inter,system-ui,sans-serif;letter-spacing:.32em;color:#b9c3cc}
+#gameMenuStart{margin-top:8px;min-width:min(64vw,300px);padding:15px 28px;font:700 18px/1 Inter,system-ui,sans-serif;letter-spacing:.32em;text-transform:uppercase;color:#16120c;background:linear-gradient(180deg,#ffb02e,#ff7a1a);border:0;border-radius:4px;cursor:pointer;clip-path:polygon(4% 0,100% 0,96% 100%,0 100%)}
+#gameMenuStart:disabled{opacity:.7;cursor:default}
+#gameMenuStatus{margin-top:8px;font:600 12px/1.3 Inter,system-ui,sans-serif;color:#b4c5d5}
+#worldSource{display:block;width:min(64vw,300px);margin:8px auto 2px;padding:10px 12px;border-radius:8px;border:1px solid #ffffff33;background:#12161c;color:#eef0f2;font:600 13px Inter,system-ui,sans-serif}
+#gameMenu .phone-settings-button,#gameMenuShare{margin-top:4px;min-width:min(64vw,300px);padding:9px 24px;font:800 13px/1 Inter,system-ui,sans-serif;letter-spacing:.24em;color:#d8dde2;background:#ffffff0c;border:1px solid #ffffff33;border-radius:10px;cursor:pointer}
 #toolbar{position:absolute;bottom:max(12px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
 display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding:8px 12px;border-radius:18px;background:#071523c9;
 border:1px solid #9dc4ef37;z-index:5;max-width:calc(100vw - 16px);backdrop-filter:blur(12px)}
@@ -71,9 +69,9 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
 <a id="osmAttribution" href="https://www.openstreetmap.org/copyright"
  target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
 <div id="gameMenu" role="dialog" aria-label="Start game">
-<div id="welcome">
+<div class="gm-center" id="welcome">
 <div class="gm-title" aria-label="SpawnCity"><span>SPAWN</span><span>CITY</span></div>
-<div class="gm-sub">DRONE · CARS · FOOT · JET</div>
+<div class="gm-sub">DRONE · CARS · ZOMBIES</div>
 <select id="worldSource" aria-label="Choose the source of real OpenStreetMap buildings">
 <option value="demo">Real OSM demo: Konstanz · no GPS</option>
 <option value="gps">My location · request GPS permission</option>

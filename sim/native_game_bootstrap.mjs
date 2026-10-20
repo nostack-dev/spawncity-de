@@ -32,7 +32,7 @@ export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1
 const $=id=>document.getElementById(id);
 const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("gameMenu"),
  status=$("status"),menuStatus=$("gameMenuStatus"),telemetry=$("telemetry");
-const settings=mountPlayerControlSettings({parent:menu,buttonText:"SETTINGS"});
+const settings=mountPlayerControlSettings({parent:document.getElementById("welcome"),buttonText:"SETTINGS"});
 mountAudioSettings({dialog:settings.dialog});
 if(!viewport||!startButton||!menu||!status)throw Error("SpawnCity native boot requires its real fullscreen UI");
 let session=null,launching=false,reported=0,lastStatus="";
@@ -140,6 +140,7 @@ async function launch(){
   const canvas=document.createElement("canvas");
   canvas.id="nativeCanvas";canvas.setAttribute("aria-label","SpawnCity WebGL2 game");
   canvas.tabIndex=0;viewport.append(canvas);
+  canvas.addEventListener("click",()=>{if(document.pointerLockElement!==viewport)viewport.requestPointerLock?.();});
   report("Initializing one native GPU and original Flight Core…");
   game=new NativeGameRuntime(canvas,{
    b3,flightCoreFactory:FlightCoreFactory,
