@@ -1,0 +1,31 @@
+name: SpawnCity source and input checks
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check tracked game, release history and desktop input
+        run: |
+          node --check sim/desktop_controls.mjs
+          node --check sim/foot_look_capture.mjs
+          node --check sim/changelog_menu.mjs
+          node tests/standalone_source_test.mjs
+          node tests/touchpad_pointerlock_contract_test.mjs
+          node tests/fullscreen_classic_hands_regression_test.mjs
+          node tests/pwa_fullscreen_policy_test.mjs
+          node tests/site_config_test.mjs
+          node tests/single_repo_pages_contract_test.mjs
+          node tests/jet_headshot_run_guided_contract_test.mjs
+          node tests/renderer_exclusive_release_contract_test.mjs
+          node tests/retired_shield_zero_render_cost_test.mjs
+          node tests/camera_collision_three_free_test.mjs
+          node tests/renderer_three_reduction_test.mjs

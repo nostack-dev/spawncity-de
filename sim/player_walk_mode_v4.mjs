@@ -1,0 +1,352 @@
+import * as THREE from "three";
+import {groundHeightAt,waterAt,waterLevelAt,buildingGroundBase} from "./terrain_craters.mjs";
+// In rivers and lakes the pilot swims: head stays above the surface.
+function standHeightAt(x,y){const g=groundHeightAt(x,y);return waterAt(x,y)?Math.max(g+EYE_Z,waterLevelAt(x,y)+.42):g+EYE_Z;}
+import {FPS_CONTROL_PROFILE,FPS_DISPLAY_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD,addFpsShotImpulse,createFpsCameraMotionState,fpsAimAssist,fpsStickVelocity,fpsTouchLookDelta,fpsVerticalFovDegForAspect,integrateFpsLookVelocity,resetFpsCameraMotion,shapeFpsStick,stepFpsCameraMotion,wrapFpsAngleRad} from "./fps_control_math.mjs";
+import {FIRST_PERSON_CONTROL_SETTINGS_EVENT,buildFirstPersonLookProfile,firstPersonLookAxes,firstPersonLookDelta,firstPersonLookSensitivity,loadFirstPersonControlSettings,normalizeFirstPersonControlSettings,shapeFirstPersonMove} from "./first_person_control_settings.mjs";
+import {wantedLineBlockedByPrisms} from "./wanted_system_logic.mjs";
+import {buildingDamage,damagedTop} from "./world_destruction_state.mjs";
+import {firstPersonDeathFall} from "./player_vitals_logic.mjs";
+import {normalizedPointer,endPointerDrag} from "./control_semantics.mjs";
+import {findXboxGamepad,standardGamepadFamily} from "./xbox_gamepad.mjs";
+
+const PLAYER_MODE_KEY="arondight45PlayerModeV2";
+const EYE_Z=1.68;
+const WALK_MPS=5.5;
+const SPRINT_MPS=8.1;
+// Vertical body physics: the feet are a ballistic point under real gravity.
+// Jump = take-off speed 3.6 m/s (0.66 m apex, 0.73 s in the air, a crisp
+// standing jump); walking off a ledge falls instead of snapping down; the
+// horizontal velocity is kept in the air (momentum) with a little air control;
+// hard landings hurt (from 7.7 m/s ≈ 3 m drop, lethal at ≈ 15 m/s ≈ 11.5 m).
+const JUMP_V=3.6,JUMP_G=9.81,JUMP_BUFFER_MS=140,AIR_ACCEL=5,LEDGE_DROP_M=.45,FALL_SAFE_MPS=7.7,FALL_LETHAL_MPS=15;
+// z = feet height above the ground below (replicated as `jz`), feet = absolute feet height
+const jump={z:0,vz:0,feet:NaN,vx:0,vy:0,queuedAt:-Infinity,airborne:false,snap:true};globalThis.__arondightWalkJump=jump;
+// a press on the ground always jumps on the next step (even after a long frame); a press in the air is buffered for landing
+// Jetpack (main menu WORLD option): jump again in the air = a thrust burst (≈2.1 g up, strong air
+// control) to get over houses; fuel recharges on the ground. Roofs are floor. Falling fast with
+// fuel left, the pack fires by itself just before touchdown (no splat after a jetpack hop).
+// a full tank = ~5 s of thrust; keep the jump button held to keep flying, it refills in ~4 s on the ground
+const JET_ACC=21,JET_BURST_S=.6,JET_FUEL_PER_S=.2,JET_RECHARGE_S=4,JET_AIR_ACCEL=14,JET_CUSHION_FUEL=.02,JET_AIR_REGEN_DELAY_MS=350;
+// air drag on a falling person, ½ρ·Cd·A/m with Cd·A ≈ 0.42 m², 80 kg → terminal velocity ≈ 55 m/s
+const AIR_DRAG_K=.00322;
+const JET_CLIMB_ACC=13.8,JET_MAX_CLIMB_MPS=8;
+const jet={hold:false,fuel:1,burstLeft:0,used:false,groundSince:0,thrusting:false,el:null};globalThis.__arondightJetpack=jet;
+function jetpackOn(){return globalThis.__arondightWorldOptions?.get?.("jetpack")!==false;}
+function startJet(now){if(!jetpackOn()||jet.fuel<.06||isPlayerDead())return false;jet.burstLeft=JET_BURST_S;jet.used=true;if(jump.vz<0)jump.vz*=.35;window.dispatchEvent(new CustomEvent("arondight:player-jetpack",{detail:{fuel:jet.fuel}}));return true;}
+function jetHud(){if(!jet.el){const v=viewport();if(!v)return;jet.el=document.createElement("div");jet.el.id="jetpackFuel";jet.el.innerHTML="<i></i>";v.appendChild(jet.el);const st=document.createElement("style");st.textContent="#jetpackFuel{position:absolute;left:50%;bottom:calc(max(64px,env(safe-area-inset-bottom) + 56px));transform:translateX(-50%);width:120px;height:6px;border-radius:3px;background:#0008;border:1px solid #ffffff44;z-index:24;pointer-events:none;opacity:0;transition:opacity .25s}#jetpackFuel.show{opacity:1}#jetpackFuel i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#ff8a3a,#ffd46a);width:100%}#jetpackFuel.thrust i{background:linear-gradient(90deg,#ff5a2a,#fff0a0)}";document.head.appendChild(st);}
+  const show=mode==="foot"&&jetpackOn()&&(jet.fuel<.999||jet.thrusting);jet.el.classList.toggle("show",show);jet.el.classList.toggle("thrust",jet.thrusting);jet.el.firstChild.style.width=`${Math.round(jet.fuel*100)}%`;}
+// Moving cars hit the player like a body: a 1.4 t car against an ~80 kg person is an almost
+// one-sided collision, so the person takes the car's approach speed (×(1+e), e≈0.2, mass
+// ratio M/(M+m)); a bumper below the centre of mass scoops the body up (vz ≈ 0.35·s). The car
+// gets the equal and opposite impulse. Slow contact just shoves you out of the way; above
+// ~2 m/s it hurts, ~50 km/h is usually fatal. Box3D drives the cars, the player is kinematic,
+// so this exchange is resolved here, every frame, against every physical car near you.
+const PLAYER_KG=80,CAR_RESTITUTION=.2,PLAYER_R=.3;let carHitAt=-Infinity;
+// Pushed by the outside world (a mate's gravity gun punt, a car a mate drives): a velocity change
+// on the body, which leaves the ground when it has to. Held (a mate's gravity gun): pulled towards a
+// point with the same force-limited spring the gun uses on objects, 3.5 kN on 80 kg.
+const HOLD_OMEGA=12,HOLD_AMAX=3500/PLAYER_KG;let holdState=null;
+function pushPlayer({x=0,y=0,z=0}={}){if(mode!=="foot"||isPlayerDead())return false;const feet=Number.isFinite(jump.feet)?jump.feet:state.position.z-EYE_Z;jump.vx=(jump.vx||0)+x;jump.vy=(jump.vy||0)+y;jump.vz=(jump.airborne?jump.vz||0:0)+Math.max(z,Math.hypot(x,y)>2?1.2:0);jump.feet=feet+.02;jump.airborne=true;jump.snap=false;cameraMotion.shakeEnergy=Math.min(1,(cameraMotion.shakeEnergy||0)+.3);return true;}
+function holdPlayer(target,ms=350){if(!target){holdState=null;return true;}if(mode!=="foot"||isPlayerDead())return false;holdState={t:[...target],until:performance.now()+ms};if(!jump.airborne){jump.feet=(Number.isFinite(jump.feet)?jump.feet:state.position.z-EYE_Z)+.02;jump.airborne=true;jump.vz=jump.vz||0;jump.snap=false;}return true;}
+function holdAccel(now){if(!holdState||now>holdState.until||isPlayerDead()){holdState=null;return null;}const t=holdState.t,feet=Number.isFinite(jump.feet)?jump.feet:state.position.z-EYE_Z,p=[state.position.x,state.position.y,feet+.9],v=[jump.vx||0,jump.vy||0,jump.vz||0],k=HOLD_OMEGA*HOLD_OMEGA,c=2*HOLD_OMEGA;
+  let a=[k*(t[0]-p[0])-c*v[0],k*(t[1]-p[1])-c*v[1],k*(t[2]-p[2])-c*v[2]+JUMP_G];const n=Math.hypot(...a);if(n>HOLD_AMAX)a=a.map(q=>q*HOLD_AMAX/n);return a;}
+function carCollisions(now){const R=globalThis.__arondightWorldRigidBodies,eng=R?.engine;if(!eng?.records||isPlayerDead())return;const px=state.position.x,py=state.position.y,feet=Number.isFinite(jump.feet)?jump.feet:state.position.z-EYE_Z;
+  // our own world's cars (Box3D) and the cars mates drive (as drawn here, with their measured velocity)
+  const remote=(globalThis.__arondightRemoteCars?.()||[]).map(c=>({id:c.id,remote:true,kind:"car",halfExtents:c.half,massKg:c.massKg,pose:{position:[c.x,c.y,c.z+.6],yaw:c.yaw,velocity:[c.vx,c.vy,0]}}));
+  for(const rec of[...eng.records.values(),...remote]){if(rec.kind!=="car"&&rec.kind!=="bus"&&!rec.wheels)continue;const h=rec.halfExtents;if(!h)continue;const pose=rec.remote?rec.pose:R.pose?.(rec.id);if(!pose?.position)continue;const c=pose.position,dx=px-c[0],dy=py-c[1];if(dx*dx+dy*dy>(h[0]+h[1]+2)**2)continue;
+    const top=c[2]+h[2]+.15,bottom=c[2]-h[2]-.6;if(feet>top||feet+1.7<bottom)continue;const yaw=Number(pose.yaw)||0,co=Math.cos(yaw),si=Math.sin(yaw),lx=dx*co+dy*si,ly=-dx*si+dy*co,ex=h[0]+PLAYER_R-Math.abs(lx),ey=h[1]+PLAYER_R-Math.abs(ly);if(ex<=0||ey<=0)continue;
+    // contact normal: the shallow axis of the car's footprint, pointing at the player
+    let nx,ny,depth;if(ex<ey){nx=Math.sign(lx)*co;ny=Math.sign(lx)*si;depth=ex;}else{nx=-Math.sign(ly)*si;ny=Math.sign(ly)*co;depth=ey;}
+    state.position.x+=nx*(depth+.005);state.position.y+=ny*(depth+.005);
+    const v=pose.velocity||[0,0,0],M=Number(rec.massKg)||1400,s=(v[0]-(jump.vx||0))*nx+(v[1]-(jump.vy||0))*ny;if(s<=.4)continue;
+    const dv=(1+CAR_RESTITUTION)*s*M/(M+PLAYER_KG);jump.vx=(jump.vx||0)+nx*dv;jump.vy=(jump.vy||0)+ny*dv;
+    if(s>2){jump.airborne=true;jump.feet=Math.max(jump.feet||feet,feet)+.02;jump.vz=Math.max(jump.vz||0,.35*s);jump.snap=false;cameraMotion.shakeEnergy=Math.min(1,(cameraMotion.shakeEnergy||0)+.25+.05*s);
+      if(now-carHitAt>400){carHitAt=now;playerVitals()?.damage?.(Math.round(100*Math.min(1,Math.max(0,(s-2.5)/14))),"vehicle-impact");window.dispatchEvent(new CustomEvent("arondight:player-hit-by-car",{detail:{speedMps:s,id:rec.id}}));}}
+    if(!rec.remote)R.applyImpulse?.(rec.id,[-nx*PLAYER_KG*dv,-ny*PLAYER_KG*dv,0],{point:[px,py,c[2]]});}}
+addEventListener("keydown",e=>{if(e.code==="Space")jet.hold=true;});addEventListener("keyup",e=>{if(e.code==="Space")jet.hold=false;});addEventListener("blur",()=>{jet.hold=false;});
+let jetPointer=null;addEventListener("pointerdown",e=>{if(e.target?.closest?.("#footJump")){jet.hold=true;jetPointer=e.pointerId;}},true);for(const t of["pointerup","pointercancel"])addEventListener(t,e=>{if(e.pointerId===jetPointer){jet.hold=false;jetPointer=null;}},true);
+function requestJump(){const now=performance.now();if(jump.airborne&&startJet(now))return;jump.queuedAt=now;jump.pending=!jump.airborne;}
+const FIRE_INTERVAL_MS=165;
+const AIM_SCAN_INTERVAL_MS=115;
+const DECAL_POOL_SIZE=16;
+const MUZZLE_FLASH_MS=70;
+const RECOIL_MS=125;
+const DEATH_FALL_MS=900;
+const LOOK_CATCHUP_MAX_S=.25;
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,Number(v)||0));
+
+let installed=false,mode="drone",lastFrame=performance.now(),lastShot=-Infinity,cameraProviderAttached=false,lastAimScan=-Infinity,lastAimDiscovery=-Infinity,aimTarget=null,aimCandidates=[],aimDiscoverScene=null,aimDiscoverStack=[],aimDiscoverNext=[],aimDiscoverSeen=new Set();
+let decalPool=null,decalCursor=0,weaponGroup=null,weaponScene=null,muzzleFlash=null,lookPointer=null,lookX=0,lookY=0,lookOriginX=0,lookOriginY=0,lastDirectLookMs=0,touchLookActive=false;
+let firstPersonSettings=loadFirstPersonControlSettings(),lookSensitivity=firstPersonLookSensitivity(firstPersonSettings),fpsInputProfile=null,fpsTouchStickProfile=null;
+const state={position:new THREE.Vector3(0,0,EYE_Z),yaw:0,pitch:0,initialized:false,move:{x:0,y:0},keys:new Set(),xboxY:false,xboxFire:false,fireHeld:false,dead:false,deathStartedAt:-Infinity,deathSide:1};
+const lookVelocity={yaw:0,pitch:0},cameraMotion=createFpsCameraMotionState();
+const raycaster=new THREE.Raycaster(),direction=new THREE.Vector3(),target=new THREE.Vector3(),normal=new THREE.Vector3(0,0,1),zAxis=new THREE.Vector3(0,0,1);
+const weaponLocal=new THREE.Vector3(),weaponWorld=new THREE.Vector3();
+const aimWorld=new THREE.Vector3(),aimOffset=new THREE.Vector3(),cameraRight=new THREE.Vector3(),previousWalkPosition=new THREE.Vector3();
+
+function viewport(){return document.getElementById("viewport");}
+function bridge(){return globalThis.__arondightRealWorld||null;}
+function vehicleRuntime(){return globalThis.__arondightPlayerVehicleRuntime||null;}
+// One walking resolver chain: building interior, then the Box3D capsule mover
+// (walls), then free movement.
+function resolveWalk(from,to,feet){return globalThis.__buildingInteriors?.resolveMove?.(from,to,feet)||vehicleRuntime()?.resolveWalkMove?.(from,to,feet)||to;}
+// Stuck watchdog: pushing against a wall is fine (some direction still moves);
+// being pinned so that *no* direction moves for 0.6 s is a trap, and the
+// player is put on the nearest free spot outside any building footprint.
+let stuckFor=0,unstuckCount=0;
+// Roof of the solid building under (x,y) (highest, ground-standing parts only), or null.
+// With feet: the highest roof you stand on (feet >= roof-.3), elevated parts included — rooftop stair
+// housings / building:parts start at the main roof (min_height) and are solid Box3D prisms, so their
+// top must be floor too; below every such roof it falls back to the ground-standing roof.
+function roofAt(x,y,feet){let best=null,stand=null;const withFeet=Number.isFinite(feet);for(const fp of globalThis.__arondightCityBuildings?.footprints?.()||[]){const r=fp.outer,elevated=(Number(fp.base)||0)>1.9;if(!r||r.length<3||(elevated&&!withFeet))continue;let bb=fp.__bb;if(!bb){bb=fp.__bb=[Infinity,Infinity,-Infinity,-Infinity];for(const p of r){bb[0]=Math.min(bb[0],p[0]);bb[1]=Math.min(bb[1],p[1]);bb[2]=Math.max(bb[2],p[0]);bb[3]=Math.max(bb[3],p[1]);}}if(x<bb[0]||x>bb[2]||y<bb[1]||y>bb[3])continue;let inside=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],c=r[j];if((a[1]>y)!==(c[1]>y)&&x<(c[0]-a[0])*(y-a[1])/(c[1]-a[1])+a[0])inside=!inside;}if(!inside)continue;
+  // Destroyed buildings: the roof follows the persistent damage, at the height
+  // that is drawn (same rule as the Box3D prisms) — a leveled house leaves a
+  // low rubble block you can jump onto.
+  const dmg=buildingDamage(fp.key);
+  if(fp.__gb===undefined)fp.__gb=buildingGroundBase(r);const top=damagedTop(fp.base,Number(fp.top)||8,dmg);if(!(top>.1))continue;const roof=fp.__gb+top;if(withFeet&&feet>=roof-.3&&(stand===null||roof>stand))stand=roof;if(!elevated&&(best===null||roof>best))best=roof;}return stand!==null?stand:best;}
+// inside solid building mass at these feet (standing on the roof is not inside)
+function inFootprint(x,y,feet){const roof=roofAt(x,y);return roof!==null&&!(Number.isFinite(feet)&&feet>=roof-.3);}
+function canMoveFrom(p,feet){for(let k=0;k<8;k++){const a=k*Math.PI/4,to={x:p.x+Math.cos(a)*.3,y:p.y+Math.sin(a)*.3},r=resolveWalk(p,to,feet);if(Math.hypot(r.x-p.x,r.y-p.y)>.08)return true;}return false;}
+// Never stuck, three layers (what character controllers in shipped games do):
+//  1. Depenetration: standing inside a solid building footprint (spawned, set down, a building
+//     streamed in around you, a wall rebuilt) pushes you to the nearest free spot at once.
+//  2. Wedged: pushing for 0.6 s without moving although no direction is free → nearest open spot.
+//  3. Pocket: you tried several directions for 2.5 s and stayed inside a 1.2 m patch (a gap
+//     between a wall and a car, a sealed courtyard corner) → nearest open spot.
+// "Open" = outside every footprint and free to walk in most directions; the last open spots
+// are remembered as a final fallback, so there is always somewhere to go.
+const OPEN_HISTORY=12,openSpots=[];let lastOpenAt=-Infinity,insideFor=0,pocket={t:0,x:0,y:0,dirs:0,max:0};
+function openAt(c,feet){if(!globalThis.__buildingInteriors?.active&&inFootprint(c.x,c.y,feet))return false;let free=0;for(let k=0;k<8;k++){const a=k*Math.PI/4,to={x:c.x+Math.cos(a)*.35,y:c.y+Math.sin(a)*.35},r=resolveWalk(c,to,feet);if(Math.hypot(r.x-c.x,r.y-c.y)>.2)free++;}return free>=5;}
+function nearestOpen(from,feet,maxR=40){for(let rad=.35;rad<=maxR;rad+=rad<4?.35:1)for(let k=0;k<24;k++){const a=k*Math.PI/12+rad*.37,c={x:from.x+Math.cos(a)*rad,y:from.y+Math.sin(a)*rad};if(openAt(c,feet))return c;}
+  for(let i=openSpots.length-1;i>=0;i--)if(openAt(openSpots[i],feet))return{...openSpots[i]};return null;}
+function relocate(from,feet,why){const c=nearestOpen(from,feet);if(!c)return null;unstuckCount++;pocket={t:0,x:c.x,y:c.y,dirs:0,max:0};insideFor=0;const v=viewport();if(v){v.dataset.walkUnstuck=String(unstuckCount);v.dataset.walkUnstuckReason=why;}return c;}
+function unstuckMove(from,to,feet,dt){
+  const r=resolveWalk(from,to,feet),want=Math.hypot(to.x-from.x,to.y-from.y),got=Math.hypot(r.x-from.x,r.y-from.y),now=performance.now(),interior=Boolean(globalThis.__buildingInteriors?.active);
+  // 1. inside a solid footprint
+  if(!interior&&inFootprint(from.x,from.y,feet)){insideFor+=dt;if(insideFor>.12){const c=relocate(from,feet,"depenetrate");if(c)return c;}}else insideFor=0;
+  // remember open ground (cheap: every 0.5 s)
+  if(now-lastOpenAt>500&&got>want*.5&&want>1e-4){lastOpenAt=now;if(openAt(from,feet)){openSpots.push({x:from.x,y:from.y});if(openSpots.length>OPEN_HISTORY)openSpots.shift();}}
+  // 3. pocket: many directions tried, no way out of a small patch
+  if(want>1e-4){const dir=Math.atan2(to.y-from.y,to.x-from.x),bit=1<<(((Math.round(dir/(Math.PI/2))%4)+4)%4);pocket.dirs|=bit;pocket.t+=dt;pocket.max=Math.max(pocket.max,Math.hypot(r.x-pocket.x,r.y-pocket.y));
+    if(pocket.max>1.2||pocket.t>4){pocket={t:0,x:r.x,y:r.y,dirs:0,max:0};}
+    else if(pocket.t>2.5&&(pocket.dirs&5)&&(pocket.dirs&10)&&[1,2,4,8].filter(b=>pocket.dirs&b).length>=3){const c=relocate(from,feet,"pocket");if(c)return c;}}
+  // 2. wedged
+  if(want<1e-4||got>want*.1){stuckFor=0;return r;}
+  stuckFor+=dt;if(stuckFor<.6)return r;stuckFor=0;
+  if(canMoveFrom(from,feet))return r;
+  return relocate(from,feet,"wedged")||r;
+}
+function playerVitals(){return globalThis.__arondightPlayerDamageModel||null;}
+function droneVitals(){return globalThis.__arondightDroneDamageModel||null;}
+function isPlayerDead(){const model=playerVitals();return Boolean(state.dead||model?.dead||Number(model?.hp)<=0);}
+function readMode(){try{return localStorage.getItem(PLAYER_MODE_KEY)==="foot"?"foot":"drone";}catch{return"drone";}}
+function saveMode(value){try{localStorage.setItem(PLAYER_MODE_KEY,value);}catch{}}
+function canWalkTo(x,y){const runtime=vehicleRuntime();return typeof runtime?.canOccupyWalkPoint==="function"?runtime.canOccupyWalkPoint(Number(x)||0,Number(y)||0):true;}
+function gamepad(){return findXboxGamepad(navigator.getGamepads?.());}
+function axis(v,d=.10){const x=clamp(v,-1,1),a=Math.abs(x);if(a<=d)return 0;const n=(a-d)/(1-d);return Math.sign(x)*Math.pow(n,1.28);}
+function button(pad,index){const b=pad?.buttons?.[index];return clamp(typeof b==="number"?b:(b?.value??(b?.pressed?1:0)),0,1);}
+function effectiveVisible(node){for(let current=node;current;current=current.parent)if(current.visible===false)return false;return true;}
+function aimAssistExcluded(node){for(let current=node;current;current=current.parent)if(current.userData?.worldPopulationClone||current.userData?.aimAssistDisabled)return true;return false;}
+function ownPlayerId(){try{return String(bridge()?.vsSession?.getSelfId?.()||bridge()?.vsSession?.active?.getSelfId?.()||"");}catch{return"";}}
+function isOwnAimMesh(node){const self=ownPlayerId();for(let current=node;current;current=current.parent){if(current.userData?.localHumanAvatar||current.name==="LOCAL_HUMAN_VR")return true;if(self&&String(current.userData?.vsPlayerId||"")===self)return true;}return false;}
+function targetAngles(point){aimOffset.copy(point).sub(state.position);const horizontal=Math.hypot(aimOffset.x,aimOffset.y);return{yaw:Math.atan2(aimOffset.x,aimOffset.y),pitch:Math.atan2(aimOffset.z,horizontal),distance:Math.hypot(horizontal,aimOffset.z)};}
+
+function installJumpStyle(){if(document.querySelector("style[data-foot-jump]"))return;const st=document.createElement("style");st.dataset.footJump="v3-thumb-clear";st.textContent=`#footJump{--jump-stick:min(25vw,150px);--jump-arc:calc((var(--jump-stick) * .5 + 40px) * .7071);display:none;position:absolute;z-index:22;right:calc(max(12px,var(--solo-safe-right,env(safe-area-inset-right))) + var(--jump-stick) * .5 + var(--jump-arc) + 4px);bottom:calc(max(20px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + var(--jump-stick) * .5 + var(--jump-arc) - 32px);width:64px;height:64px;border-radius:50%;border:2px solid #ffffffcc;background:#0d1118b8;color:#fff;font:800 12px/1 Inter,system-ui,sans-serif;letter-spacing:.08em;touch-action:none;-webkit-user-select:none;user-select:none;pointer-events:auto}#footJump:active{background:#ff7a1acc;transform:scale(.94)}body.on-foot-mode:not(.player-dead) #footJump{display:block}html.neon-line-style:not(#ng-a):not(#ng-b):not(#ng-c) #viewport #footJump{border-radius:50%!important;padding:0!important}`;document.head.appendChild(st);}
+function installStyle(){installJumpStyle();if(document.querySelector("style[data-player-walk-mode-v4]"))return;const style=document.createElement("style");style.dataset.playerWalkModeV4="cod-dynamic-assist-bob-v7";style.textContent=`
+#playerModeButton{border-color:#78d8ff66!important;background:#0b2740e8!important;color:#e5f8ff!important}
+body.on-foot-mode #playerModeButton{border-color:#ffd36b88!important;background:#402b10e8!important;color:#fff1c9!important}
+#footHud{display:none;position:absolute;inset:0;z-index:8;pointer-events:none;font-family:system-ui,-apple-system,sans-serif;color:#eef8ff}
+body.on-foot-mode #footHud{display:block}
+body.on-foot-mode #soloLeft,body.on-foot-mode #soloRight,body.on-foot-mode #soloClearance,body.on-foot-mode .solo-action{display:none!important;opacity:0!important;pointer-events:none!important}
+body.on-foot-mode #soloState,body.on-foot-mode #soloRaceHud{display:none!important}
+body.on-foot-mode #worldLookHud{z-index:10!important}
+.foot-stick{position:absolute;bottom:max(18px,var(--solo-safe-bottom,env(safe-area-inset-bottom)));width:min(25vw,150px);aspect-ratio:1;border-radius:50%;border:1px solid #c6edff55;background:#0715227d;box-shadow:inset 0 0 34px #39bdf01c,0 6px 20px #0006;pointer-events:auto;touch-action:none;z-index:3}
+#footMove{left:max(12px,var(--solo-safe-left,env(safe-area-inset-left)))}
+#footLook{right:max(12px,var(--solo-safe-right,env(safe-area-inset-right)));width:min(25vw,148px);opacity:.68;background:#07152255}
+.foot-stick .ring{position:absolute;inset:0;border-radius:50%;border:1px solid #e6f8ff33}.foot-stick .knob{position:absolute;left:50%;top:50%;width:32%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:#e9f8ffcc;border:1px solid #fff;box-shadow:0 3px 12px #0008}.foot-stick span{position:absolute;left:50%;bottom:-15px;transform:translateX(-50%);font:850 9px/1 system-ui;letter-spacing:.08em;white-space:nowrap;text-shadow:0 2px 5px #000}
+#footLookZone{position:absolute;display:block;left:0;right:0;top:max(44px,var(--solo-safe-top,env(safe-area-inset-top)));bottom:0;width:auto;z-index:1;pointer-events:auto;touch-action:none;background:transparent;cursor:crosshair}
+#footLookZone::after{content:"DRAG · LOOK";position:absolute;right:18px;top:8px;color:#d9f5ff55;font:800 7px/1 system-ui;letter-spacing:.10em;pointer-events:none}
+#footFire{position:absolute;right:calc(max(12px,var(--solo-safe-right,env(safe-area-inset-right))) + min(25vw,148px) + 18px);bottom:max(22px,calc(var(--solo-safe-bottom,env(safe-area-inset-bottom)) + 18px));width:clamp(96px,13vw,116px);height:clamp(96px,13vw,116px);border-radius:50%;border:2px solid #ffd172cc;background:radial-gradient(circle at 38% 30%,#985123,#5a2f16 58%,#2b170e);color:#fff6dd;font:950 13px/1 system-ui;letter-spacing:.08em;text-shadow:0 2px 4px #000;box-shadow:0 8px 28px #0009,0 0 0 5px #ffb34a20,inset 0 0 24px #ffba4d38;pointer-events:auto;touch-action:none;z-index:6;user-select:none;-webkit-tap-highlight-color:transparent}
+#footFire::before{content:"";position:absolute;inset:15%;border:1px solid #ffe1a56b;border-radius:50%}#footFire:active{transform:scale(.94);filter:brightness(1.18)}
+#footReadout{position:absolute;left:50%;top:max(46px,calc(var(--solo-safe-top,env(safe-area-inset-top)) + 40px));transform:translateX(-50%);padding:5px 9px;border-radius:8px;background:#071522c7;border:1px solid #ffffff22;font:850 9px/1 system-ui;letter-spacing:.08em;pointer-events:none;z-index:4}#footReadout b{color:#ffd36b}
+#footReticle{position:absolute;left:50%;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);border:1px solid #f5fbffcc;border-radius:50%;box-shadow:0 0 5px #000,0 0 7px #fff4;opacity:.85;z-index:4}
+#footReticle.aim-assisted{border-color:#8fe7ff;box-shadow:0 0 5px #000,0 0 9px #42cfffaa;opacity:1}
+@media(max-height:340px){.foot-stick{width:min(22vw,128px);bottom:max(16px,var(--solo-safe-bottom,env(safe-area-inset-bottom)))}#footLook{width:min(22vw,124px)}#footFire{right:calc(max(10px,var(--solo-safe-right,env(safe-area-inset-right))) + min(22vw,124px) + 12px);width:92px;height:92px;bottom:max(14px,var(--solo-safe-bottom,env(safe-area-inset-bottom)));font-size:11px}}
+`;document.head.appendChild(style);}
+
+function rebuildFirstPersonInputProfile(next=firstPersonSettings){firstPersonSettings=normalizeFirstPersonControlSettings(next);lookSensitivity=firstPersonLookSensitivity(firstPersonSettings);fpsInputProfile=buildFirstPersonLookProfile(FPS_CONTROL_PROFILE,firstPersonSettings);fpsTouchStickProfile=Object.freeze({...fpsInputProfile,innerDeadzone:.025});const view=viewport();if(view){view.dataset.walkSettingsProfile="first-person-independent-v1";view.dataset.walkLookSensitivity=`${firstPersonSettings.horizontalLookSensitivityPercent},${firstPersonSettings.verticalLookSensitivityPercent}`;view.dataset.walkLookDeadzonePercent=String(firstPersonSettings.lookDeadzonePercent);view.dataset.walkAimAssistPercent=String(firstPersonSettings.aimAssistStrengthPercent);view.dataset.walkTouchRightStick="continuous-radial-rate-v3";}return firstPersonSettings;}
+rebuildFirstPersonInputProfile();
+function applyLookDelta(dx,dy,now=performance.now()){const sampleMs=Number(now)||performance.now(),dt=clamp((sampleMs-lastDirectLookMs)/1000,1/240,.05);lastDirectLookMs=sampleMs;const result=applyTouchLookPixels({dx,dy,dt,now:sampleMs,source:"touch-drag"}),v=viewport();if(v){v.dataset.walkLookInput="fps-touch-profiled-dynamic-v12";v.dataset.walkLookDragEvents=String((Number(v.dataset.walkLookDragEvents)||0)+1);}return result;}
+function bindDirectLook(el,{visual=false}={}){if(!el||el.dataset.directLookBound==="1")return;el.dataset.directLookBound="1";const knob=visual?el.querySelector(".knob"):null;el.addEventListener("pointerdown",e=>{if(mode!=="foot"||lookPointer!==null)return;if(e.pointerType==="mouse")return;lookPointer=e.pointerId;lookX=lookOriginX=e.clientX;lookY=lookOriginY=e.clientY;lastDirectLookMs=Number(e.timeStamp)||performance.now();beginTouchLook("touch-drag");el.setPointerCapture?.(lookPointer);e.preventDefault();e.stopPropagation();});el.addEventListener("pointermove",e=>{if(e.pointerId!==lookPointer||mode!=="foot")return;const samples=e.getCoalescedEvents?.()||[e];for(const sample of samples){const dx=sample.clientX-lookX,dy=sample.clientY-lookY;lookX=sample.clientX;lookY=sample.clientY;applyLookDelta(dx,dy,sample.timeStamp);}if(knob){const dx=clamp((e.clientX-lookOriginX)/38,-1,1),dy=clamp((e.clientY-lookOriginY)/38,-1,1);knob.style.left=`${50+dx*28}%`;knob.style.top=`${50+dy*28}%`;}e.preventDefault();e.stopPropagation();});const release=e=>{if(e.pointerId!==lookPointer)return;lookPointer=null;endTouchLook("touch-drag");if(knob){knob.style.left="50%";knob.style.top="50%";}e.preventDefault();e.stopPropagation();};el.addEventListener("pointerup",release);el.addEventListener("pointercancel",release);}
+function bindMoveStick(el){
+  if(!el||el.dataset.moveBound==="1")return;el.dataset.moveBound="1";
+  let pointer=null;const knob=el.querySelector(".knob");
+  const paint=(x=0,y=0)=>{if(knob){knob.style.left=`${50+x*31}%`;knob.style.top=`${50+y*31}%`;}};
+  const publish=(x=0,y=0,magnitude=0,reason="active")=>{const view=viewport();if(view){view.dataset.walkMoveStick="single-owner-relative-drag-v1";view.dataset.walkMoveStickRaw=`${x.toFixed(3)},${y.toFixed(3)}`;view.dataset.walkMoveStickMagnitude=Number(magnitude).toFixed(3);view.dataset.walkMoveStickOwner=pointer===null?"none":String(pointer);view.dataset.walkMoveStickRelease=reason;}};
+  const release=(reason="release",pointerId=null)=>{if(pointer===null||(pointerId!==null&&pointerId!==pointer))return false;const id=pointer;pointer=null;endPointerDrag(el,id);state.move.x=state.move.y=0;paint();publish(0,0,0,reason);try{if(el.hasPointerCapture?.(id))el.releasePointerCapture?.(id);}catch{}return true;};
+  const apply=e=>{if(pointer===null||e.pointerId!==pointer)return;if(isPlayerDead()){release("player-dead",e.pointerId);return;}const axes=normalizedPointer(el,e),rawX=axes.x,rawY=axes.y,shaped=shapeFirstPersonMove(rawX,rawY,firstPersonSettings);state.move.x=shaped.x;state.move.y=shaped.y;paint(rawX,rawY);publish(rawX,rawY,Math.hypot(rawX,rawY));e.preventDefault();e.stopPropagation();};
+  el.addEventListener("pointerdown",e=>{if(isPlayerDead()||pointer!==null)return;endPointerDrag(el);paint();pointer=e.pointerId;try{el.setPointerCapture?.(pointer);}catch{}normalizedPointer(el,e);publish(0,0,0,"captured");e.preventDefault();e.stopPropagation();});
+  el.addEventListener("pointermove",apply);
+  for(const type of["pointerup","pointercancel"])el.addEventListener(type,e=>{if(release(type,e.pointerId)){e.preventDefault();e.stopPropagation();}});
+  el.addEventListener("lostpointercapture",e=>release("lostpointercapture",e.pointerId));
+  addEventListener("blur",()=>release("window-blur"),{capture:true});addEventListener("pagehide",()=>release("pagehide"),{capture:true});addEventListener("orientationchange",()=>release("orientationchange"),{capture:true});document.addEventListener("visibilitychange",()=>{if(document.hidden)release("visibility-hidden");},{capture:true});window.addEventListener("arondight:player-mode",()=>release("mode-change"),{capture:true});
+}
+function selectedWeaponFire(now=performance.now(),source="fps-input",hand=0){const api=globalThis.__arondightFootWeapons,view=viewport();if(typeof api?.fireAt!=="function"||!view)return fireFoot(now);const rect=view.getBoundingClientRect();return Boolean(api.fireAt({clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2,source,hand}));}
+const fistsOut=()=>String(globalThis.__arondightFootWeapons?.mode||"")==="fists";
+function mountHud(){const view=viewport();if(!view)return;let hud=document.getElementById("footHud");if(!hud){hud=document.createElement("div");hud.id="footHud";hud.innerHTML=`<div id="footLookZone" aria-label="Drag anywhere to look"></div><div id="footReadout"><b>WALK READY</b> · left move · drag anywhere to look</div><div id="footReticle" aria-hidden="true"></div><div id="footMove" class="foot-stick" aria-label="Move"><div class="ring"></div><div class="knob"></div><span>MOVE</span></div><div id="footLook" class="foot-stick" aria-label="Look"><div class="ring"></div><div class="knob"></div><span>LOOK</span></div><button id="footFire" type="button">FIRE</button><button id="footJump" type="button" aria-label="Jump">JUMP</button>`;view.appendChild(hud);}if(!hud.querySelector("#footJump")){const jb=document.createElement("button");jb.id="footJump";jb.type="button";jb.setAttribute("aria-label","Jump");jb.textContent="JUMP";hud.appendChild(jb);}{const jb=hud.querySelector("#footJump");if(jb.dataset.bound!=="1"){jb.dataset.bound="1";jb.addEventListener("pointerdown",e=>{requestJump();e.preventDefault();e.stopPropagation();});}}bindMoveStick(hud.querySelector("#footMove"));bindDirectLook(hud.querySelector("#footLookZone"));bindDirectLook(hud.querySelector("#footLook"),{visual:true});const fire=hud.querySelector("#footFire");if(fire&&fire.dataset.fireBound!=="1"){fire.dataset.fireBound="1";fire.addEventListener("pointerdown",e=>{state.fireHeld=true;e.preventDefault();e.stopPropagation();selectedWeaponFire(performance.now(),"fire-button");});for(const type of["pointerup","pointercancel"])fire.addEventListener(type,e=>{state.fireHeld=false;e.preventDefault();e.stopPropagation();});}}
+function mountModeButton(){const top=document.getElementById("soloTopbarActions")||document.getElementById("soloTopbar");if(!top||document.getElementById("playerModeButton"))return;const button=document.createElement("button");button.id="playerModeButton";button.type="button";button.addEventListener("click",()=>setMode(mode==="foot"?"drone":"foot"));top.insertBefore(button,document.getElementById("soloCamera")?.parentElement===top?document.getElementById("soloCamera"):null);renderModeButton();}
+function renderModeButton(){const b=document.getElementById("playerModeButton");if(!b)return;const dead=isPlayerDead(),drone=droneVitals(),remaining=Math.max(0,Number(drone?.remainingMs)||0),waiting=Boolean(mode==="foot"&&drone?.destroyed&&remaining>0);b.disabled=dead||waiting;b.textContent=dead?"PILOT DOWN":waiting?`NEW DRONE ${(remaining/1000).toFixed(1)}s`:mode==="foot"?"DRONE READY":"DRONE ✓";b.setAttribute("aria-label",dead?"Pilot is down. Reset to continue.":waiting?`Replacement drone ready in ${Math.ceil(remaining/1000)} seconds.`:mode==="foot"?"Deploy drone":"Switch to first person");}
+function initialize(){if(state.initialized)return;const b=bridge(),airframe=b?.threeScene?(b.airframeFor?.(b.threeScene)||b.airframe):null,p=airframe?.position;state.position.set(Number(p?.x)||0,Number(p?.y)||0,EYE_Z);previousWalkPosition.copy(state.position);state.yaw=0;state.pitch=0;state.initialized=true;jump.snap=true;jump.airborne=false;jump.vz=jump.vx=jump.vy=0;jump.z=0;}
+function setMode(next,{persist=true,reason="user"}={}){jump.snap=true;jump.airborne=false;jump.vz=jump.vx=jump.vy=0;jump.z=0;const requested=next==="foot"?"foot":"drone",drone=droneVitals();if(requested==="drone"&&(isPlayerDead()||drone?.canDeploy===false)){renderModeButton();const view=viewport();if(view)view.dataset.playerModeBlocked=isPlayerDead()?"player-dead":"drone-cooldown";return mode;}mode=requested;if(persist)saveMode(mode);globalThis.__arondightOnFootMode=mode==="foot";document.body.classList.toggle("on-foot-mode",mode==="foot");const view=viewport();if(view){view.dataset.playerMode=mode;view.dataset.walkRequiresArm="0";view.dataset.walkAltitudeInput=mode==="foot"?"locked-eye-height-v1":"drone-height";view.dataset.walkTouchLookActive="0";view.dataset.playerModeReason=String(reason);}lookVelocity.yaw=lookVelocity.pitch=0;touchLookActive=false;aimTarget=null;resetFpsCameraMotion(cameraMotion);if(mode==="foot"){initialize();state.position.z=standHeightAt(state.position.x,state.position.y);previousWalkPosition.copy(state.position);state.move.x=state.move.y=0;}else{state.keys.clear();state.move.x=state.move.y=0;lookPointer=null;if(weaponGroup)weaponGroup.visible=false;}renderModeButton();window.dispatchEvent(new CustomEvent("arondight:player-mode",{detail:{mode,reason}}));return mode;}
+
+function aimRootFor(node,kind,id){let root=node;for(let current=node;current;current=current.parent){const data=current.userData||{};if(kind==="police-drone"&&data.wantedPoliceDrone)root=current;else if(kind==="vs-player"&&data.vsHumanAvatar)root=current;else if(String(data.worldPopulationId||data.worldProceduralId||"")===id)root=current;}return root;}
+function aimPointFor(record,out=aimWorld){record.root.updateWorldMatrix?.(true,false);record.root.getWorldPosition?.(out);out.z+=record.offsetZ;return out;}
+function beginAimDiscovery(scene){aimDiscoverScene=scene;aimDiscoverStack.length=0;aimDiscoverNext.length=0;aimDiscoverSeen.clear();aimDiscoverStack.push(scene);}
+function stepAimDiscovery(deadline){
+  while(aimDiscoverStack.length&&performance.now()<deadline){
+    const obj=aimDiscoverStack.pop();if(!obj)continue;const children=obj.children||[];for(let i=children.length-1;i>=0;i--)aimDiscoverStack.push(children[i]);
+    const data=obj.userData||{},kind=String(data.worldPopulationKind||"");if(!obj.isMesh||aimAssistExcluded(obj)||!(kind==="person"||kind==="police-drone"||kind==="vs-player")||isOwnAimMesh(obj))continue;
+    const id=String(data.worldPopulationId||data.worldProceduralId||data.vsPlayerId||"");if(!id||aimDiscoverSeen.has(id))continue;aimDiscoverSeen.add(id);aimDiscoverNext.push({id,kind,root:aimRootFor(obj,kind,id),offsetZ:kind==="person"||kind==="vs-player"?1.24:0});
+  }
+  if(aimDiscoverStack.length)return false;aimCandidates=aimDiscoverNext.slice();aimDiscoverScene=null;return true;
+}
+function maintainAimCandidates(now){
+  const scene=bridge()?.threeScene;if(!scene)return;if(aimDiscoverScene&&aimDiscoverScene!==scene){aimDiscoverScene=null;aimDiscoverStack.length=0;aimCandidates=[];}
+  if(!aimDiscoverScene&&now-lastAimDiscovery>=AIM_SCAN_INTERVAL_MS){lastAimDiscovery=now;beginAimDiscovery(scene);}
+  if(aimDiscoverScene)stepAimDiscovery(performance.now()+.65);
+}
+function scanAimTarget(now){
+  maintainAimCandidates(now);if(now-lastAimScan<AIM_SCAN_INTERVAL_MS&&aimTarget&&effectiveVisible(aimTarget.root))return aimTarget;lastAimScan=now;aimTarget=null;
+  const prisms=bridge()?.buildingCollisionSnapshot?.prisms;let bestScore=Infinity;
+  for(const record of aimCandidates){if(!record.root?.parent||!effectiveVisible(record.root)||aimAssistExcluded(record.root)||isOwnAimMesh(record.root))continue;
+    aimPointFor(record,aimWorld);const angles=targetAngles(aimWorld),yawError=wrapFpsAngleRad(angles.yaw-state.yaw),pitchError=angles.pitch-state.pitch,yawN=yawError/FPS_CONTROL_PROFILE.assistYawWindowRad,pitchN=pitchError/FPS_CONTROL_PROFILE.assistPitchWindowRad,ellipse=Math.hypot(yawN,pitchN);
+    if(ellipse>=1||angles.distance>FPS_CONTROL_PROFILE.assistMaxDistanceM||wantedLineBlockedByPrisms(state.position,aimWorld,prisms))continue;const score=ellipse+angles.distance/FPS_CONTROL_PROFILE.assistMaxDistanceM*.12;if(score<bestScore){bestScore=score;aimTarget={...record,distance:angles.distance};}
+  }
+  return aimTarget;
+}
+function neutralAimAssist(){return{active:false,slowdown:1,correctionYaw:0,correctionPitch:0,strength:0,tracking:0};}
+function aimAssistForInput(now,inputYaw,inputPitch,inputMagnitude){let assist=neutralAimAssist(),targetId="";if(firstPersonSettings.aimAssistStrengthPercent<=0||inputMagnitude<=.02)return{assist,targetId};const record=scanAimTarget(now);if(!record||!effectiveVisible(record.root))return{assist,targetId};aimPointFor(record,aimWorld);const angles=targetAngles(aimWorld),yawError=wrapFpsAngleRad(angles.yaw-state.yaw),pitchError=angles.pitch-state.pitch;assist=fpsAimAssist({yawError,pitchError,distanceM:angles.distance,stickMagnitude:inputMagnitude,inputYaw,inputPitch},fpsInputProfile);assist.strength*=firstPersonSettings.aimAssistStrengthPercent/100;targetId=record.id;return{assist,targetId};}
+function publishAimAssist(source,assist,targetId=""){const view=viewport();if(!view)return;view.dataset.walkAimAssist="friction+input-tracking-xbox-touch-v2";view.dataset.walkAimAssistInput=source;view.dataset.walkAimAssistActive=assist.active?"1":"0";view.dataset.walkAimAssistTarget=targetId;view.dataset.walkAimAssistStrength=assist.strength.toFixed(3);view.dataset.walkAimAssistSlowdown=assist.slowdown.toFixed(3);view.dataset.walkAimAssistTracking=assist.tracking.toFixed(3);document.getElementById("footReticle")?.classList.toggle("aim-assisted",assist.active&&assist.strength>.015);}
+function beginTouchLook(source="touch-drag"){if(isPlayerDead())return false;touchLookActive=true;const view=viewport();if(view)view.dataset.walkTouchLookActive="1";publishAimAssist(source,neutralAimAssist());return true;}
+function endTouchLook(source="touch-drag"){touchLookActive=false;const view=viewport();if(view)view.dataset.walkTouchLookActive="0";publishAimAssist(source,neutralAimAssist());return true;}
+function applyProfiledLookDelta({yawDelta=0,pitchDelta=0,inputMagnitude=0,dt=1/60,now=performance.now(),source="touch-drag"}={}){initialize();if(isPlayerDead())return{yaw:state.yaw,pitch:state.pitch,assist:neutralAimAssist(),targetId:""};const delta=clamp(dt,1/240,.05),yaw=Number(yawDelta)||0,pitch=Number(pitchDelta)||0,{assist,targetId}=aimAssistForInput(now,yaw/delta,pitch/delta,clamp(inputMagnitude,0,1)),touchDrag=String(source).includes("drag"),slow=touchDrag?1-(1-assist.slowdown)*.3:assist.slowdown;/* a dragging thumb must never feel sticky: on touch drags the target slowdown is only a hint */state.yaw=wrapFpsAngleRad(state.yaw+yaw*slow+assist.correctionYaw*delta);state.pitch=clamp(state.pitch+pitch*slow+assist.correctionPitch*delta,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);lookVelocity.yaw=lookVelocity.pitch=0;publishAimAssist(source,assist,targetId);return{yaw:state.yaw,pitch:state.pitch,assist,targetId};}
+// Desktop mouse look (pointer lock): raw, linear, no acceleration and no aim
+// assist — 0.0022 rad per count at 100 %, scaled by the first-person
+// sensitivity / invert settings.
+const MOUSE_RAD_PER_PX=.0026;
+function applyMouseLook({dx=0,dy=0}={}){if(mode!=="foot"||isPlayerDead())return null;initialize();const s=firstPersonSettings,adsZ=Math.max(1,Number(globalThis.__arondightAds?.zoom)||1),h=(Number(s.horizontalLookSensitivityPercent)||100)/100/adsZ,v=(Number(s.verticalLookSensitivityPercent)||100)/100/adsZ;state.yaw=wrapFpsAngleRad(state.yaw+(s.invertLookHorizontal?-1:1)*(Number(dx)||0)*MOUSE_RAD_PER_PX*h);state.pitch=clamp(state.pitch-(s.invertLookVertical?-1:1)*(Number(dy)||0)*MOUSE_RAD_PER_PX*v,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);lookVelocity.yaw=lookVelocity.pitch=0;const view=viewport();if(view)view.dataset.walkLookInput="mouse-raw-v1";return{yaw:state.yaw,pitch:state.pitch};}
+function applyTouchLookPixels({dx=0,dy=0,dt=1/60,now=performance.now(),source="touch-drag",speedPxS=NaN}={}){touchLookActive=true;const input=firstPersonLookDelta(dx,dy,firstPersonSettings),look=fpsTouchLookDelta(input.x,input.y,{speedPxS}),adsZ=Math.max(1,Number(globalThis.__arondightAds?.zoom)||1),yawDelta=look.yaw*lookSensitivity.yaw/adsZ,pitchDelta=look.pitch*lookSensitivity.pitch/adsZ;return applyProfiledLookDelta({yawDelta,pitchDelta,inputMagnitude:clamp(Math.hypot(input.x,input.y)/20,0,1),dt,now,source});}
+function applyTouchLookStick({x=0,y=0,dt=1/60,now=performance.now(),source="touch-stick"}={}){touchLookActive=true;const axes=firstPersonLookAxes(x,y,firstPersonSettings),stick=shapeFpsStick(axes.x,axes.y,fpsTouchStickProfile),velocity=fpsStickVelocity(stick,fpsTouchStickProfile,{touch:true}),adsZ=Math.max(1,Number(globalThis.__arondightAds?.zoom)||1);return applyProfiledLookDelta({yawDelta:velocity.yaw*lookSensitivity.yaw*dt/adsZ,pitchDelta:velocity.pitch*lookSensitivity.pitch*dt/adsZ,inputMagnitude:stick.magnitude,dt,now,source});}
+function applyControllerLook(pad,now,dt){
+  if(touchLookActive)return;const axes=pad?firstPersonLookAxes(pad.axes?.[2],pad.axes?.[3],firstPersonSettings):{x:0,y:0},stick=pad?shapeFpsStick(axes.x,axes.y,fpsInputProfile):{x:0,y:0,magnitude:0},desired=fpsStickVelocity(stick,fpsInputProfile);{const adsZ=Math.max(1,Number(globalThis.__arondightAds?.zoom)||1);desired.yaw*=lookSensitivity.yaw/adsZ;desired.pitch*=lookSensitivity.pitch/adsZ;}const {assist,targetId}=aimAssistForInput(now,desired.yaw,desired.pitch,stick.magnitude);
+  const targetYaw=desired.yaw*assist.slowdown+assist.correctionYaw,targetPitch=desired.pitch*assist.slowdown+assist.correctionPitch,elapsed=clamp(dt,0,LOOK_CATCHUP_MAX_S),yawStep=integrateFpsLookVelocity(lookVelocity.yaw,targetYaw,elapsed),pitchStep=integrateFpsLookVelocity(lookVelocity.pitch,targetPitch,elapsed);lookVelocity.yaw=yawStep.velocity;lookVelocity.pitch=pitchStep.velocity;state.yaw=wrapFpsAngleRad(state.yaw+yawStep.angleDelta);state.pitch=clamp(state.pitch+pitchStep.angleDelta,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
+  const view=viewport();if(view&&pad){view.dataset.walkControllerFamily=standardGamepadFamily(pad);view.dataset.walkControllerCurve="radial-precision-centre-fast-edge-v2";view.dataset.walkControllerIntegration="analytic-wall-clock-catchup-v1";view.dataset.walkControllerElapsedMs=(elapsed*1000).toFixed(1);view.dataset.walkControllerStick=`${stick.x.toFixed(3)},${stick.y.toFixed(3)}`;publishAimAssist("xbox-right-stick",assist,targetId);}
+}
+// head look from dragging the minimap (same as the drone's look-around; snaps back)
+function headLook(){const b=bridge();return{yaw:(Number(b?.lookYawDeg)||0)*Math.PI/180,pitch:(Number(b?.lookPitchDeg)||0)*Math.PI/180};}
+function displayedAim(){return{yaw:state.yaw+cameraMotion.bobYaw+cameraMotion.recoilYaw+cameraMotion.shakeYaw,pitch:clamp(state.pitch+cameraMotion.bobPitch+cameraMotion.recoilPitch+cameraMotion.shakePitch,-FPS_DISPLAY_PITCH_LIMIT_RAD,FPS_DISPLAY_PITCH_LIMIT_RAD),roll:cameraMotion.bobRoll+cameraMotion.recoilRoll+cameraMotion.shakeRoll};}
+// Death cam: once you are down, the camera leaves your eyes and watches your body (the ragdoll)
+// fall and come to rest — from behind and above, following it, eased in so it never cuts.
+const deathCam={pos:new THREE.Vector3(),look:new THREE.Vector3(),on:false},deathFocus={x:0,y:0,z:0};
+function applyDeathCam(camera,now){const f=globalThis.__arondightRagdollFocus?.("local-player",deathFocus);if(!f)return false;const t=Math.min(1,(now-state.deathStartedAt)/700),back=2.2+2.4*t,up=.9+1.6*t,yaw=state.yaw;
+  const want=tmpDeath.set(f.x-Math.sin(yaw)*back,f.y-Math.cos(yaw)*back,f.z+up);if(!deathCam.on){deathCam.on=true;deathCam.pos.copy(camera.position);deathCam.look.set(f.x,f.y,f.z);}
+  deathCam.pos.lerp(want,.12);deathCam.look.lerp(tmpDeath.set(f.x,f.y,f.z),.25);camera.position.copy(deathCam.pos);camera.up.set(0,0,1);camera.lookAt(deathCam.look);camera.updateMatrixWorld?.(true);const v=viewport();if(v)v.dataset.walkDeathFall="ragdoll-cam-v1";return true;}
+const tmpDeath=new THREE.Vector3();
+function applyFootCamera(camera,now=performance.now()){initialize();if(state.dead){if(applyDeathCam(camera,now))return camera;}else deathCam.on=false;const motionX=cameraMotion.bobX+cameraMotion.shakeX,death=state.dead?firstPersonDeathFall(now-state.deathStartedAt,{durationMs:DEATH_FALL_MS,standingEyeM:EYE_Z,floorEyeM:.24,side:state.deathSide}):null;cameraRight.set(Math.cos(state.yaw),-Math.sin(state.yaw),0);camera.position.copy(state.position).addScaledVector(cameraRight,motionX);camera.position.z+=(death?death.eyeHeightM-EYE_Z:0)+cameraMotion.bobZ+cameraMotion.shakeZ;camera.up.set(0,0,1);const aim0=displayedAim(),head=headLook(),aim={yaw:aim0.yaw+head.yaw,pitch:clamp(aim0.pitch+head.pitch,-1.45,1.45),roll:aim0.roll},deathPitch=death?.pitchOffsetRad||0,cp=Math.cos(aim.pitch+deathPitch);direction.set(Math.sin(aim.yaw)*cp,Math.cos(aim.yaw)*cp,Math.sin(aim.pitch+deathPitch)).normalize();target.copy(camera.position).add(direction);camera.lookAt(target);camera.rotateZ(aim.roll+(death?.rollRad||0));const zoom=Math.max(1,Number(globalThis.__arondightAds?.zoom)||1),baseFov=fpsVerticalFovDegForAspect(camera.aspect),fov=zoom>1.0001?2*Math.atan(Math.tan(baseFov*Math.PI/360)/zoom)*180/Math.PI:baseFov;if(Math.abs(camera.fov-fov)>.001){camera.fov=fov;camera.updateProjectionMatrix();}/* what the player would see without the sights: spawn visibility (spawn_visibility_guard.mjs) judges by this, not by the scoped FOV */globalThis.__arondightSpawnViewFov={fovDeg:baseFov,presentedFovDeg:fov,aspect:camera.aspect,at:now};camera.updateMatrixWorld?.(true);const view=viewport();if(view){view.dataset.walkCameraOrigin=`${camera.position.x.toFixed(3)},${camera.position.y.toFixed(3)},${camera.position.z.toFixed(3)}`;view.dataset.walkCameraDirection=`${direction.x.toFixed(4)},${direction.y.toFixed(4)},${direction.z.toFixed(4)}`;view.dataset.walkCameraRotationOrigin="player-eye-v1";view.dataset.walkCameraPresentation="owned-pose-provider-v1";view.dataset.walkCameraFovDeg=fov.toFixed(2);view.dataset.walkDeathFall=death?"camera+ragdoll-v1":"inactive";view.dataset.walkDeathFallProgress=(death?.progress||0).toFixed(3);}return camera;}
+function viewPart(name,geometry,material,x,y,z,rx=0,ry=0,rz=0,renderOrder=10000){const mesh=new THREE.Mesh(geometry,material);mesh.name=name;mesh.position.set(x,y,z);mesh.rotation.set(rx,ry,rz);mesh.frustumCulled=false;mesh.renderOrder=renderOrder;mesh.userData.flightFireIgnore=true;mesh.userData.walkWeaponPart=true;mesh.userData.walkViewmodelPart=name;return mesh;}
+function ensureWeapon(scene){
+  if(weaponGroup&&weaponScene===scene)return weaponGroup;if(weaponGroup?.parent)weaponGroup.parent.remove(weaponGroup);
+  const gun=new THREE.Group();gun.name="WALK_PISTOL_3D";gun.userData.flightFireIgnore=true;gun.userData.walkWeapon3d=true;gun.userData.walkWeaponViewmodel="compact-pistol-gloves-v2";
+  const material=options=>new THREE.MeshStandardMaterial({depthTest:true,depthWrite:true,...options}),slide=material({color:0x394149,roughness:.28,metalness:.78}),slideTop=material({color:0x5d6871,roughness:.24,metalness:.84}),polymer=material({color:0x11171c,roughness:.64,metalness:.12}),barrel=material({color:0x090d10,roughness:.22,metalness:.86}),sight=material({color:0x0b0e10,roughness:.38,metalness:.58}),sightDot=new THREE.MeshBasicMaterial({color:0xdff7ff,depthTest:true,depthWrite:true}),glove=material({color:0x252a27,roughness:.90,metalness:0}),glovePad=material({color:0x0e1211,roughness:.78,metalness:.02}),sleeve=material({color:0x263544,roughness:.92,metalness:0}),cuff=material({color:0x121a20,roughness:.84,metalness:.04});
+  const parts=[];
+  parts.push(viewPart("WALK_VM_SLEEVE_R",new THREE.CapsuleGeometry(.066,.31,4,8),sleeve,.075,-.405,.205,-.54,0,-.13,9995));
+  parts.push(viewPart("WALK_VM_CUFF_R",new THREE.CylinderGeometry(.078,.071,.085,10),cuff,.035,-.270,.115,-.48,0,-.13,9996));
+  parts.push(viewPart("WALK_VM_SLEEVE_L",new THREE.CapsuleGeometry(.064,.28,4,8),sleeve,-.150,-.365,.155,-.62,0,.27,9995));
+  parts.push(viewPart("WALK_VM_CUFF_L",new THREE.CylinderGeometry(.075,.068,.078,10),cuff,-.092,-.242,.055,-.56,0,.25,9996));
+  const handR=viewPart("WALK_VM_GLOVE_R",new THREE.CapsuleGeometry(.047,.125,4,9),glove,.015,-.185,.040,-.15,0,-.04,9998);handR.scale.set(1.08,1,.88);parts.push(handR);
+  const handL=viewPart("WALK_VM_GLOVE_L",new THREE.CapsuleGeometry(.045,.115,4,9),glove,-.067,-.128,-.060,-.28,.18,.34,9998);handL.scale.set(1.04,1,.82);parts.push(handL);
+  parts.push(viewPart("WALK_VM_GLOVE_PAD_R",new THREE.BoxGeometry(.078,.075,.034),glovePad,.012,-.142,-.018,-.15,0,-.03,9999));
+  parts.push(viewPart("WALK_VM_GLOVE_PAD_L",new THREE.BoxGeometry(.070,.060,.030),glovePad,-.052,-.096,-.112,-.22,.16,.30,9999));
+  parts.push(viewPart("WALK_VM_FRAME",new THREE.BoxGeometry(.112,.088,.238),polymer,0,-.032,-.105,.015,0,0));
+  parts.push(viewPart("WALK_VM_RAIL",new THREE.BoxGeometry(.082,.020,.178),polymer,0,-.081,-.130,0,0,0));
+  parts.push(viewPart("WALK_VM_SLIDE",new THREE.BoxGeometry(.120,.092,.365),slide,0,.030,-.185,0,0,0));
+  parts.push(viewPart("WALK_VM_SLIDE_TOP",new THREE.BoxGeometry(.102,.018,.310),slideTop,0,.084,-.180,0,0,0));
+  parts.push(viewPart("WALK_VM_BARREL",new THREE.CylinderGeometry(.018,.018,.330,14),barrel,0,.028,-.205,Math.PI/2,0,0));
+  parts.push(viewPart("WALK_VM_MUZZLE",new THREE.CylinderGeometry(.030,.030,.020,16),barrel,0,.029,-.374,Math.PI/2,0,0));
+  parts.push(viewPart("WALK_VM_EJECTION_PORT",new THREE.BoxGeometry(.031,.010,.082),barrel,.057,.082,-.180,0,0,0));
+  parts.push(viewPart("WALK_VM_GRIP",new THREE.BoxGeometry(.096,.228,.125),polymer,0,-.170,.022,-.15,0,0));
+  parts.push(viewPart("WALK_VM_MAG_BASE",new THREE.BoxGeometry(.108,.025,.137),slide,0,-.286,.039,-.15,0,0));
+  parts.push(viewPart("WALK_VM_TRIGGER_GUARD",new THREE.TorusGeometry(.040,.008,6,14,Math.PI*1.35),polymer,0,-.095,-.053,0,0,-.18));
+  parts.push(viewPart("WALK_VM_TRIGGER",new THREE.BoxGeometry(.012,.048,.014),slide,0,-.093,-.054,-.28,0,0));
+  parts.push(viewPart("WALK_VM_REAR_SIGHT",new THREE.BoxGeometry(.075,.025,.030),sight,0,.106,-.045,0,0,0));
+  parts.push(viewPart("WALK_VM_FRONT_SIGHT",new THREE.BoxGeometry(.025,.029,.024),sight,0,.108,-.342,0,0,0));
+  parts.push(viewPart("WALK_VM_FRONT_DOT",new THREE.SphereGeometry(.006,6,4),sightDot,0,.124,-.355,0,0,0,10001));
+  gun.add(...parts);
+  muzzleFlash=new THREE.Group();muzzleFlash.name="WALK_MUZZLE_FLASH";muzzleFlash.position.set(0,.029,-.392);muzzleFlash.userData.flightFireIgnore=true;const flashMat=new THREE.MeshBasicMaterial({color:0xffd36b,transparent:true,opacity:.95,depthTest:false,depthWrite:false,blending:THREE.AdditiveBlending}),flashCore=viewPart("WALK_VM_MUZZLE_CORE",new THREE.SphereGeometry(.038,8,6),flashMat,0,0,0),flashCone=viewPart("WALK_VM_MUZZLE_CONE",new THREE.ConeGeometry(.056,.16,8),flashMat,0,0,-.080,-Math.PI/2,0,0);muzzleFlash.add(flashCore,flashCone);muzzleFlash.visible=false;gun.add(muzzleFlash);
+  gun.visible=false;scene.add(gun);weaponGroup=gun;weaponScene=scene;const view=viewport();if(view){view.dataset.walkWeapon3d="1";view.dataset.walkWeaponViewmodel="compact-pistol-gloves-v2";view.dataset.walkWeaponParts=String(parts.length);}return gun;
+}
+function placeWeapon(camera,scene,now){const gun=ensureWeapon(scene);gun.userData.placedAt=performance.now();if(isPlayerDead()){gun.visible=false;if(muzzleFlash)muzzleFlash.visible=false;return;}const age=now-lastShot,akimbo=false,recoil=!akimbo&&age>=0&&age<RECOIL_MS?Math.sin(age/RECOIL_MS*Math.PI):0,vertical=clamp((Math.abs(state.pitch)-1.15)/Math.max(.01,FPS_PITCH_LIMIT_RAD-1.15),0,1);weaponLocal.set(.245+cameraMotion.bobX*.45,-.225+cameraMotion.bobZ*.20-vertical*.020,-.445+recoil*.065+vertical*.025);weaponWorld.copy(weaponLocal);camera.localToWorld(weaponWorld);gun.position.copy(weaponWorld);gun.quaternion.copy(camera.quaternion);gun.rotateX(-.045-recoil*.055);gun.rotateY(-.065);gun.rotateZ(-.018+cameraMotion.bobRoll*.35);gun.visible=true;if(muzzleFlash)muzzleFlash.visible=age>=0&&age<MUZZLE_FLASH_MS;}
+const WALK_CAMERA_PRESENTATION=Object.freeze({active:true,mode:"walk",origin:"player-eye"});
+const walkCameraProvider=Object.freeze({isActive:()=>mode==="foot",apply:({camera,scene,now})=>{applyFootCamera(camera,now);placeWeapon(camera,scene,now);return WALK_CAMERA_PRESENTATION;}});
+function attachCameraProvider(){const b=bridge();if(!b||cameraProviderAttached||typeof b.attachPresentationCameraProvider!=="function")return false;b.attachPresentationCameraProvider(walkCameraProvider);b.__playerWalkCameraProviderV1=true;cameraProviderAttached=true;return true;}
+
+function ensureDecals(scene){if(decalPool)return decalPool;const g=new THREE.CircleGeometry(.035,8),m=new THREE.MeshBasicMaterial({color:0x151515,transparent:true,opacity:.9,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-4,side:THREE.DoubleSide});decalPool=Array.from({length:DECAL_POOL_SIZE},()=>{const mesh=new THREE.Mesh(g,m);mesh.visible=false;mesh.userData.flightFireIgnore=true;mesh.userData.flightFireDecal=true;scene.add(mesh);return mesh;});return decalPool;}
+function addDecal(hit){const scene=bridge()?.threeScene;if(!scene||!hit?.point)return;const pool=ensureDecals(scene),mesh=pool[decalCursor++%pool.length],n=hit.worldNormal||normal;mesh.position.copy(hit.point).addScaledVector(n,.004);mesh.quaternion.setFromUnitVectors(zAxis,n.clone?.().normalize?.()||normal);mesh.visible=true;mesh.userData.flightFireWorld=Boolean(bridge()?.active);const view=viewport();if(view)view.dataset.walkDecals=String((Number(view.dataset.walkDecals)||0)+1);}
+function applyWeaponFireImpulse(event){if(mode!=="foot"||vehicleRuntime()?.active||isPlayerDead())return;const d=event?.detail||{};if(String(d.mode||"")!=="foot")return;const intensity=clamp(d.intensity??.2,0,.8),count=intensity>=.5?2:1;lastShot=performance.now();for(let i=0;i<count;i++)addFpsShotImpulse(cameraMotion);const view=viewport();if(view){view.dataset.walkCameraShakeWeapon=String(d.weapon||"unknown");view.dataset.walkCameraShakeProfile="damped-weapon-impulse-v2";view.dataset.walkCameraShakeShots=String(cameraMotion.shotSerial);view.dataset.walkCameraShakeEnergy=cameraMotion.shakeEnergy.toFixed(3);}}
+function fireFoot(now=performance.now()){if(mode!=="foot"||isPlayerDead()||(performance.now()<(Number(globalThis.__arondightWeaponLockUntil)||0))||now-lastShot<FIRE_INTERVAL_MS)return false;lastShot=now;initialize();const b=bridge(),scene=b?.threeScene;if(!scene)return false;const aim=displayedAim(),cp=Math.cos(aim.pitch);addFpsShotImpulse(cameraMotion);direction.set(Math.sin(aim.yaw)*cp,Math.cos(aim.yaw)*cp,Math.sin(aim.pitch)).normalize();raycaster.set(state.position,direction);raycaster.far=180;const candidates=[];scene.traverse(obj=>{if(obj?.isMesh&&obj.visible!==false&&obj.userData?.worldPopulationKind&&!obj.userData?.worldPopulationClone)candidates.push(obj);});const hits=raycaster.intersectObjects(candidates,false);let handled=false;if(hits.length&&typeof b.registerPoliceHit==="function")handled=Boolean(b.registerPoliceHit(hits[0]));if(!handled&&hits.length&&typeof b.registerWorldPopulationHit==="function")handled=Boolean(b.registerWorldPopulationHit(hits[0]));if(!handled&&b.active&&typeof b.addVisualShotImpact==="function"){const view=viewport(),rect=view?.getBoundingClientRect();if(rect){const hit=b.addVisualShotImpact(rect.width/2,rect.height/2,rect,{origin:state.position,direction});if(hit)addDecal(hit);}}const view=viewport();if(view){view.dataset.walkShots=String((Number(view.dataset.walkShots)||0)+1);view.dataset.walkCameraShakeShots=String(cameraMotion.shotSerial);view.dataset.walkCameraShakeEnergy=cameraMotion.shakeEnergy.toFixed(3);}return true;}
+
+function syncDeathState(now=performance.now()){const dead=Boolean(playerVitals()?.dead||Number(playerVitals()?.hp)<=0);if(dead&&!state.dead){state.dead=true;state.deathStartedAt=now;state.keys.clear();state.move.x=state.move.y=0;state.fireHeld=false;state.xboxFire=false;lookVelocity.yaw=lookVelocity.pitch=0;touchLookActive=false;resetFpsCameraMotion(cameraMotion);}else if(!dead&&state.dead){state.dead=false;state.deathStartedAt=-Infinity;state.deathSide=1;resetFpsCameraMotion(cameraMotion);}document.body?.classList.toggle("player-dead",state.dead);const readout=document.querySelector("#footReadout b");if(readout)readout.textContent=state.dead?"PILOT DOWN · RESET":"WALK READY";return state.dead;}
+
+function update(now,dt,lookDt=dt){
+  if(mode!=="foot")return;initialize();if(syncDeathState(now)){stepFpsCameraMotion(cameraMotion,{dt,speedMps:0,sprinting:false});const view=viewport();if(view){view.dataset.walkMove="0.000,0.000";view.dataset.walkDeadInputLock="movement+look+fire-v1";}return;}let forward=-state.move.y+(state.keys.has("KeyW")?1:0)-(state.keys.has("KeyS")?1:0),strafe=state.move.x+(state.keys.has("KeyD")?1:0)-(state.keys.has("KeyA")?1:0),sprint=state.keys.has("ShiftLeft")||state.keys.has("ShiftRight")||state.touchSprint===true;const pad=document.body.classList.contains("jet-mode")||document.body.classList.contains("player-driving")||globalThis.__arondightPadBlocked?.()?null:gamepad();
+  if(pad){const move=shapeFirstPersonMove(axis(pad.axes?.[0]),axis(pad.axes?.[1]),firstPersonSettings);forward+=-move.y;strafe+=move.x;sprint=sprint||button(pad,10)>.5;const trigger=button(pad,7)>.5,weaponMode=String(globalThis.__arondightFootWeapons?.mode||"smg");if(trigger&&(weaponMode==="smg"||!state.xboxFire))selectedWeaponFire(now,weaponMode==="smg"?"xbox-auto":"xbox-press");state.xboxFire=trigger;{/* boxing on the pad: RT right hand, LT left hand */const lt=weaponMode==="fists"&&button(pad,6)>.5;if(lt&&!state.xboxLT)selectedWeaponFire(now,"xbox-press",1);state.xboxLT=lt;}const aBtn=button(pad,0)>.5;if(aBtn&&!state.xboxA)requestJump();state.xboxA=aBtn;/* Y (weapon), X (vehicle), D-pad ↓ (drone) and the rest: shared pad actions */}else{state.xboxFire=false;}if(state.fireHeld&&String(globalThis.__arondightFootWeapons?.mode||"smg")==="smg")selectedWeaponFire(now,"held-auto");applyControllerLook(pad,now,lookDt);
+  const magnitude=Math.hypot(forward,strafe);if(magnitude>1){forward/=magnitude;strafe/=magnitude;}const speed=sprint?SPRINT_MPS:WALK_MPS;let dx=(Math.sin(state.yaw)*forward+Math.cos(state.yaw)*strafe)*speed*dt,dy=(Math.cos(state.yaw)*forward-Math.sin(state.yaw)*strafe)*speed*dt;
+  const held=holdAccel(now);if(held&&!jump.airborne){jump.airborne=true;jump.snap=false;}
+  if(jump.airborne&&dt>1e-5){const airAcc=jet.thrusting?JET_AIR_ACCEL:AIR_ACCEL,wx=dx/dt-jump.vx,wy=dy/dt-jump.vy,wl=Math.hypot(wx,wy),k=held?0:wl>airAcc*dt?airAcc*dt/wl:1;jump.vx+=wx*k;jump.vy+=wy*k;if(held){jump.vx+=held[0]*dt;jump.vy+=held[1]*dt;}dx=jump.vx*dt;dy=jump.vy*dt;}
+  const from={x:state.position.x,y:state.position.y},to={x:from.x+dx,y:from.y+dy},interiors=globalThis.__buildingInteriors,prevFeet=Number.isFinite(jump.feet)&&!jump.snap?jump.feet:state.position.z-EYE_Z,resolved=unstuckMove(from,to,prevFeet,dt);previousWalkPosition.copy(state.position);state.position.x=Number(resolved.x)||0;state.position.y=Number(resolved.y)||0;carCollisions(now);
+  if(dt>1e-5&&!jump.airborne){jump.vx=(state.position.x-from.x)/dt;jump.vy=(state.position.y-from.y)/dt;}else if(dt>1e-5){if(Math.abs(state.position.x-to.x)>1e-3)jump.vx=(state.position.x-from.x)/dt;if(Math.abs(state.position.y-to.y)>1e-3)jump.vy=(state.position.y-from.y)/dt;}
+  const inside=interiors?.feetHeightAt?.(state.position.x,state.position.y,prevFeet),roof=Number.isFinite(inside)?null:roofAt(state.position.x,state.position.y,prevFeet),terrainFeet=standHeightAt(state.position.x,state.position.y)-EYE_Z,ground=Number.isFinite(inside)?inside:roof!==null&&prevFeet>=roof-.3?Math.max(terrainFeet,roof):terrainFeet;
+  if(jump.snap||!Number.isFinite(jump.feet)){jump.feet=ground;jump.vz=0;jump.airborne=false;jump.snap=false;}
+  else{
+    if(!jump.airborne){if(prevFeet-ground>LEDGE_DROP_M){jump.airborne=true;jump.vz=0;}else jump.feet=ground;}
+    if(!jump.airborne&&(jump.pending||now-jump.queuedAt<JUMP_BUFFER_MS)){jump.airborne=true;jump.vz=JUMP_V;jump.feet=ground;jump.queuedAt=-Infinity;jump.pending=false;window.dispatchEvent(new CustomEvent("arondight:player-jump"));}
+    // jetpack thrust (burst, or the automatic landing cushion)
+    // fuel comes back on the ground and also in the air whenever the pack is not firing (after a short pause), so a
+    // fall always brings back more than the landing cushion needs (it regains 0.25 / s, braking a fall costs ~0.18 / s
+    // of fall time): you can never strand yourself high up and break your legs
+    if(!jump.airborne){jet.used=false;jet.burstLeft=0;if(!jet.groundSince)jet.groundSince=now;if(now-jet.groundSince>400)jet.fuel=Math.min(1,jet.fuel+dt/JET_RECHARGE_S);}else{jet.groundSince=0;if(now-(jet.lastThrustAt||0)>JET_AIR_REGEN_DELAY_MS)jet.fuel=Math.min(1,jet.fuel+dt/JET_RECHARGE_S);}
+    jet.thrusting=false;if(jump.airborne&&jetpackOn()&&jet.fuel>0){const padA=(()=>{const p=globalThis.__arondightPadBlocked?.()?null:gamepad();return p?button(p,0)>.5:false;})(),burst=jet.burstLeft>0||(jet.used&&(jet.hold||padA)),stopDist=jump.vz<0?jump.vz*jump.vz/(2*(JET_ACC-JUMP_G)):0,cushion=jump.vz<-FALL_SAFE_MPS*.8&&jet.fuel>JET_CUSHION_FUEL&&jump.feet-ground<stopDist+.6;if(burst||cushion){jet.thrusting=true;jet.lastThrustAt=now;
+      // the pilot flies on part throttle: about 1.4 g, eased off so the climb stays under 8 m/s; only the landing
+      // cushion opens it fully (2.1 g). Fuel burns with the thrust actually made.
+      jet.acc=cushion?JET_ACC:Math.max(0,Math.min(JET_CLIMB_ACC,JUMP_G+(JET_MAX_CLIMB_MPS-jump.vz)*3));jet.fuel=Math.max(0,jet.fuel-JET_FUEL_PER_S*dt*jet.acc/JET_ACC);if(burst)jet.burstLeft-=dt;}}
+    const thrust=jet.thrusting?(jet.acc??JET_ACC):0;jetHud();
+    if(jump.airborne){const vz0=jump.vz,acc=thrust-JUMP_G-AIR_DRAG_K*vz0*Math.abs(vz0)+(held?held[2]:0);jump.feet+=vz0*dt+.5*acc*dt*dt;jump.vz=vz0+acc*dt;
+      if(jump.feet<=ground&&jump.vz<=0){const impact=Math.sqrt(Math.max(0,vz0*vz0+2*JUMP_G*Math.max(0,prevFeet-ground)));jump.feet=ground;jump.vz=0;jump.airborne=false;cameraMotion.shakeEnergy=Math.min(1,(cameraMotion.shakeEnergy||0)+.12+.05*impact);window.dispatchEvent(new CustomEvent("arondight:player-land",{detail:{impactMps:impact}}));
+        if(impact>FALL_SAFE_MPS)playerVitals()?.damage?.(Math.round(100*Math.min(1,(impact-FALL_SAFE_MPS)/(FALL_LETHAL_MPS-FALL_SAFE_MPS))),"fall");}
+      else if(jump.feet<ground){jump.feet=ground;}}
+  }
+  jump.z=Math.max(0,jump.feet-ground);state.position.z=jump.feet+EYE_Z;const actualSpeed=dt>1e-5?Math.hypot(state.position.x-previousWalkPosition.x,state.position.y-previousWalkPosition.y)/dt:0;stepFpsCameraMotion(cameraMotion,{dt,speedMps:jump.airborne?0:actualSpeed,sprinting:sprint&&!jump.airborne});
+  const view=viewport();if(view){view.dataset.walkPosition=`${state.position.x.toFixed(3)},${state.position.y.toFixed(3)},${state.position.z.toFixed(3)}`;view.dataset.walkYaw=state.yaw.toFixed(4);view.dataset.walkPitch=state.pitch.toFixed(4);view.dataset.walkMove=`${state.move.x.toFixed(3)},${state.move.y.toFixed(3)}`;view.dataset.walkLook="full-viewport";view.dataset.walkRequiresArm="0";view.dataset.walkControlProfile="cod-dynamic-assist-bob-v7";view.dataset.walkSpeedMps=String(WALK_MPS);view.dataset.walkSprintMps=String(SPRINT_MPS);view.dataset.walkLookModel="fps-balanced-dynamic-v7";view.dataset.walkViewBob="bounded-stride-v1";view.dataset.walkViewBobWeight=cameraMotion.bobWeight.toFixed(3);view.dataset.walkViewBobOffset=`${cameraMotion.bobX.toFixed(4)},${cameraMotion.bobZ.toFixed(4)}`;view.dataset.walkCameraShake="shot-impulse-damped-v1";view.dataset.walkCameraShakeEnergy=cameraMotion.shakeEnergy.toFixed(3);}
+}
+let lastWalkHousekeeping=-Infinity;function frame(now=performance.now()){const elapsed=clamp((now-lastFrame)/1000,0,LOOK_CATCHUP_MAX_S),dt=Math.min(.05,elapsed);lastFrame=now;if(now-lastWalkHousekeeping>=200){lastWalkHousekeeping=now;mountHud();mountModeButton();renderModeButton();attachCameraProvider();}if(mode==="foot")maintainAimCandidates(now);update(now,dt,elapsed);requestAnimationFrame(frame);}
+function installInput(){const view=viewport();view?.addEventListener("pointerdown",e=>{if(mode!=="foot")return;if(e.target instanceof Element&&e.target.closest("#footHud,#soloTopbar,#gameplayContractHud,.phone-settings-dialog,dialog,button,#airStrikeTargeting,#mobileGameplayDock,#vsRespawnHud"))return;if(e.pointerType==="mouse"&&document.pointerLockElement===view){return;} /* real mousedown owns desktop mouse fire, including chords */e.preventDefault();e.stopImmediatePropagation();},{capture:true,passive:false});view?.addEventListener("pointerup",e=>{if(e.pointerType==="mouse")state.fireHeld=false;},{capture:true});
+  // All desktop shots use mousedown. Pointerdown is NOT delivered for LMB
+  // pressed while RMB (ADS) is held. Preserve fists' independent L/R hands.
+  addEventListener("mousedown",e=>{
+    if(mode!=="foot"||document.pointerLockElement!==view||isPlayerDead())return;
+    if(e.target instanceof Element&&e.target.closest("#footHud,#soloTopbar,#gameplayContractHud,.phone-settings-dialog,dialog,button,#airStrikeTargeting,#mobileGameplayDock,#vsRespawnHud"))return;
+    if(e.button!==0&&!(e.button===2&&fistsOut()))return;
+    if(e.button===0)state.fireHeld=true;
+    selectedWeaponFire(performance.now(),fistsOut()?"mouse-fists":"mouse-mousedown",fistsOut()&&e.button===0?1:0);
+    e.preventDefault();
+  },{capture:true});
+  addEventListener("mouseup",e=>{if(e.button===0)state.fireHeld=false;},{capture:true});
+  addEventListener("blur",()=>{state.fireHeld=false;},{capture:true});
+  document.addEventListener("pointerlockchange",()=>{if(document.pointerLockElement!==view)state.fireHeld=false;});addEventListener("keydown",e=>{if(mode!=="foot"||e.metaKey||e.ctrlKey||e.altKey)return;if(isPlayerDead()){e.preventDefault();return;}if(["KeyW","KeyA","KeyS","KeyD","ShiftLeft","ShiftRight"].includes(e.code)){state.keys.add(e.code);e.preventDefault();}else if(e.code==="KeyV"){setMode("drone");e.preventDefault();}else if(e.code==="Space"&&!e.repeat){requestJump();e.preventDefault();}});addEventListener("keyup",e=>state.keys.delete(e.code));addEventListener(FIRST_PERSON_CONTROL_SETTINGS_EVENT,e=>rebuildFirstPersonInputProfile(e.detail?.settings));addEventListener("arondight:weapon-fired",applyWeaponFireImpulse);addEventListener("arondight:player-death",event=>{state.dead=true;state.deathStartedAt=performance.now();state.deathSide=Number(event?.detail?.fallSide)<0?-1:1;state.keys.clear();state.move.x=state.move.y=0;});addEventListener("arondight:player-revived",()=>{state.dead=false;state.deathStartedAt=-Infinity;state.deathSide=1;});}
+
+export function installPlayerWalkMode(){if(installed)return;installed=true;installStyle();installInput();mode=navigator.webdriver?"drone":readMode();globalThis.__arondightOnFootMode=mode==="foot";document.body.classList.toggle("on-foot-mode",mode==="foot");const view=viewport();if(view){view.dataset.playerMode=mode;view.dataset.walkArchitecture="camera-input-overlay-v4";view.dataset.walkRequiresArm="0";view.dataset.walkControlProfile="cod-dynamic-assist-bob-v7";view.dataset.walkLookModel="fps-balanced-dynamic-v7";view.dataset.walkNativeViewportAim="1";view.dataset.walkControllerCurve="radial-precision-centre-fast-edge-v2";view.dataset.walkControllerIntegration="analytic-wall-clock-catchup-v1";view.dataset.walkAimAssist="friction+input-tracking-xbox-touch-v2";view.dataset.walkViewBob="bounded-stride-v1";view.dataset.walkCameraShake="shot-impulse-damped-v1";view.dataset.walkPitchRange="near-vertical-178deg-v1";view.dataset.walkPitchLimitDeg=(FPS_PITCH_LIMIT_RAD*180/Math.PI).toFixed(1);view.dataset.walkEyeHeightM=EYE_Z.toFixed(2);view.dataset.walkAltitudeInput=mode==="foot"?"locked-eye-height-v1":"drone-height";view.dataset.walkTouchLookActive="0";view.dataset.walkMoveStick="radial-projection-full-range-v2";}rebuildFirstPersonInputProfile(loadFirstPersonControlSettings());globalThis.__arondightWalkMode={setMode,push:pushPlayer,hold:holdPlayer,get mode(){return mode;},get position(){return state.position;},get yaw(){return state.yaw;},get pitch(){return state.pitch;},get dead(){return isPlayerDead();},get pitchLimit(){return FPS_PITCH_LIMIT_RAD;},get controlSettings(){return{...firstPersonSettings};},beginTouchLook,endTouchLook,applyTouchLook:applyTouchLookPixels,applyMouseLook,applyTouchLookStick,setPose({x=state.position.x,y=state.position.y,yaw=state.yaw,pitch=state.pitch}={}){state.position.set(Number(x)||0,Number(y)||0,EYE_Z);previousWalkPosition.copy(state.position);state.yaw=wrapFpsAngleRad(Number(yaw)||0);state.pitch=clamp(pitch,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);lookVelocity.yaw=lookVelocity.pitch=0;state.initialized=true;jump.snap=true;jump.airborne=false;jump.vz=jump.vx=jump.vy=0;jump.z=0;},fire:fireFoot,canWalkTo,
+  // Single-owner touch input (foot_touch_controller.mjs) drives movement here.
+  setTouchMove(x=0,y=0,{sprint=false}={}){const shaped=shapeFirstPersonMove(clamp(x,-1,1),clamp(y,-1,1),firstPersonSettings);state.move.x=shaped.x;state.move.y=shaped.y;state.touchSprint=Boolean(sprint);}};requestAnimationFrame(frame);}
+
+installPlayerWalkMode();

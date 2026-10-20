@@ -1,0 +1,770 @@
+import {vehicleFootprintsOverlap} from "./vehicle_spawn_clearance.mjs";
+import * as THREE from "three";
+import {groundHeightAt,staticGroundHeightAt,onTerrainChange} from "./terrain_craters.mjs";
+import {CAR_STYLES,CAR_STYLE_SEAT_DROP,vehicleGeometry,vehicleMaterial,wheelGeometry,vehicleGlassGeometry,vehicleGlassMaterial} from "./vehicle_models.mjs";
+import {playAnimal} from "./animal_audio.mjs";
+import {createCrowd,civilianColors} from "./crowd_characters.mjs";
+import {VS_FX_EVENT} from "./lan_vs.mjs";
+import {spawnWorldPersonRagdoll} from "./world_person_ragdoll.mjs";
+import {spawnWorldCarExplosion} from "./world_car_explosion.mjs";
+import {stopWorldCriticalDamage} from "./world_critical_damage_fx.mjs";
+import {buildTrafficRoute,collectRenderedDrivableRoads,makeBuildingsOpaque} from "./world_traffic_routes.mjs";
+import {syncWorldBuildingDepthOcclusion} from "./world_building_depth_occlusion.mjs";
+import {createPedestrianNetwork,seedRouteAgents,stepAgent,routePointInto,projectOnRoute,agentRandom,shiftAgent,frighten,provoke,punchPose,armsOf,fightWeapon,temperOf} from "./pedestrian_agents.mjs";
+import {worldOption,WORLD_OPTIONS_EVENT} from "./world_options.mjs";
+import {nativePopulationSnapshot} from "./native_population_view.mjs";
+import {projectileMomentumNs} from "./ballistics.mjs";
+import {honk,shout,scream} from "./street_voices.mjs";
+
+const MOBILE=/(?:android|iphone|ipad|ipod|macintosh.*mobile)/i.test(globalThis.navigator?.userAgent||"");
+const CAR_COUNT=MOBILE?28:42;
+// People are persistent agents (pedestrian_agents.mjs) living on the sidewalk network; this many are
+// drawn at once around the player (the former route walkers + passers-by, now all one kind of person)
+const PERSON_SLOTS=MOBILE?68:100;
+const PEOPLE_SPACING_M=MOBILE?20:14,PEOPLE_ROUTE_CAP=MOBILE?18:30;// a lively street; more people live around than can be drawn at once (nearest first)
+const PEOPLE_SHOW_M=MOBILE?140:170,PEOPLE_ENTRY_M=MOBILE?125:150,PEOPLE_HIDE_M=MOBILE?160:190;
+const PEOPLE_NET_M=650,PEOPLE_SEED_M=320,PEOPLE_DROP_M=520,PEOPLE_FAR_SIM_M=220,PEOPLE_FAR_SIM_MS=400,PEOPLE_GATE_MS=250,PEOPLE_NET_MS=1000,PEOPLE_REBIRTH_MS=10000;
+// traffic: arrivals out of view, or from far away along the road (a few pixels at the horizon)
+const VEHICLE_ENTRY_M=260,VEHICLE_RELOCATE_M=330,VEHICLE_VANISH_M=600,VEHICLE_PLACE_MIN_M=45,VEHICLE_PLACE_MAX_M=240,VEHICLE_PLACE_MS=500;
+const ANIMAL_ENTRY_M=110,BIRD_ENTRY_M=150,GATE_RECHECK_MS=250,REANCHOR_M=2500;
+const BUS_COUNT=MOBILE?5:8;
+const BIRD_COUNT=MOBILE?16:24;
+const AMBIENT_ANIMAL_COUNT=MOBILE?12:20;
+const AMBIENT_ANIMAL_TICK_MS=0;
+const ANIMAL_GROUND_OFFSET_M=.36;
+const TREE_COUNT=MOBILE?20:34;
+const LAMP_COUNT=MOBILE?12:20;
+const MAINTENANCE_MS=1800;
+const ROUTE_REFRESH_MS=1600;
+const ROUTE_STALE_MS=18000;
+const MAX_ROUTE_POOL=56;
+const POPULATION_TICK_MS=MOBILE?32:16;
+const VEHICLE_STALL_NUDGE_MS=2600;
+const IMAGERY_STORAGE="arondight45WorldImageryV1";
+const IMAGERY_DEFAULT_OFF_MIGRATION="arondight45WorldImageryDefaultOffV3";
+const FX_TYPE="world-procedural-death-v1";
+const EARTH_RADIUS_M=6378137;
+
+// the world shown for the first time (or a different world loaded) is populated in one go, while
+// it appears; after that everything arrives out of view
+let worldShownAt=0,firstRoutesAt=0;const SPAWN_GRACE_MS=6000,ROUTES_GRACE_MS=3000;
+const records=[],spawnVisibilityRoots=[],byId=new Map(),routes=[],routeCache=new Map();
+const tmp=new THREE.Vector3(),cameraPos=new THREE.Vector3(),matrix=new THREE.Matrix4(),quat=new THREE.Quaternion(),scale=new THREE.Vector3(1,1,1),decorUp=new THREE.Vector3(0,0,1);
+let animalLegs=null,lastAnimalFrame=0;
+// switched-off kinds do not exist (no bodies, no AI, no draw); switched on they arrive out of view
+const opts={people:true,traffic:true,dogs:true,cats:true,birds:true};
+function readOptions(){for(const k in opts)opts[k]=worldOption(k);}readOptions();
+if(typeof window!=="undefined")addEventListener(WORLD_OPTIONS_EVENT,()=>readOptions());
+let installed=false,boundScene=null,root=null,decorRoot=null,lightRoot=null,treeTrunks=null,treeCrowns=null,treeGlow=null,lampPoles=null,lampHeads=null,animalBodies=null,animalHeads=null;
+let worldKey="",worldSeed=0,anchorX=0,anchorY=0,anchorLon=NaN,anchorLat=NaN,lastOriginLon=NaN,lastOriginLat=NaN,lastMaintenance=-Infinity,lastRouteRefresh=-Infinity,lastRouteOrigin="",worldVisibleLatched=false,mapStyledFor=null;
+let hitBridge=null,lastFrame=performance.now(),lastPopulationTick=-Infinity,lastAmbientAnimalTick=-Infinity,forceImageryOff=false,cachedFocusTick=-Infinity,cachedFocus=null,cachedRoutePoolTick=-Infinity,cachedRoutePool=[];
+
+function bridge(){return globalThis.__arondightRealWorld||null;}
+function viewport(){return document.getElementById("viewport");}
+function rigidBodies(){return globalThis.__arondightWorldRigidBodies||null;}
+function hashText(text){let h=2166136261;for(const c of String(text||"")){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
+function u(seed,salt){return hashText(`${seed}:${salt}`)/4294967295;}
+function range(seed,salt,a,b){return a+(b-a)*u(seed,salt);}
+function clamp(value,min,max){return Math.max(min,Math.min(max,Number(value)||0));}
+function mod(x,m){return((x%m)+m)%m;}
+function lngLatToMeters(lon0,lat0,lon,lat){const north=(lat-lat0)*Math.PI/180*EARTH_RADIUS_M,east=(lon-lon0)*Math.PI/180*EARTH_RADIUS_M*Math.max(.01,Math.cos(lat0*Math.PI/180));return[east,north];}
+function worldVisible(){
+  const b=bridge(),v=viewport(),solo=document.body?.classList.contains("solo-flight");
+  if(solo||b?.active){worldVisibleLatched=true;return true;}
+  if(worldVisibleLatched&&v?.dataset?.worldMode==="real")return true;
+  worldVisibleLatched=false;return false;
+}
+
+function migrateSatelliteDefaultOff(){try{if(localStorage.getItem(IMAGERY_DEFAULT_OFF_MIGRATION)!=="1"){localStorage.setItem(IMAGERY_STORAGE,"0");localStorage.setItem(IMAGERY_DEFAULT_OFF_MIGRATION,"1");forceImageryOff=true;}const v=viewport();if(v){v.dataset.worldSatelliteDefault="off";v.dataset.worldImageryDefault="0";}}catch{}}
+function syncSatelliteMigration(){migrateSatelliteDefaultOff();if(!forceImageryOff)return;const b=bridge();if(!b)return;b.setImageryEnabled?.(false);forceImageryOff=false;}
+migrateSatelliteDefaultOff();
+
+const shared={};
+function mat(color,roughness=.7,metalness=.04){return new THREE.MeshStandardMaterial({color,roughness,metalness});}
+function zCylinder(rt,rb,h,segments=8){const g=new THREE.CylinderGeometry(rt,rb,h,segments);g.rotateX(Math.PI/2);return g;}
+function ensureShared(){if(shared.carBody)return;shared.carBody=new THREE.BoxGeometry(3.55,1.62,.55);shared.carCabin=new THREE.BoxGeometry(1.75,1.44,.55);shared.busBody=new THREE.BoxGeometry(8,2.34,2.2);shared.busWindow=new THREE.BoxGeometry(5.9,2.37,.66);shared.wheel=new THREE.CylinderGeometry(.3,.3,.18,8);shared.busWheel=new THREE.CylinderGeometry(.4,.4,.22,10);shared.torso=zCylinder(.2,.29,.7,7);shared.leg=new THREE.BoxGeometry(.14,.15,.62);shared.arm=new THREE.BoxGeometry(.12,.12,.58);shared.head=new THREE.SphereGeometry(.19,8,6);shared.bird=new THREE.BufferGeometry();shared.bird.setAttribute("position",new THREE.BufferAttribute(new Float32Array([-.08,.38,0,-.78,-.12,.02,-.08,.02,.02,.08,.38,0,.08,.02,.02,.78,-.12,.02,-.08,.38,0,.08,.38,0,0,-.46,.04]),3));shared.bird.computeVertexNormals();shared.carMats=[0xc7473a,0x3079b7,0xc59b36,0xd7d9d8,0x3d4348,0x4d8b62,0x71588f].map(c=>mat(c,.42,.2));shared.busMats=[0x236da8,0xb84b40,0xc49a38,0x3f7d5c].map(c=>mat(c,.48,.12));shared.window=mat(0x263b46,.26,.1);shared.wheelMat=mat(0x202327,.88,.02);shared.shirts=[0x397da1,0xa9574a,0x5c8f62,0xb38f43,0x75659b,0xad7040,0x3f8b86].map(c=>mat(c,.82));shared.pants=[0x26313a,0x3a4146,0x403b36,0x263a50].map(c=>mat(c,.9));shared.skins=[0xe2b391,0xc5906d,0xa76f50,0x75452f,0xd1a07e].map(c=>mat(c,.88));shared.birds=[0x2f3942,0x56626a,0x806e53,0xc3c6c4,0x415666].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.85,side:THREE.DoubleSide}));}
+function tag(mesh,record){mesh.userData.worldPopulationKind=record.kind;mesh.userData.worldPopulationId=record.id;mesh.userData.worldProceduralId=record.id;mesh.userData.worldPopulationClone=false;}
+function retag(record){record.group.userData.worldPopulationKind=record.kind;record.group.userData.worldPopulationId=record.id;record.group.userData.worldProceduralId=record.id;record.group.userData.gtaDrivableVehicle=record.kind==="car";record.group.traverse(node=>{if(node?.isMesh){tag(node,record);node.userData.gtaDrivableVehicle=record.kind==="car";}});}
+function baseRecord(kind,index,group,color=0){return{kind,index,group,color,id:"",seed:0,motion:null,deadUntil:0,speed:0,routeDirection:index&1?-1:1,routeKey:"",placed:false,dOffset:0,relocations:0,physicsRegistered:false,physicsPose:null,stalledSince:0,lastNudgeAt:0};}
+function makeCar(index){ensureShared();const s=hashText(`car:${index}`),style=CAR_STYLES[(s>>>5)%CAR_STYLES.length],group=new THREE.Group(),paint=style==="roadster"?ROADSTER_PAINTS[(s>>>9)%ROADSTER_PAINTS.length]:shared.carMats[s%shared.carMats.length].color.getHex(),body=new THREE.Mesh(vehicleGeometry("car",paint,{glass:false,style}),vehicleMaterial),glass=new THREE.Mesh(vehicleGlassGeometry("car",style),vehicleGlassMaterial),r=baseRecord("car",index,group,paint);r.style=style;group.userData.carStyle=style;body.castShadow=true;glass.renderOrder=2;glass.userData.vehicleGlass=true;group.add(body,glass);return r;}
+function makeBus(index){ensureShared();const s=hashText(`bus:${index}`),group=new THREE.Group(),paint=shared.busMats[s%shared.busMats.length].color.getHex(),body=new THREE.Mesh(vehicleGeometry("bus",paint,{glass:false}),vehicleMaterial),glass=new THREE.Mesh(vehicleGlassGeometry("bus"),vehicleGlassMaterial),r=baseRecord("bus",index,group,paint);body.castShadow=true;glass.renderOrder=2;glass.userData.vehicleGlass=true;group.add(body,glass);return r;}
+// People are drawn by the instanced articulated crowd (crowd_characters.mjs). A person is an agent
+// (pedestrian_agents.mjs) that exists whether anybody looks or not; a draw slot is lent to it while it
+// is near the player. Each slot keeps its logical group plus an invisible, raycastable body proxy so
+// shots, grenades and the car hit the person exactly where it stands. A slot is only ever given to a
+// person out of every player's view (or far away), and only taken back out of view or far away.
+let proxyGeo=null,proxyMat=null;
+let crowd=null,crowdHooked=null;let crowdLast=performance.now();
+const people=[],personSlots=[],routePeople=new Map(),pedNet=createPedestrianNetwork(),candidates=[],peopleOut=[],peopleOutPool=[];
+let lastPeopleNet=-Infinity,lastPeopleGate=-Infinity,lastPeopleSlow=-Infinity,peopleStepAt=performance.now(),peopleShown=0,peopleSpawnRefused=0;
+function makePersonSlot(i){proxyGeo??=(()=>{const g=new THREE.CapsuleGeometry(.26,1.2,3,8);g.rotateX(Math.PI/2);g.translate(0,0,.86);return g;})();proxyMat??=Object.assign(new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}),{colorWrite:false,visible:false});
+  const group=new THREE.Group(),proxy=new THREE.Mesh(proxyGeo,proxyMat);proxy.name="PERSON_HIT_PROXY";proxy.userData.hitProxy=true;proxy.userData.styleSkip=true;proxy.userData.worldPopulationKind="person";group.add(proxy);
+  group.name="WORLD_PERSON";group.visible=false;group.userData.worldPopulationKind="person";group.userData.agentDriven=true;/* position owned by the agent: no other module moves it */group.userData.worldPopulationClone=false;group.userData.spawnFarEntryM=PEOPLE_ENTRY_M;return{i,group,agent:null};}
+function updateCrowd(){if(!crowd)return;const now=performance.now(),dt=Math.min(.1,Math.max(.001,(now-crowdLast)/1000));crowdLast=now;const shown=root?.visible!==false;
+  // only who is set this frame is drawn (the crowd packs its instances)
+  if(shown)for(const slot of personSlots){const a=slot.agent;if(!a||!slot.group.visible)continue;if(now<(a.handsUpUntil||0)&&a.screamFor!==a.handsUpUntil){a.screamFor=a.handsUpUntil;/* arms flung up = a scream, at the same moment */scream([a.x,a.y,(Number(a.z)||groundHeightAt(a.x,a.y))+1.6],{seed:a.id});}crowd.set(slot.i,{x:a.x,y:a.y,z:a.z,yaw:a.yaw-Math.PI/2,state:a.state==="fight"?(a.arms==="gun"?"aim-pistol":"fight"):now<(a.handsUpUntil||0)&&a.v>1.5?"panic":a.v>3.2?"run":a.v>.25?"walk":"idle",speed:a.v,dt,weapon:fightWeapon(a),punch:a.state==="fight"&&a.arms!=="gun"?punchPose(a,now):0});}
+  crowd.commit();
+  try{drawDrivers(dt);npcCarjackCheck(now);}catch(e){console.warn("drivers",e);}}
+// people wait at the kerb for a gap in the traffic: no car near the crossing, none coming at it
+pedNet.crossingClear=(x0,y0,x1,y1)=>{const mx=(x0+x1)/2,my=(y0+y1)/2;for(const r of records){if((r.kind!=="car"&&r.kind!=="bus")||!r.group.visible)continue;const g=r.group.position,dx=mx-g.x,dy=my-g.y,d=Math.hypot(dx,dy);if(d>40)continue;
+  // a car right at the crossing (even one waiting for people) goes first; one coming at it is waited for
+  if(d<(r.kind==="bus"?10:8))return false;const v=r.physicsPose?.velocity,yaw=r.group.rotation.z,vx=v?v[0]:Math.cos(yaw)*r.speed,vy=v?v[1]:Math.sin(yaw)*r.speed,sp=Math.hypot(vx,vy);if(sp<.8)continue;if((dx*vx+dy*vy)/(d*sp)>.55&&d/sp<4.5)return false;}return true;};
+let seenWalkShots=-1;const roadPeople=[],knockLog=[];// roadPeople: the drawn, standing people drivers look out for; knockLog: the last knock-downs (diagnostics)
+// drivers brake for anybody in their path (people crossing, running in panic, or on the corner the
+// car is cutting); people walking outside the car's corridor do not slow it down
+function yieldsToPedestrian(record,pose,now){if(now<(record.yieldCheckAt||0))return record.yielding;record.yieldCheckAt=now+120;record.yielding=false;if(!roadPeople.length)return false;
+  const q=pose.rotation,yaw=Number.isFinite(pose.yaw)?pose.yaw:Math.atan2(2*(q[3]*q[2]+q[0]*q[1]),1-2*(q[1]*q[1]+q[2]*q[2])),c=Math.cos(yaw),sn=Math.sin(yaw),v=pose.velocity||[0,0,0],sp=Math.hypot(v[0],v[1]),reach=(record.kind==="bus"?9:6)+sp*.5+sp*sp/9,half=record.kind==="bus"?1.95:1.6;/* stopping distance at ~4.5 m/s2; corridor = half the body + a person + margin */
+  record.yieldFor=null;for(const a of roadPeople){const dx=a.x-pose.position[0],dy=a.y-pose.position[1],along=dx*c+dy*sn;if(along<-.5||along>reach)continue;if(Math.abs(-dx*sn+dy*c)<half){record.yielding=true;record.yieldFor=a;break;}}
+  // the player on foot standing in the lane counts too (drivers brake — and honk)
+  if(!record.yielding){const W=globalThis.__arondightWalkMode;if(W?.mode==="foot"&&!W.dead&&W.position){const dx=W.position.x-pose.position[0],dy=W.position.y-pose.position[1],along=dx*c+dy*sn;if(along>=-.5&&along<=reach&&Math.abs(-dx*sn+dy*c)<half){record.yielding=true;record.yieldFor="player";}}}
+  return record.yielding;}
+// Honking, only with a reason: someone stands in the lane and does not move (the player sooner,
+// a pedestrian after a few seconds); a rare person who is honked at answers back.
+function honkCheck(record,pose,now,yielding){if(!yielding){record.blockedSince=0;return;}record.blockedSince||=now;const who=record.yieldFor,wait=now-record.blockedSince,need=who==="player"?2600:7000;
+  if(wait<need||now<(record.nextHonkAt||0))return;const style=wait>6000?"long":who==="player"?"double":"toot";if(honk([pose.position[0],pose.position[1],pose.position[2]+.4],{kind:record.kind,style,source:record.id})){record.nextHonkAt=now+9000+Math.random()*7000;if(who&&who!=="player"&&Math.random()<.35)setTimeout(()=>say(who,"honked"),600);}}
+// gunshots and blasts frighten the people around: they run, then find their way again
+function frightenAround(x,y,radius,now,strength=1){let nearest=null,nd=Infinity;for(const a of people){if(!a.alive||a.knocked)continue;const d=Math.hypot(a.x-x,a.y-y);if(d<radius){frighten(a,x,y,now,{strength:strength*(1-d/radius*.5)});if(a.slot&&d<nd){nd=d;nearest=a;}}}if(nearest)say(nearest,"scared");}
+// a person speaks (street_voices.mjs: rate-limited, spoken + bubble)
+function say(a,mood){if(!a?.alive||a.knocked)return false;return shout([a.x,a.y,Number(a.z)||groundHeightAt(a.x,a.y)],{mood,seed:a.id});}
+function moodFor(result){return result==="fight"?"angry":result==="flee"?"scared":"bump";}
+// Gunfire scares the people right around the shooter, not the whole street: everyone within 10 m
+// runs, between 10 and 22 m only some do (the rest flinch and carry on); they calm down again once
+// it has been quiet for a few seconds (the flight time runs out, then they walk on).
+function noticeShots(now){const v=viewport(),shots=Number(v?.dataset.walkShots)||0;if(seenWalkShots<0||shots<seenWalkShots){seenWalkShots=shots;return;}if(shots===seenWalkShots)return;seenWalkShots=shots;const pos=String(v.dataset.walkPosition||"").split(",").map(Number);if(pos.length>=2&&pos.every(Number.isFinite))shotScare(pos[0],pos[1],now);}
+// Gunfire in the street is a crime when somebody hears it: a witness within ~30 m phones it in.
+// One report per few seconds of shooting (GTA: a short spray costs a star, a rampage keeps adding).
+let lastGunfireCrime=-Infinity,gunfireSeq=0;
+function gunfireWitnessed(x,y,now){if(now-lastGunfireCrime<6000)return;let w=0;for(const a of people){if(!a.alive||a.knocked)continue;if(Math.hypot(a.x-x,a.y-y)<20&&++w>=1)break;}if(!w)return;lastGunfireCrime=now;
+  try{globalThis.__arondightWantedSystem?.reportCrime?.({id:`gunfire-${(++gunfireSeq).toString(36)}-${Math.round(now)}`,kind:"gunfire",severity:1,position:[x,y,0]});}catch{}}
+function shotScare(x,y,now){let nearest=null,nd=Infinity;for(const a of people){if(!a.alive||a.knocked||a.fightUntil)continue;const d=Math.hypot(a.x-x,a.y-y);if(d>16)continue;
+    if(d>8){a.shotRoll??=Math.random();if(a.shotRoll>.3)continue;} // only the immediate surroundings: everyone within 8 m, a few up to 16 m
+    // an armed gangster does not run from gunfire: he draws and comes for the shooter
+    if(d<7&&armsOf(a)!=="fists"&&(a.shotFightRoll??=Math.random())<.35&&provoke(a,now,{shot:true})==="fight"){if(a.slot&&Math.random()<.6)say(a,"angry");continue;}
+    const already=a.fleeUntil&&now<a.fleeUntil;frighten(a,x,y,now,{ms:4200+(16-d)*150,strength:1.5-d/16});if(!already&&a.slot&&d<nd){nd=d;nearest=a;}}
+  if(nearest&&Math.random()<.45)say(nearest,"scared");}
+// RESET: the population starts over like at the first world show — every car, bus and person
+// fresh and whole, the dead animals back, nothing parked where the player left it
+// every round fired is heard: the people right around the shooter react (shotScare), and those
+// near where it strikes duck away from the impact too (a smaller ring)
+let lastShotScare=0;
+if(typeof window!=="undefined"){addEventListener("arondight:weapon-fired",e=>{const d=e?.detail||{};if(d.mode&&d.mode!=="foot")return;if(/fists|knife|hand-grenade|gravity/.test(String(d.weapon||"")))return;const now=performance.now();if(now-lastShotScare<120)return;lastShotScare=now;const W=globalThis.__arondightWalkMode;if(W?.mode==="foot"&&W.position){shotScare(W.position.x,W.position.y,now);gunfireWitnessed(W.position.x,W.position.y,now);}});
+  addEventListener("arondight:foot-tracer",e=>{const b=e?.detail?.end;if(!Array.isArray(b))return;const now=performance.now();for(const a of people){if(!a.alive||a.knocked||a.fightUntil)continue;const d=Math.hypot(a.x-b[0],a.y-b[1]);if(d<6.5)frighten(a,b[0],b[1],now,{ms:3500,strength:1.2});}});}
+if(typeof window!=="undefined")addEventListener("arondight:gangster-gunfire",e=>{const p=e?.detail?.position;if(Array.isArray(p))shotScare(p[0],p[1],performance.now());});
+if(typeof window!=="undefined")addEventListener("arondight:world-reset",()=>{worldKey="";lastPopulationTick=-Infinity;const v=document.getElementById("viewport");if(v)v.dataset.worldPopulationReset=String((Number(v.dataset.worldPopulationReset)||0)+1);});
+if(typeof window!=="undefined")addEventListener("arondight:world-explosion",e=>{const pos=e?.detail?.position,x=Array.isArray(pos)?+pos[0]:+pos?.x,y=Array.isArray(pos)?+pos[1]:+pos?.y;if(Number.isFinite(x)&&Number.isFinite(y))frightenAround(x,y,Math.min(90,Math.max(20,(Number(e.detail.radiusM)||6)*5)),performance.now(),1.3);});
+function personRecordFor(a){a.kind="person";a.hp=100;a.gen=0;a.baseId=a.id;a.colors=civilianColors(a.seed);a.slot=null;a.z=0;a.simAt=performance.now();a.deadAt=0;return a;}
+function bindPerson(slot,a){slot.agent=a;a.slot=slot;const u=slot.group.userData;u.worldPopulationId=u.worldProceduralId=a.id;u.spawnHeld=false;u.spawnHandoff=false;crowd?.setColors(slot.i,a.colors);a.z=groundHeightAt(a.x,a.y);slot.group.position.set(a.x,a.y,a.z);slot.group.rotation.set(0,0,a.yaw);slot.group.updateMatrixWorld();}
+function unbindPerson(slot){const a=slot.agent;if(a)a.slot=null;slot.agent=null;const u=slot.group.userData;u.worldPopulationId=u.worldProceduralId="";u.spawnHeld=false;slot.group.visible=false;}
+function removePerson(a){a.removed=true;a.alive=false;if(a.slot)unbindPerson(a.slot);byId.delete(a.id);const entry=routePeople.get(a.home);if(entry&&entry.agents[a.idx]===a)entry.agents[a.idx]=null;}
+function clearPeople(){for(const slot of personSlots)unbindPerson(slot);for(const a of people){a.removed=true;a.alive=false;byId.delete(a.id);}people.length=0;routePeople.clear();pedNet.sync([]);peopleShown=0;roadPeople.length=0;}
+function personGateOpen(x,y,z,farEntryM=PEOPLE_ENTRY_M){return spawnGateOpen(x,y,z,{farEntryM,heightM:1.9});}
+// the streets people live on: everything near enough in the route cache (training: the fixed range)
+function peopleNetwork(now,focus){if(now-lastPeopleNet<PEOPLE_NET_MS)return;lastPeopleNet=now;const list=[];
+  for(const route of(worldKey==="training"?routes:routeCache.values())){if(!focus||worldKey==="training"||nearestRouteDistance(route,focus.x,focus.y).offsetM<PEOPLE_NET_M)list.push(route);}
+  pedNet.sync(list);
+  // a street near the player has its people (deterministic per street: the same people every time)
+  const spacing=worldKey==="training"?Math.max(4,list.reduce((n,r)=>n+r.length,0)/PERSON_SLOTS):PEOPLE_SPACING_M,cap=worldKey==="training"?80:PEOPLE_ROUTE_CAP;
+  for(const route of pedNet.routes.values()){if(focus&&worldKey!=="training"&&nearestRouteDistance(route,focus.x,focus.y).offsetM>PEOPLE_SEED_M)continue;let entry=routePeople.get(route.key);if(entry&&entry.full)continue;
+    const fresh=seedRouteAgents(route,{spacingM:spacing,cap,salt:worldKey==="training"?"training":"street"});if(!entry){entry={agents:new Array(fresh.length).fill(null),full:false};routePeople.set(route.key,entry);}
+    for(let i=0;i<fresh.length;i++){if(entry.agents[i])continue;const a=personRecordFor(fresh[i]);a.idx=i;if(a.leader){const lead=entry.agents[a.leader.idx??-1]||entry.agents.find((q,k)=>q&&fresh[k]===a.leader);if(lead)a.leader=lead;}entry.agents[i]=a;people.push(a);byId.set(a.id,a);}
+    entry.full=true;}}
+// how much way is left to the destination: along the streets, plus the walk to the next sidewalk
+function remainingWay(a){if(a.state!=="walk")return 0;let way=0;for(let k=a.li;k<a.legs.length;k++){const leg=a.legs[k];way+=Math.abs(leg.toS-(k===a.li?a.s:leg.fromS));}const leg=a.legs[a.li],route=leg&&pedNet.get(leg.route);if(route){const p=routePointInto(route,a.s,(leg.side||a.side)*a.off,{});way+=Math.hypot(p.x-a.x,p.y-a.y);}return way;}
+function personDistance(a,focus){return focus?Math.hypot(a.x-focus.x,a.y-focus.y):0;}
+// the player's car flying past within a stride: they jump back and let him have it
+function nearMissCheck(a,now){const D=globalThis.__arondightVehicleDrive;if(!D?.active||now-(a.nearMissAt||0)<5000)return;const p=D.pose?.position,v=D.pose?.velocity;if(!p||!v)return;const sp=Math.hypot(v[0],v[1]);if(sp<7)return;const d=Math.hypot(a.x-p[0],a.y-p[1]);if(d>3.2||d<1.2)return;a.nearMissAt=now;frighten(a,p[0],p[1],now,{ms:2600,strength:1.4});say(a,"nearmiss");}
+// walking into someone (on foot, at more than a stroll) annoys them (pedestrian_agents.mjs provoke)
+function bumpCheck(a,now){const W=globalThis.__arondightWalkMode,J=globalThis.__arondightWalkJump;if(W?.mode!=="foot"||W.dead||!W.position||!J)return;const dx=a.x-W.position.x,dy=a.y-W.position.y,d=Math.hypot(dx,dy);if(d>.75||now-(a.bumpAt||0)<1300)return;const sp=Math.hypot(J.vx||0,J.vy||0);if(sp<1.1)return;const toward=((J.vx||0)*dx+(J.vy||0)*dy)/(d*sp||1);if(toward<.3)return;a.bumpAt=now;const r=provoke(a,now);say(a,moodFor(r));const v=viewport();if(v)v.dataset.pedestrianBump=r;}
+// Two strangers walking into each other: most mutter and walk on, now and then one of them has a
+// short fuse and it turns into a scuffle (the other backs off, runs, or fights back by his temper);
+// very rarely someone armed pulls his gun. Checked a few times a second among the people shown.
+let lastBrawlCheck=0;
+function brawlCheck(now){if(now-lastBrawlCheck<300)return;lastBrawlCheck=now;const shown=people.filter(a=>a.alive&&!a.knocked&&a.slot&&!a.fightUntil&&!(a.fleeUntil>now)&&a.v>.4);
+  for(let i=0;i<shown.length;i++){const a=shown[i];for(let j=i+1;j<shown.length;j++){const b=shown[j];if(Math.abs(a.x-b.x)>.6||Math.abs(a.y-b.y)>.6||Math.hypot(a.x-b.x,a.y-b.y)>.55)continue;if(a.leader===b||b.leader===a||a.leader&&a.leader===b.leader)continue;
+    if(now<(a.bumpCool||0)||now<(b.bumpCool||0))continue;a.bumpCool=b.bumpCool=now+20000;
+    const ta=temperOf(a),tb=temperOf(b),hot=ta==="aggressive"?a:tb==="aggressive"?b:null;
+    if(!hot||Math.random()>.35){say(Math.random()<.5?a:b,"bump");continue;}
+    const other=hot===a?b:a;hot.fightUntil=now+9000;hot.foe=other;hot.leader=null;hot.fleeUntil=0;say(hot,"angry");
+    const v=viewport();if(v)v.dataset.pedestrianBrawls=String((Number(v.dataset.pedestrianBrawls)||0)+1);return;}}}
+if(typeof window!=="undefined")addEventListener("arondight:pedestrian-brawl",e=>{const d=e?.detail||{},att=byId.get(String(d.id||"")),b=byId.get(String(d.foeId||""));if(!b||b.kind!=="person"||!b.alive||b.knocked)return;const now=performance.now(),dir=Array.isArray(d.dir)?d.dir:[1,0];
+  b.hp=(Number.isFinite(b.hp)?b.hp:100)-(d.weapon==="knife"?34:12);
+  if(b.hp<=0){killPerson(b,{network:true,impulse:[dir[0]*2,dir[1]*2,.8]});if(att){att.fightUntil=0;att.foe=null;frighten(att,b.x,b.y,now,{ms:6000,strength:1.4});}return;}
+  if(b.hp<=35){knockPerson(b,{impulse:[dir[0]*2,dir[1]*2,.9],damage:0});if(att){att.fightUntil=now+1200;}return;}
+  b.x+=dir[0]*.25;b.y+=dir[1]*.25;b.v=0;const r=att?provoke(b,now,{punched:true,by:att}):"none";if(Math.random()<.5)say(b,r==="fight"?"angry":"scared");
+  // people around a scuffle keep their distance
+  for(const c of people){if(c===b||c===att||!c.alive||c.fightUntil)continue;if(Math.hypot(c.x-b.x,c.y-b.y)<6&&Math.random()<.5)frighten(c,b.x,b.y,now,{ms:3000,strength:.8});}});
+// A drone or a jet screaming in low over people: they scatter (most), a few hot-heads stand and
+// shout at it. Only below ~14 m above them and within ~12 m sideways — a drone passing high is ignored.
+let lastDangerCheck=0;
+function dangerCheck(now){if(now-lastDangerCheck<450)return;lastDangerCheck=now;const W=globalThis.__arondightWalkMode,J=globalThis.__jetMode,D=globalThis.__arondightVehicleDrive;let src=null;
+  if(J?.active&&J.pose){src={x:J.pose.x,y:J.pose.y,z:J.pose.z,r:22,h:40};}
+  else if(W&&W.mode!=="foot"&&!D?.active){const c=bridge()?.presentedCamera?.();if(c)src={x:c.position.x,y:c.position.y,z:c.position.z,r:9,h:12};}
+  if(!src)return;for(const a of people){if(!a.alive||a.knocked||a.fightUntil||!a.slot)continue;const d=Math.hypot(a.x-src.x,a.y-src.y);if(d>src.r)continue;const up=src.z-(Number(a.z)||groundHeightAt(a.x,a.y));if(up>src.h||up<-1)continue;
+    if(a.fleeUntil>now)continue;if(temperOf(a)==="aggressive"&&agentRandomLike(a)<.5){if(now-(a.yellAt||0)>6000){a.yellAt=now;say(a,"angry");}continue;}
+    frighten(a,src.x,src.y,now,{ms:3500,strength:1.2});if(now-(a.yellAt||0)>8000&&Math.random()<.3){a.yellAt=now;say(a,"scared");}}}
+function agentRandomLike(a){let h=0;for(const ch of String(a.id))h=(h*31+ch.charCodeAt(0))>>>0;return(h%1000)/1000;}
+function updatePeople(now,focus){
+  if(!opts.people){if(people.length)clearPeople();return;}
+  peopleNetwork(now,focus);noticeShots(now);brawlCheck(now);dangerCheck(now);
+  const dtNear=Math.min(.1,Math.max(0,(now-peopleStepAt)/1000));peopleStepAt=now;
+  // walk: near / shown people every tick, far unseen people a few times a second (same legs, bigger steps)
+  for(const a of people){if(!a.alive||a.knocked)continue;const near=a.slot||personDistance(a,focus)<PEOPLE_FAR_SIM_M;
+    if(near){stepAgent(a,dtNear,now,pedNet);a.simAt=now;if(a.slot){bumpCheck(a,now);nearMissCheck(a,now);}}else if(now-a.simAt>=PEOPLE_FAR_SIM_MS){stepAgent(a,Math.min(1,(now-a.simAt)/1000),now,pedNet);a.simAt=now;}}
+  if(now-lastPeopleGate>=PEOPLE_GATE_MS){lastPeopleGate=now;gatePeople(now,focus);}
+  if(now-lastPeopleSlow>=1000){lastPeopleSlow=now;peopleLifecycle(now,focus);}
+  roadPeople.length=0;for(const slot of personSlots){const a=slot.agent;if(a&&a.alive&&!a.knocked)roadPeople.push(a);}
+  let shown=0;for(const slot of personSlots){const a=slot.agent;if(!a)continue;const g=slot.group;a.z=groundHeightAt(a.x,a.y);g.position.set(a.x,a.y,a.z);g.rotation.set(0,0,a.yaw);g.visible=a.alive&&!a.knocked&&!g.userData.spawnHeld;if(g.visible)shown++;}peopleShown=shown;}
+// lend draw slots: nearest people first, only where nobody sees them arrive; give slots back far
+// away or out of view
+function gatePeople(now,focus){
+  let free=0;for(const slot of personSlots){const a=slot.agent;if(!a){free++;continue;}if(a.removed||!a.alive||(!a.knocked&&personDistance(a,focus)>PEOPLE_HIDE_M)){unbindPerson(slot);free++;}}
+  candidates.length=0;for(const a of people)if(a.alive&&!a.knocked&&!a.slot&&!(a.inCarUntil>now)){const d=personDistance(a,focus);if(d<PEOPLE_SHOW_M){a.gateD=d;candidates.push(a);}}
+  if(!candidates.length)return;candidates.sort((p,q)=>p.gateD-q.gateD);let checks=0;
+  for(const a of candidates){if(checks>=48)break;let slot=null;
+    if(free>0)slot=personSlots.find(s=>!s.agent);
+    else{// all slots in use: take one back from the farthest drawn person, if nobody sees that one vanish
+      let far=null,fd=a.gateD+25;for(const s of personSlots){const b=s.agent;if(!b||b.knocked)continue;const d=personDistance(b,focus);if(d>fd){fd=d;far=s;}}
+      if(!far)break;checks++;if(!personGateOpen(far.agent.x,far.agent.y,far.agent.z))continue;slot=far;unbindPerson(far);free++;}
+    checks++;if(!personGateOpen(a.x,a.y,groundHeightAt(a.x,a.y))){peopleSpawnRefused++;continue;}
+    bindPerson(slot,a);free--;}}
+// deaths, rebirths (a new person, out of view, on the home street) and people who walked far off
+function peopleLifecycle(now,focus){
+  for(let i=people.length-1;i>=0;i--){const a=people[i];
+    if(!a.alive&&!a.removed&&now-a.deadAt>PEOPLE_REBIRTH_MS)rebirthPerson(a,now,focus);
+    if(!a.slot&&!a.knocked&&personDistance(a,focus)>PEOPLE_DROP_M&&worldKey!=="training"){removePerson(a);const entry=routePeople.get(a.home);if(entry)entry.full=false;people.splice(i,1);}}}
+function rebirthPerson(a,now,focus){const route=pedNet.get(a.home);if(!route)return false;const p={};
+  for(let k=0;k<8;k++){const s=2+agentRandom(a)*Math.max(0,route.length-4),side=agentRandom(a)<.5?1:-1;routePointInto(route,s,side*a.off,p);if(focus&&Math.hypot(p.x-focus.x,p.y-focus.y)<30)continue;if(!personGateOpen(p.x,p.y,groundHeightAt(p.x,p.y),0))continue;
+    byId.delete(a.id);a.gen++;a.id=`${a.baseId}-g${a.gen}`;byId.set(a.id,a);a.colors=civilianColors(a.seed+a.gen*7919);a.hp=100;a.alive=true;a.knocked=false;a.leader=null;a.x=p.x;a.y=p.y;a.yaw=Math.atan2(p.ty,p.tx);a.v=0;a.route=route.key;a.s=s;a.side=side;a.legs.length=0;a.state="wait";a.waitUntil=now+agentRandom(a)*4000;a.simAt=now;return true;}
+  return false;}
+function killPerson(a,{network=true,impulse=null}={}){if(!a||!a.alive)return false;const now=performance.now(),shown=Boolean(a.slot?.group.visible)||a.knocked,angle=range(a.seed,21,-Math.PI,Math.PI),z=groundHeightAt(a.x,a.y);
+  a.alive=false;a.deadAt=now;a.v=0;
+  // the body that was seen falls; somebody nobody saw dies without a corpse appearing out of nowhere
+  if(shown&&!a.knocked)spawnWorldPersonRagdoll({position:[a.x,a.y,z+.05],yaw:a.yaw-Math.PI/2,impulse:impulse||[Math.cos(angle)*2.5,Math.sin(angle)*2.5,2.6],seed:a.id,id:a.id,colors:a.colors});
+  a.knocked=false;if(a.slot)unbindPerson(a.slot);
+  if(network){try{bridge()?.vsSession?.sendFx?.({type:"impact",fx:FX_TYPE,id:`${a.id}-${Date.now().toString(36)}`.slice(-80),objectId:"npc-death",npcId:a.id,kind:"person",p:[a.x,a.y,z],yaw:a.yaw});}catch{}window.dispatchEvent(new CustomEvent("arondight:world-kill",{detail:{id:a.id,kind:"person",position:[a.x,a.y,z],network:true}}));}
+  const v=viewport();if(v){v.dataset.worldLifeHits=String((Number(v.dataset.worldLifeHits)||0)+1);v.dataset.worldPopulationHits=String((Number(v.dataset.worldPopulationHits)||0)+1);v.dataset.worldLifeLastHit="person";v.dataset.worldPopulationLastHit="person";}return true;}
+// a hit that is not (yet) fatal: the person goes down as a ragdoll and gets up again where it lies
+function knockPerson(a,{impulse=[0,0,2],damage=0,network=true}={}){if(!a||!a.alive||a.knocked||!a.slot?.group.visible)return null;a.hp=(Number.isFinite(a.hp)?a.hp:100)-Math.max(0,Number(damage)||0);
+  if(a.hp<=0){killPerson(a,{network,impulse});return"dead";}
+  a.knocked=true;a.v=0;a.slot.group.visible=false;const z=groundHeightAt(a.x,a.y);
+  {const route=pedNet.get(a.route),j=route?projectOnRoute(route,a.x,a.y,{}):null;knockLog.push({id:a.id,at:Math.round(performance.now()),state:a.state,crossing:a.crossing,companion:Boolean(a.leader),route:a.route,lateral:j?+j.lateral.toFixed(2):null,impulse});if(knockLog.length>32)knockLog.shift();}
+  spawnWorldPersonRagdoll({position:[a.x,a.y,z+.05],yaw:a.yaw-Math.PI/2,impulse,seed:a.id,id:a.id,colors:a.colors,recover:{onUp:({x,y,yaw})=>{if(a.removed||!a.alive)return;a.knocked=false;a.x=x;a.y=y;if(Number.isFinite(yaw))a.yaw=yaw;
+    // the same body walks on from where it stood up: back to its sidewalk, then on to where it was going
+    const route=pedNet.get(a.route);if(route){const j=projectOnRoute(route,x,y,{});a.s=j.s;}a.legs.length=0;a.leader=null;a.state="wait";a.waitUntil=performance.now()+600;if(a.slot)a.slot.group.userData.spawnHandoff=true;}}});return"down";}
+function makeBird(index){ensureShared();const s=hashText(`bird:${index}`),group=new THREE.Group(),mesh=new THREE.Mesh(shared.bird,shared.birds[s%shared.birds.length]),r=baseRecord("bird",index,group,mesh.material.color.getHex());mesh.scale.setScalar(.85+(s%14)/60);group.add(mesh);return r;}
+
+function mergeParts(list){let n=0;const geos=list.map(([g,x=0,y=0,z=0,rx=0,ry=0,rz=0])=>{const q=g.index?g.toNonIndexed():g;q.rotateX(rx);q.rotateY(ry);q.rotateZ(rz);q.translate(x,y,z);n+=q.attributes.position.count;return q;});const pos=new Float32Array(n*3);let o=0;for(const q of geos){pos.set(q.attributes.position.array,o*3);o+=q.attributes.position.count;q.dispose();}const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.BufferAttribute(pos,3));g.computeVertexNormals();return g;}
+// Dogs and cats (instanced): torso, four legs, tail / head, snout, ears.
+function quadrupedBody(){const B=(x,y,z)=>new THREE.BoxGeometry(x,y,z);return mergeParts([[B(.66,.26,.27),0,0,0],[B(.3,.055,.055),-.44,0,.1,0,-.6,0],[B(.16,.16,.2),.3,0,.12,0,.5,0]]);}
+// one leg, pivot at the hip (legs swing in a real gait instead of sliding under a rigid body)
+function quadrupedLeg(){const g=new THREE.BoxGeometry(.075,.075,.27);g.translate(0,0,-.135);return g;}
+function quadrupedHead(){return mergeParts([[new THREE.DodecahedronGeometry(.15,0),0,0,0],[new THREE.BoxGeometry(.15,.1,.09),.13,0,-.04],[new THREE.ConeGeometry(.045,.11,4),-.02,.08,.14,0,0,0],[new THREE.ConeGeometry(.045,.11,4),-.02,-.08,.14,0,0,0]]);}
+function createDecor(scene){
+  const trunk=zCylinder(.1,.15,2.3,7),crown=new THREE.DodecahedronGeometry(.92,0),pole=zCylinder(.035,.055,3.7,6),head=new THREE.SphereGeometry(.11,7,5),animalBody=quadrupedBody(),animalHead=quadrupedHead();
+  // Stylized (cel-shaded via stylized_world_style.mjs): brown trunks, leafy crowns.
+  const trunkMat=new THREE.MeshStandardMaterial({color:0x5a4030,roughness:.95}),crownMat=new THREE.MeshStandardMaterial({color:0x3f6b2a,roughness:.9}),glowMat=new THREE.MeshBasicMaterial({color:0x5fb04a,transparent:true,opacity:0,depthWrite:false,toneMapped:false}),animalMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.85});
+  treeTrunks=new THREE.InstancedMesh(trunk,trunkMat,TREE_COUNT);treeCrowns=new THREE.InstancedMesh(crown,crownMat,TREE_COUNT);treeGlow=new THREE.InstancedMesh(crown,glowMat,TREE_COUNT);
+  animalBodies=new THREE.InstancedMesh(animalBody,animalMat,AMBIENT_ANIMAL_COUNT);animalHeads=new THREE.InstancedMesh(animalHead,animalMat,AMBIENT_ANIMAL_COUNT);animalLegs=new THREE.InstancedMesh(quadrupedLeg(),animalMat,AMBIENT_ANIMAL_COUNT*4);paintAnimals(true);for(let i=0;i<AMBIENT_ANIMAL_COUNT;i++)hideAnimal(i);
+  lampPoles=new THREE.InstancedMesh(pole,mat(0x4b5358,.55,.35),LAMP_COUNT);lampHeads=new THREE.InstancedMesh(head,new THREE.MeshStandardMaterial({color:0xe4d3a3,roughness:.38,emissive:0x8f6f35,emissiveIntensity:.15}),LAMP_COUNT);
+  decorRoot=new THREE.Group();decorRoot.name="WORLD_PROCEDURAL_DECOR";decorRoot.add(treeGlow,treeTrunks,treeCrowns,animalBodies,animalHeads,animalLegs,lampPoles,lampHeads);
+  for(const m of[treeTrunks,treeCrowns,treeGlow,animalBodies,animalHeads,animalLegs,lampPoles,lampHeads]){m.userData.flightFireIgnore=true;m.userData.neonSkip=true;m.frustumCulled=true;}for(const m of[animalBodies,animalHeads,animalLegs])m.frustumCulled=false;/* they move: a stale instance bound would cull them */animalLegs.userData.worldDecorKind="ambient-animal";
+  treeCrowns.userData.worldDecorKind="tree-green-mesh";treeGlow.userData.worldDecorKind="tree-halo-off";treeGlow.visible=false;animalBodies.userData.worldDecorKind="ambient-animal";animalHeads.userData.worldDecorKind="ambient-animal";
+  scene.add(decorRoot);
+}
+// lights never leave the scene: the light count is part of every shader program (toggling it recompiles everything = stutter); off = intensity 0
+function lightsOn(group,on){if(!group)return;group.visible=true;for(const l of group.children){if(!l.isLight)continue;l.userData.baseIntensity??=l.intensity;const want=on?l.userData.baseIntensity:0;if(l.intensity!==want)l.intensity=want;}}
+function createLights(scene){lightRoot=new THREE.Group();lightRoot.name="WORLD_PROCEDURAL_LIGHTS";const hemi=new THREE.HemisphereLight(0xd8e7ef,0x5e5446,.26),sun=new THREE.DirectionalLight(0xffe6c5,.34);sun.position.set(-70,-40,110);lightRoot.add(hemi,sun);scene.add(lightRoot);}
+function setInstance(mesh,i,x,y,z,s=1){matrix.compose(tmp.set(x,y,z+staticGroundHeightAt(x,y)),quat.identity(),scale.set(s,s,s));mesh.setMatrixAt(i,matrix);}
+if(typeof window!=="undefined")onTerrainChange(()=>{try{positionDecor();}catch{}});
+// buildings stream in after the trees were placed: place them again when the houses change
+function prismKey(){const pr=bridge()?.buildingCollisionSnapshot?.prisms||[];return`${pr.length}:${pr[0]?.points?.[0]?.[0]?.toFixed?.(1)||0}:${(globalThis.__streetLamps?.roads?.()||[]).length}`;}
+if(typeof window!=="undefined")setInterval(()=>{try{if(globalThis.__jetMode?.active)return;/* the anchor area is far below / behind a jet */if(worldSeed&&treeTrunks&&prismKey()!==decorPrismKey)positionDecor();}catch{}},2500);
+// a tree stands in the open: never inside (or poking out of) a house, never on the carriageway
+const roadBoxes=new WeakMap();function roadBox(r){let b=roadBoxes.get(r);if(!b){b=[Infinity,Infinity,-Infinity,-Infinity];for(const q of r.pts||[]){if(q[0]<b[0])b[0]=q[0];if(q[1]<b[1])b[1]=q[1];if(q[0]>b[2])b[2]=q[0];if(q[1]>b[3])b[3]=q[1];}roadBoxes.set(r,b);}return b;}
+let decorRoads=[];
+function nearRoads(cx,cy,R){const out=[];for(const r of globalThis.__streetLamps?.roads?.()||[]){if(/path|track|foot|cycle/.test(String(r.cls||"")))continue;const b=roadBox(r);if(b[0]>cx+R||b[2]<cx-R||b[1]>cy+R||b[3]<cy-R)continue;out.push(r);}return out;}
+function treeSpotFree(x,y){const at=globalThis.__arondightBuildingAt;if(typeof at==="function"){if(at(x,y))return false;for(let k=0;k<6;k++){const a=k*Math.PI/3;if(at(x+Math.cos(a)*2.4,y+Math.sin(a)*2.4))return false;}}
+  for(const r of decorRoads){const bb=roadBox(r);if(x<bb[0]-5||x>bb[2]+5||y<bb[1]-5||y>bb[3]+5)continue;const pts=r.pts||[];for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1];if(Math.abs(a[0]-x)>60&&Math.abs(b[0]-x)>60)continue;const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1,t=Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/L2));if(Math.hypot(x-a[0]-dx*t,y-a[1]-dy*t)<4.2)return false;}}return true;}
+let decorPrismKey="";
+function positionDecor(){if(!worldSeed||!treeTrunks)return;decorPrismKey=prismKey();decorRoads=nearRoads(anchorX,anchorY,96);for(let i=0;i<TREE_COUNT;i++){let x=0,y=0,sc=0,ok=false;for(let k=0;k<10&&!ok;k++){const seed=hashText(`${worldSeed}:tree:${i}${k?`:${k}`:""}`);x=anchorX+range(seed,1,-82,82);y=anchorY+range(seed,2,-82,82);sc=range(seed,3,.78,1.18);ok=treeSpotFree(x,y);}if(!ok)sc=0.0001;setInstance(treeTrunks,i,x,y,1.15,sc);setInstance(treeCrowns,i,x,y,2.75,sc*1.12);setInstance(treeGlow,i,x,y,2.75,sc*1.25);}treeTrunks.instanceMatrix.needsUpdate=true;treeCrowns.instanceMatrix.needsUpdate=true;treeGlow.instanceMatrix.needsUpdate=true;for(let i=0;i<LAMP_COUNT;i++){const seed=hashText(`${worldSeed}:lamp:${i}`),axis=u(seed,1)>.5,x=anchorX+(axis?range(seed,2,-78,78):(u(seed,3)>.5?42:-42)),y=anchorY+(axis?(u(seed,3)>.5?42:-42):range(seed,2,-78,78));setInstance(lampPoles,i,x,y,1.85);setInstance(lampHeads,i,x,y,3.72);}lampPoles.instanceMatrix.needsUpdate=true;lampHeads.instanceMatrix.needsUpdate=true;}
+// Animals are real targets: a hit or a blast kills them (they topple over,
+// vanish after a while and a new one wanders in later).
+const animalDead=[],animalPose=[],animalMotion=[],deadTilt=new THREE.Quaternion(),tmp2=new THREE.Vector3(),tmp2q=new THREE.Quaternion();
+// Species: every third animal is a cat, the rest dogs. Now and then (every
+// other two minutes) animal #1 is a BLACK CAT — shoot it and it does not
+// die: it hisses, charges at you, leaps into your face and kills you.
+const DOG_COLORS=[0x8a6a4a,0xc49a5a,0x3b2c22,0xe8dcc8,0x6e5a46],CAT_COLORS=[0x8d8d8d,0xd88a3a,0x5b5048,0xe9e2d6];
+function blackCatActive(){return Math.floor(Date.now()/120000)%2===0;}
+function speciesOf(i){if(i===1&&(blackCatActive()||catAttack))return"black-cat";return i%3===2?"cat":"dog";}
+let paintedBlack=null,catAttack=null;
+function paintAnimals(force=false){if(!animalBodies)return;const bc=speciesOf(1)==="black-cat";if(!force&&bc===paintedBlack)return;paintedBlack=bc;const c=new THREE.Color();for(let i=0;i<AMBIENT_ANIMAL_COUNT;i++){const sp=speciesOf(i),seed=hashText(`animal-color:${i}`);c.set(sp==="black-cat"?0x0d0d0f:sp==="cat"?CAT_COLORS[seed%CAT_COLORS.length]:DOG_COLORS[seed%DOG_COLORS.length]);animalBodies.setColorAt(i,c);animalHeads.setColorAt(i,c);if(animalLegs)for(let k=0;k<4;k++)animalLegs.setColorAt(i*4+k,c);}animalBodies.instanceColor.needsUpdate=true;animalHeads.instanceColor.needsUpdate=true;if(animalLegs?.instanceColor)animalLegs.instanceColor.needsUpdate=true;}
+function speciesScale(i,base){const sp=speciesOf(i);return sp==="dog"?base:base*.62;}
+function killAnimal(i,{directShot=false,dir=[0,0,0]}={}){const p=animalPose[i];if(!p||animalDead[i])return false;const sp=speciesOf(i);
+  // A stray ray, explosion, vehicle impact, physics jolt or generic kill() NEVER triggers the killer cat.
+  // Only the authoritative Box3D raycast against this exact animal's own body may explicitly opt in.
+  if(sp==="black-cat"){if(!directShot)return false;if(!catAttack){catAttack={i,start:performance.now(),x:p.x,y:p.y,z:p.z,yaw:p.yaw,phase:"charge"};playAnimal("hiss");const v=document.getElementById("viewport");if(v)v.dataset.blackCat="charging";}return true;}
+  animalDead[i]={at:performance.now(),x:p.x,y:p.y,yaw:p.yaw,sc:p.sc};collapseAnimal(i,dir);playAnimal(sp==="cat"?"cat":"dog");window.dispatchEvent(new CustomEvent("arondight:world-kill",{detail:{id:`animal-${i}`,kind:"animal",species:sp,network:false,local:true}}));return true;}
+// Shot dead, an animal does not stay standing: the legs give way and the body rolls over onto
+// its side (the roll a limp body needs to tip over its own edge), away from the shot.
+function collapseAnimal(i,dir=[0,0,0]){const a=animalPhys[i],R=rigidBodies();if(!a||!R?.applyAngularImpulse)return;const pose=R.pose?.(a.id);if(!pose)return;
+  /* the legs stop working at once: no walking force, no righting torque fighting the fall */a.deadGrip=true;R.clearTarget?.(a.id);R.setForces?.(a.id,{});R.setFriction?.(a.id,.7);
+  const q=pose.rotation,yaw=Math.atan2(2*(q[3]*q[2]+q[0]*q[1]),1-2*(q[1]*q[1]+q[2]*q[2])),fx=Math.cos(yaw),fy=Math.sin(yaw),side=(dir[0]*-fy+dir[1]*fx)>=0?1:-1;
+  const w=2*a.half[1],h=2*a.half[2],I=a.mass*(w*w+h*h)/3,L=I*5*side;/* about the edge it tips over: enough to lift the centre of mass over it against the body's damping */R.applyAngularImpulse(a.id,[fx*L,fy*L,0]);}
+function playerHead(){const w=globalThis.__arondightWalkMode;if(w?.mode==="foot"&&w.position)return{x:w.position.x,y:w.position.y,z:w.position.z};const c=bridge()?.presentedCamera?.()||bridge()?.threeCamera;return c?{x:c.position.x,y:c.position.y,z:c.position.z}:null;}
+// The charge: 11 m/s straight at you (faster than you can run), a leap at
+// 1.6 m, then lights out. If you are already dead/gone it gives up.
+function updateCatAttack(now){const a=catAttack;if(!a)return null;if(!opts.cats){catAttack=null;return null;}const head=playerHead(),dt=Math.min(.05,(now-(a.last||now))/1000);a.last=now;if(a.phase==="leave")return catLeave(a,now,dt);if(!head||globalThis.__arondightPlayerDamageModel?.dead){catAttack=null;return null;}
+  const dx=head.x-a.x,dy=head.y-a.y,d=Math.hypot(dx,dy);a.yaw=Math.atan2(dy,dx);
+  if(a.phase==="charge"){{const t=performance.now();if(t-(a.lastCry||0)>780){a.lastCry=t;a.cries=(a.cries||0)+1;playAnimal(a.cries%2?"yowl":"hiss");}} // it hisses and yowls all the way in
+  const step=Math.min(d,11*dt);a.x+=dx/(d||1)*step;a.y+=dy/(d||1)*step;a.z=groundHeightAt(a.x,a.y)+ANIMAL_GROUND_OFFSET_M+Math.abs(Math.sin(now/55))*.12;if(d<1.6){a.phase="leap";a.leapAt=now;a.fx=a.x;a.fy=a.y;a.fz=a.z;playAnimal("screech");}if(now-a.start>25000){catAttack=null;return null;}}
+  else{const t=Math.min(1,(now-a.leapAt)/340);a.x=a.fx+(head.x-a.fx)*t;a.y=a.fy+(head.y-a.fy)*t;const airborne=a.fz+(head.z-.05-a.fz)*t+Math.sin(t*Math.PI)*.55;a.z=Math.max(groundHeightAt(a.x,a.y)+.18,airborne);
+    if(t>=1){globalThis.__arondightPlayerDamageModel?.damage?.(100000,"black-cat");window.dispatchEvent(new CustomEvent("arondight:black-cat-kill"));const v=document.getElementById("viewport");if(v)v.dataset.blackCat="killed-player";
+      // it lands and saunters off, alive and well (back on its own path once nobody watches)
+      a.phase="leave";a.leaveAt=now;a.z=groundHeightAt(a.x,a.y)+ANIMAL_GROUND_OFFSET_M;a.awayYaw=a.yaw+Math.PI+(Math.random()-.5)*.8;}}
+  return a;}
+function catLeave(a,now,dt){const s=1.3;a.x+=Math.cos(a.awayYaw)*s*dt;a.y+=Math.sin(a.awayYaw)*s*dt;a.yaw=a.awayYaw;a.z=groundHeightAt(a.x,a.y)+ANIMAL_GROUND_OFFSET_M;const head=playerHead(),far=!head||Math.hypot(head.x-a.x,head.y-a.y)>28;if(far||now-a.leaveAt>20000){catAttack=null;const v=document.getElementById("viewport");if(v)v.dataset.blackCat="idle";return null;}return a;}
+globalThis.__ambientBirds={poses:()=>records.filter(r=>r.kind==="bird"&&r.group.visible&&!r.deadUntil).map(r=>({id:r.id,x:r.group.position.x,y:r.group.position.y,z:r.group.position.z,sc:r.group.children[0]?.scale.x||1})),kill:id=>{const r=records.find(q=>q.id===id);return r?killRecord(r):false;}};
+// Killer-cat activation requires a verified hit on its narrow visible torso, not a near-miss,
+// blast, ricochet, generic world impact or an animal collider which was not directly aimed at.
+// This inexpensive check runs only when a Box3D raycast actually reports animal #1.
+function directlyShotBlackCat(i,{origin,point,direction}={}){
+  if(i!==1||speciesOf(i)!=="black-cat"||!Array.isArray(origin)||!Array.isArray(point)||!Array.isArray(direction)||
+     [origin,point,direction].some(v=>v.length!==3||!v.every(Number.isFinite)))return false;
+  const a=animalPhys[i],p=animalPose[i];
+  if(!a||!p)return false;
+  const R=rigidBodies(),physical=R?.pose?.(a.id,a.pose);
+  if(!physical?.position)return false;
+  const [bx,by,bz]=physical.position;
+  // Avoid stale/recycled bodies: Box3D collider must still coincide with the shown cat.
+  if(Math.hypot(bx-p.x,by-p.y)>Math.max(.2,p.sc*.25)||Math.abs(bz-p.z)>Math.max(.35,p.sc*.6))return false;
+  const n=Math.hypot(...direction);if(n<.99||n>1.01)return false;
+  const vx=point[0]-origin[0],vy=point[1]-origin[1],vz=point[2]-origin[2];
+  const t=vx*direction[0]+vy*direction[1]+vz*direction[2];
+  if(t<=0.02||t>650||Math.hypot(vx-direction[0]*t,vy-direction[1]*t,vz-direction[2]*t)>.025)return false;
+  // Genuine line through the animal's drawn body/head: angular radius follows cat's own scale.
+  // The broad box collider alone does not authorize the pursuit.
+  const sx=point[0]-p.x,sy=point[1]-p.y,sz=point[2]-p.z;
+  const ca=Math.cos(p.yaw),sa=Math.sin(p.yaw),lx=sx*ca+sy*sa,ly=-sx*sa+sy*ca;
+  const sc=p.sc||.62;
+  const onTorso=Math.abs(lx)<.33*sc&&Math.abs(ly)<.16*sc&&Math.abs(sz)<.20*sc;
+  const onHead=Math.hypot(lx-.43*sc,ly,sz-.16*sc)<.18*sc;
+  return onTorso||onHead;
+}
+globalThis.__ambientAnimals={
+  kill:killAnimal,
+  poses:()=>animalPose.map((p,i)=>p&&!animalDead[i]&&animalShown[i]?{i,species:speciesOf(i),...p}:null).filter(Boolean),
+  // Hitscan ray selects the ACTUAL Box3D animal collider. Transfer momentum at its 3D impact point.
+  hit({id,point=null,origin=null,direction=[0,0,1],strength=1}={}){
+    const i=animalPhys.findIndex(a=>a?.id===String(id));
+    if(i<0||!animalPose[i])return false;
+    const a=animalPhys[i],len=Math.hypot(...direction)||1;
+    if(speciesOf(i)==="black-cat"&&!directlyShotBlackCat(i,{origin,point,direction}))return false;
+    // the bullet's real momentum, at the hit point, along its path (ballistics.mjs); strength = rounds
+    const impulseNs=projectileMomentumNs("9mm")*Math.max(1,Math.min(4,Number(strength)||1)),dir=[direction[0]/len,direction[1]/len,direction[2]/len];
+    rigidBodies()?.applyImpulse?.(a.id,dir.map(x=>x*impulseNs),{point:Array.isArray(point)&&point.length===3?point:null});
+    // a body that is already dead still takes every round (it is pushed, not ignored)
+    if(animalDead[i])return true;
+    return killAnimal(i,{directShot:true,dir});
+  },
+  // a fist: the punch's real momentum goes into the animal (a cat flies, a dog staggers), it yelps;
+  // a dog takes three, a cat two before it stays down
+  punch({id,index=-1,point=null,direction=[1,0,0],momentumNs=30}={}){
+    const i=index>=0?index:animalPhys.findIndex(a=>a?.id===String(id));if(i<0||!animalPose[i]||!animalPhys[i])return false;const a=animalPhys[i],len=Math.hypot(...direction)||1,dir=[direction[0]/len,direction[1]/len,Math.max(.25,direction[2]/len)];
+    // a punch/kick knocks it back about as hard as a person can (≤ 3.5 m/s for a cat, less for a big dog); it is not a car crash
+    const J=Math.min(momentumNs,a.mass*3.5);a.punchedAt=performance.now();
+    rigidBodies()?.applyImpulse?.(a.id,dir.map(x=>x*J),{point:Array.isArray(point)&&point.length===3?point:null});
+    if(animalDead[i])return true;const sp=speciesOf(i);if(sp==="black-cat")return killAnimal(i,{directShot:true,dir});
+    a.punches=(a.punches||0)+1;try{playAnimal(sp==="cat"?"cat":"dog");}catch{}
+    if(a.punches>=(sp==="cat"?2:3)){a.punches=0;return killAnimal(i,{directShot:true,dir});}
+    const v=document.getElementById("viewport");if(v)v.dataset.animalPunches=String((Number(v.dataset.animalPunches)||0)+1);return true;
+  }
+};
+// Dogs and cats are Box3D bodies: they walk (steered toward their wandering path by leg force),
+// a car or a blast throws them, a hard enough hit kills them (the body tumbles on), they right
+// themselves after a stumble. The legs swing in a gait tied to the distance actually covered:
+// walk (lateral sequence) slow, trot (diagonal pairs) faster.
+const animalPhys=[],LEG_HIPS=[[.24,.09],[.24,-.09],[-.24,.09],[-.24,-.09]],GAIT_WALK=[.25,.75,0,.5],GAIT_TROT=[0,.5,.5,0],ANIMAL_TORSO_UP=.11,legQ=new THREE.Quaternion(),legM=new THREE.Matrix4(),bodyM=new THREE.Matrix4(),legY=new THREE.Vector3(0,1,0),hipV=new THREE.Vector3();
+function animalBodyId(i){return`animal-${worldSeed.toString(36)}-${i}`;}
+// an instance nobody owns right now is drawn nowhere (zero scale), never at the origin
+const ZERO_MATRIX=new THREE.Matrix4().makeScale(0,0,0),animalShown=[],animalGateAt=[];
+function hideAnimal(i){if(!animalBodies)return;animalBodies.setMatrixAt(i,ZERO_MATRIX);animalHeads.setMatrixAt(i,ZERO_MATRIX);for(let k=0;k<4;k++)animalLegs.setMatrixAt(i*4+k,ZERO_MATRIX);}
+function animalAllowed(i){const sp=speciesOf(i);return sp==="dog"?opts.dogs:opts.cats;}
+function retireAnimal(i){dropAnimalBody(i);animalShown[i]=false;animalPose[i]=null;animalDead[i]=null;if(catAttack?.i===i){catAttack=null;const v=viewport();if(v)v.dataset.blackCat="idle";}hideAnimal(i);}
+function dropAnimalBody(i){const a=animalPhys[i];if(a){rigidBodies()?.removeBody?.(a.id);animalPhys[i]=null;}}
+function ensureAnimalBody(i,x,y,yaw,sc){const R=rigidBodies();if(!R?.ready)return null;const id=animalBodyId(i);let a=animalPhys[i];if(a&&a.id===id)return a;if(a)R.removeBody(a.id);
+  const dog=speciesOf(i)==="dog",half=[.33*sc,.13*sc,.25*sc],mass=dog?28*sc*sc*sc:4.5*Math.pow(sc/.62,3),z=groundHeightAt(x,y)+half[2]+.03;
+  // the box slides on its "paws" (low friction): the walking force is the legs' traction; dead, it grinds to a stop
+  if(!R.upsertBody({id,kind:"animal",position:[x,y,z],yaw,halfExtents:half,massKg:mass,wheeled:false,linearDamping:.9,angularDamping:2.5,friction:.12}))return null; /* damping: a knocked animal skids a little and stops, it does not glide off like on ice */
+  a=animalPhys[i]={id,half,mass,sc,lastV:null,gait:Math.random(),pose:null};return a;}
+function drawAnimal(i,pos,q,sc,speed,gait,dead){
+  bodyM.compose(pos,q,scale.set(sc,sc,sc));const trot=speed>2.2,amp=dead?0:Math.min(.55,speed*.38),offs=trot?GAIT_TROT:GAIT_WALK,bob=dead?0:Math.abs(Math.sin(gait*Math.PI*2*2))*.025*Math.min(1,speed);
+  matrix.compose(tmp.set(0,0,ANIMAL_TORSO_UP+bob),legQ.identity(),scale.set(1,1,1)).premultiply(bodyM);animalBodies.setMatrixAt(i,matrix);
+  matrix.compose(tmp.set(.43,0,.16+ANIMAL_TORSO_UP+bob),legQ.identity(),scale.set(1,1,1)).premultiply(bodyM);animalHeads.setMatrixAt(i,matrix);
+  for(let k=0;k<4;k++){const swing=dead?.35*(k<2?1:-1):amp*Math.sin((gait+offs[k])*Math.PI*2);legQ.setFromAxisAngle(legY,swing);legM.compose(hipV.set(LEG_HIPS[k][0],LEG_HIPS[k][1],ANIMAL_TORSO_UP-.1+bob),legQ,scale.set(1,1,1)).premultiply(bodyM);animalLegs.setMatrixAt(i*4+k,legM);}
+}
+function updateAmbientAnimals(epoch,now){if(!animalBodies||now-lastAmbientAnimalTick<AMBIENT_ANIMAL_TICK_MS)return;lastAmbientAnimalTick=now;paintAnimals();const dt=Math.min(.1,Math.max(0,(now-(lastAnimalFrame||now))/1000));lastAnimalFrame=now;const attack=updateCatAttack(now),R=rigidBodies();const cx=anchorX,cy=anchorY;
+  for(let i=0;i<AMBIENT_ANIMAL_COUNT;i++){
+    const m=animalMotion[i]||(animalMotion[i]=(()=>{const seed=hashText(`${worldSeed}:animal:${i}`);const radius=range(seed,1,13,58);return{radius,omega:range(seed,2,.55,1.45)/radius,phase:range(seed,3,0,Math.PI*2),wobbleOmega:range(seed,4,.12,.3),wobbleRadius:range(seed,5,1.2,3.5),baseScale:range(seed,6,.72,1.18)}})()),sc=speciesScale(i,m.baseScale);
+    const pathAt=t=>{const a=t*m.omega+m.phase,w=Math.sin(t*m.wobbleOmega+m.phase)*m.wobbleRadius;return[cx+Math.cos(a)*m.radius+Math.cos(a*2.3)*w,cy+Math.sin(a*.92)*m.radius*.72+Math.sin(a*1.7)*w];};
+    if(!animalAllowed(i)){if(animalShown[i]||animalPhys[i]||animalPose[i])retireAnimal(i);else hideAnimal(i);continue;}
+    const dead=animalDead[i];
+    // a dead animal is gone after a while; another one wanders in later, where nobody sees it appear
+    if(dead&&(now-dead.at)/1000>25){retireAnimal(i);continue;}
+    if(!animalShown[i]){hideAnimal(i);if(now<(animalGateAt[i]||0))continue;animalGateAt[i]=now+GATE_RECHECK_MS;const[gx,gy]=pathAt(epoch);if(!spawnGateOpen(gx,gy,groundHeightAt(gx,gy),{farEntryM:ANIMAL_ENTRY_M,heightM:.8}))continue;animalShown[i]=true;animalPose[i]=null;}
+    if(attack&&attack.i===i){// the black cat's charge is a scripted leap: its body follows it
+      const a=animalPhys[i];if(a)R?.setPose?.(a.id,{position:[attack.x,attack.y,attack.z-ANIMAL_TORSO_UP*.62],yaw:attack.yaw});quat.setFromAxisAngle(decorUp,attack.yaw);if(attack.phase==="leap")quat.multiply(tmp2q.setFromAxisAngle(tmp2.set(0,1,0),-.5));animalPose[i]={x:attack.x,y:attack.y,z:attack.z,yaw:attack.yaw,sc:.62};const cs=attack.phase==="leave"?1.3:11;m.gait=(m.gait||0)+cs*dt/.4;drawAnimal(i,tmp2.set(attack.x,attack.y,attack.z-ANIMAL_TORSO_UP*.62),quat,.62,cs,m.gait,false);continue;}
+    const [px,py]=pathAt(epoch);const a=ensureAnimalBody(i,px,py,Math.atan2(py-(animalPose[i]?.y??py),px-(animalPose[i]?.x??px)),sc);
+    if(!a){// no physics yet: walk the path
+      const prior=animalPose[i],yaw=prior&&Math.hypot(px-prior.x,py-prior.y)>1e-4?Math.atan2(py-prior.y,px-prior.x):0,gz=groundHeightAt(px,py)+.25*sc,spd=prior&&dt>0?Math.hypot(px-prior.x,py-prior.y)/dt:0;m.gait=(m.gait||0)+spd*dt/(.55*sc);quat.setFromAxisAngle(decorUp,yaw);animalPose[i]={x:px,y:py,z:gz+ANIMAL_TORSO_UP*sc,yaw,sc};if(!dead)drawAnimal(i,tmp2.set(px,py,gz),quat,sc,spd,m.gait,false);else hideAnimal(i);continue;}
+    const pose=R.pose(a.id,a.pose);if(!pose){const prior=animalPose[i];if(prior&&!animalDead[i]){quat.setFromAxisAngle(decorUp,prior.yaw);drawAnimal(i,tmp2.set(prior.x,prior.y,prior.z-ANIMAL_TORSO_UP*sc),quat,sc,0,m.gait||0,false);}else hideAnimal(i);continue;}a.pose=pose;const v=pose.velocity,speed=Math.hypot(v[0],v[1]);
+    // a hit that changes its velocity this hard (blast, car) kills it — the body flies on
+    if(a.lastV&&!dead&&now-(a.punchedAt||-1e9)>450){const dv=Math.hypot(v[0]-a.lastV[0],v[1]-a.lastV[1],v[2]-a.lastV[2]);if(dv>6.5)killAnimal(i);}a.lastV=[v[0],v[1],v[2]];
+    quat.set(pose.rotation[0],pose.rotation[1],pose.rotation[2],pose.rotation[3]);tmp.set(0,0,1).applyQuaternion(quat);
+    const gunHeld=globalThis.__arondightGravityGun?.heldId===a.id;if(gunHeld&&!a.gunHeld){a.gunHeld=true;R.clearTarget?.(a.id);R.setForces?.(a.id,{});}else if(!gunHeld&&a.gunHeld)a.gunHeld=false;
+    if(!animalDead[i]&&!gunHeld){
+      // steer toward where the path is a moment ahead (trot to catch up when knocked away)
+      const [tx,ty]=pathAt(epoch+1.2),off=Math.hypot(tx-pose.position[0],ty-pose.position[1]),want=Math.min(off>6?3.4:1.6,off*.9);
+      if(tmp.z>.6)R.setTarget?.(a.id,{position:[tx,ty,pose.position[2]],speedMps:want,response:3,maxAccelerationMps2:6});else R.clearTarget?.(a.id);
+      // legs right the body after a stumble (a torque toward upright, damped)
+      const w=pose.angularVelocity||[0,0,0],k=a.mass*9.81*a.half[2]*3,d=a.mass*a.half[2]*a.half[2]*6;R.setForces?.(a.id,{torque:[-tmp.y*k-w[0]*d,tmp.x*k-w[1]*d,0]});
+      // lying on its side or back for a moment: it scrambles back onto its feet (a live animal never stays belly-up)
+      if(tmp.z<.35){a.downSince||=now;if(now-a.downSince>550){const y0=Math.atan2(2*(quat.w*quat.z+quat.x*quat.y),1-2*(quat.y*quat.y+quat.z*quat.z));R.setPose?.(a.id,{position:[pose.position[0],pose.position[1],groundHeightAt(pose.position[0],pose.position[1])+a.half[2]+.04],yaw:y0,velocity:[v[0]*.3,v[1]*.3,0],angularVelocity:[0,0,0]});a.downSince=0;}}else a.downSince=0;
+    }else if(animalDead[i]&&!a.deadGrip){a.deadGrip=true;R.clearTarget?.(a.id);R.setForces?.(a.id,{});R.setFriction?.(a.id,.7);}
+    a.gait+=speed*dt/(.55*sc*(speed>2.2?1.3:1));const yawNow=Math.atan2(2*(quat.w*quat.z+quat.x*quat.y),1-2*(quat.y*quat.y+quat.z*quat.z));
+    // the physics box spans feet to back: the drawn animal stands on the box's bottom
+    tmp2.set(0,0,-a.half[2]+.25*sc).applyQuaternion(quat).add(tmp.set(pose.position[0],pose.position[1],pose.position[2]));
+    const gone=animalDead[i]&&(now-animalDead[i].at)/1000>7;animalPose[i]={x:pose.position[0],y:pose.position[1],z:tmp2.z+ANIMAL_TORSO_UP*sc,yaw:yawNow,sc};
+    drawAnimal(i,tmp2,quat,gone?0.0001:sc,speed,a.gait,Boolean(animalDead[i]));}
+  animalBodies.instanceMatrix.needsUpdate=true;animalHeads.instanceMatrix.needsUpdate=true;animalLegs.instanceMatrix.needsUpdate=true;}
+
+function ensureScene(){const scene=bridge()?.threeScene;if(!scene)return false;if(scene===boundScene&&root)return true;for(const record of records)if(record.id){rigidBodies()?.removeBody?.(record.id);stopWorldCriticalDamage(record.id);}boundScene=scene;worldShownAt=0;firstRoutesAt=0;records.splice(0);byId.clear();routes.splice(0);routeCache.clear();worldKey="";worldSeed=0;lastRouteRefresh=-Infinity;lastRouteOrigin="";root=new THREE.Group();root.name="WORLD_PROCEDURAL_POPULATION";scene.add(root);crowd?.dispose?.();crowd=createCrowd(scene,{capacity:PERSON_SLOTS,name:"WORLD_PEOPLE"});createDecor(scene);createLights(scene);clearPeople();personSlots.length=0;for(let i=0;i<CAR_COUNT;i++)records.push(makeCar(i));for(let i=0;i<BUS_COUNT;i++)records.push(makeBus(i));for(let i=0;i<BIRD_COUNT;i++)records.push(makeBird(i));spawnVisibilityRoots.length=0;for(const record of records){record.group.visible=false;root.add(record.group);if(record.kind==="car")spawnVisibilityRoots.push(record.group);}for(let i=0;i<PERSON_SLOTS;i++){const slot=makePersonSlot(i);personSlots.push(slot);root.add(slot.group);spawnVisibilityRoots.push(slot.group);}animalShown.length=0;return true;}
+function motionFor(record){const s=record.seed,person=record.kind==="person",bus=record.kind==="bus";if(record.kind==="bird")return{cx:range(s,1,-35,35),cy:range(s,2,-35,35),rx:range(s,3,20,62),ry:range(s,4,16,52),z:range(s,5,9,24),omega:range(s,6,.16,.34),phase:range(s,7,0,Math.PI*2)};return{cx:range(s,1,-42,42),cy:range(s,2,-42,42),hx:person?range(s,3,10,28):bus?range(s,3,44,68):range(s,3,28,58),hy:person?range(s,4,8,24):bus?range(s,4,32,56):range(s,4,22,48),angle:range(s,5,-Math.PI,Math.PI),phase:range(s,6,0,1),speed:person?range(s,7,1.0,1.65):bus?range(s,7,5.0,7.6):range(s,7,7.4,13.2)};}
+function trainingMotionFor(record){const motion=motionFor(record);if(record.kind!=="car"&&record.kind!=="bus")return motion;const bus=record.kind==="bus",s=record.seed;if(record.index===0)return{...motion,cx:0,cy:0,hx:bus?25:18,hy:bus?17:13,angle:range(s,35,-Math.PI,Math.PI)};return{...motion,cx:range(s,31,-10,10),cy:range(s,32,-8,8),hx:bus?range(s,33,25,40):range(s,33,18,34),hy:bus?range(s,34,17,28):range(s,34,13,25),angle:range(s,35,-Math.PI,Math.PI)};}
+// the local frame moved (origin rebase): everything this module simulates moves with it, nobody jumps
+function shiftWorld(dx,dy){if(!dx&&!dy)return;const R=rigidBodies();for(const a of people)shiftAgent(a,dx,dy);
+  for(const r of records){if(r.parked){r.parked.x+=dx;r.parked.y+=dy;}if(r.fall){r.fall.x+=dx;r.fall.y+=dy;}r.group.position.x+=dx;r.group.position.y+=dy;
+    if(r.physicsRegistered){const p=R?.pose?.(r.id);if(p)R.setPose?.(r.id,{position:[p.position[0]+dx,p.position[1]+dy,p.position[2]],velocity:[...p.velocity],angularVelocity:[...(p.angularVelocity||[0,0,0])]});r.physicsPose=null;}}
+  for(let i=0;i<animalPhys.length;i++){const a=animalPhys[i];if(a){const p=R?.pose?.(a.id);if(p)R.setPose?.(a.id,{position:[p.position[0]+dx,p.position[1]+dy,p.position[2]],velocity:[...p.velocity]});a.pose=null;}const q=animalPose[i];if(q){q.x+=dx;q.y+=dy;}}
+  if(catAttack){catAttack.x+=dx;catAttack.y+=dy;if(Number.isFinite(catAttack.fx)){catAttack.fx+=dx;catAttack.fy+=dy;}}}
+function configureWorld(){
+  const b=bridge(),v=viewport(),real=Boolean(b?.active&&Number.isFinite(b.originLon)&&Number.isFinite(b.originLat));let key="training",east=0,north=0;
+  if(real){
+    // the population is anchored to one geographic point: stable while the player roams and across
+    // origin rebases; only kilometres away does a new neighbourhood anchor take over
+    if(!Number.isFinite(anchorLon)||worldKey==="training"||!worldKey||Math.hypot(...lngLatToMeters(anchorLon,anchorLat,b.originLon,b.originLat))>REANCHOR_M){anchorLat=Math.round(b.originLat*1000)/1000;anchorLon=Math.round(b.originLon*1000)/1000;}
+    key=`${anchorLat.toFixed(3)}:${anchorLon.toFixed(3)}`;[east,north]=lngLatToMeters(b.originLon,b.originLat,anchorLon,anchorLat);
+    if(key===worldKey&&Number.isFinite(lastOriginLon)&&(b.originLon!==lastOriginLon||b.originLat!==lastOriginLat)){const[dx,dy]=lngLatToMeters(b.originLon,b.originLat,lastOriginLon,lastOriginLat);shiftWorld(dx,dy);}
+    lastOriginLon=b.originLon;lastOriginLat=b.originLat;}
+  else if(v?.dataset?.worldMode==="real"&&worldKey&&worldKey!=="training")return true;
+  else{lastOriginLon=NaN;lastOriginLat=NaN;anchorLon=anchorLat=NaN;}
+  if(anchorX!==east||anchorY!==north){anchorX=east;anchorY=north;positionDecor();}if(key===worldKey)return true;
+  // a new neighbourhood anchor kilometres from the old one (same real world): its animals and birds
+  // come in out of view; people and traffic keep living where they are (they never re-seed)
+  if(worldKey&&worldKey!=="training"&&key!=="training"){worldKey=key;worldSeed=hashText(`arondight-world-pop:${key}`);catAttack=null;for(let i=0;i<AMBIENT_ANIMAL_COUNT;i++)retireAnimal(i);animalPhys.length=0;animalMotion.length=0;
+    for(const record of records)if(record.kind==="bird"&&!record.fall){record.seed=hashText(`${worldSeed}:bird:${record.index}`);record.motion=motionFor(record);record.appeared=false;record.group.visible=false;}positionDecor();if(v)v.dataset.worldProceduralBucket=key;return true;}
+  worldShownAt=performance.now();firstRoutesAt=0;
+  for(const record of records)if(record.id){rigidBodies()?.removeBody?.(record.id);stopWorldCriticalDamage(record.id);}
+  if(key==="training"||worldKey==="training"){routes.splice(0);routeCache.clear();lastRouteOrigin="";}
+  catAttack=null;const view=document.getElementById("viewport");if(view)view.dataset.blackCat="idle";
+  for(let i=0;i<animalPhys.length;i++)dropAnimalBody(i);animalPhys.length=0;animalShown.length=0;animalPose.length=0;animalDead.length=0;for(let i=0;i<AMBIENT_ANIMAL_COUNT;i++)hideAnimal(i);
+  clearPeople();worldKey=key;worldSeed=hashText(`arondight-world-pop:${key}`);byId.clear();
+  if(key==="training"){const seeded=trainingRoutes();routes.splice(0,routes.length,...seeded);for(const route of seeded)routeCache.set(route.key,route);}
+  for(const record of records){record.seed=hashText(`${worldSeed}:${record.kind}:${record.index}`);record.id=`${record.kind}-proc-${worldSeed.toString(36)}-${record.index}`;record.motion=key==="training"?trainingMotionFor(record):motionFor(record);record.speed=record.motion.speed||0;record.deadUntil=0;record.physicsRegistered=false;record.physicsPose=null;record.routeKey="";record.placed=false;record.appeared=false;record.dOffset=0;record.parked=null;record.fall=null;record.group.visible=false;record.relocations=0;record.stalledSince=0;record.lastNudgeAt=0;record.routeDirection=record.seed&1?-1:1;retag(record);byId.set(record.id,record);}
+  animalMotion.length=0;positionDecor();lastAmbientAnimalTick=-Infinity;if(v){v.dataset.worldProceduralSeed=worldSeed.toString(36);v.dataset.worldProceduralBucket=key;v.dataset.worldPopulationMode=key==="training"?"training-physical":"real-road-physical";v.dataset.worldPopulationArchitecture="route+box3d-rigid-v3";v.dataset.worldLifeArchitecture="route+box3d-rigid-v3";v.dataset.worldTrafficContinuity="force-driven-contact-resolved-v2";v.dataset.worldCars=String(CAR_COUNT);v.dataset.worldDrivableCars=String(CAR_COUNT);v.dataset.worldPeople=String(PERSON_SLOTS);v.dataset.worldLifeExtraCars=String(CAR_COUNT);v.dataset.worldLifeExtraPeople=String(PERSON_SLOTS);v.dataset.worldLifeBuses=String(BUS_COUNT);v.dataset.worldLifeBirds=String(BIRD_COUNT);v.dataset.worldAmbientAnimals=String(AMBIENT_ANIMAL_COUNT);v.dataset.worldTrees=String(TREE_COUNT);v.dataset.worldTreeMesh="stylized-cel-instanced-v1";v.dataset.worldLifeShootable="1";v.dataset.worldTrafficRoutes="1";v.dataset.worldLifeRoutes=String(routes.length);v.dataset.worldVehiclePhysics="box3d-dynamic-force-controller-v1";v.dataset.worldVehicleGrounding="box3d-static-ground-contact-v1";v.dataset.worldTrainingTrafficRadiusM="52";v.dataset.worldVehicleDamagePresentation="critical-smoke+delayed-explosion-v1";}return true;
+}
+function refreshAnchor(){/* origin moves are handled in configureWorld (shift, never re-seed) */}
+
+function localRoute(key,points,roadClass="secondary"){const segments=[];let length=0;for(let i=0;i<points.length-1;i++){const a=points[i],c=points[i+1],dx=c[0]-a[0],dy=c[1]-a[1],d=Math.hypot(dx,dy);if(d<.5)continue;segments.push({a,c,dx,dy,d,start:length});length+=d;}return segments.length?{key,points,segments,length,roadClass,lastSeen:Infinity,training:true}:null;}
+function trainingRoutes(){return[
+  localRoute("training-loop",[[-62,-38],[62,-38],[62,38],[-62,38],[-62,-38]],"secondary"),
+  localRoute("training-east-west",[[-84,0],[-24,0],[24,0],[84,0]],"primary"),
+  localRoute("training-north-south",[[0,-76],[0,-28],[0,28],[0,76]],"secondary"),
+  localRoute("training-waterfront",[[-70,54],[-28,54],[18,54],[70,54]],"tertiary")
+].filter(Boolean);}
+function fallbackRoads(b){const out=[];for(const feature of b?.minimapFeatures||[]){if(feature?.kind!=="road")continue;for(const path of feature.paths||[])if(path?.length>=2)out.push({path,roadClass:String(feature.roadClass||"road")});}return out;}
+function refreshRoutes(now){
+  const b=bridge();if(!b?.active||!Number.isFinite(b.originLon)||!Number.isFinite(b.originLat))return;const origin=`${b.originLon.toFixed(6)}:${b.originLat.toFixed(6)}`;if(now-lastRouteRefresh<ROUTE_REFRESH_MS&&origin===lastRouteOrigin)return;lastRouteRefresh=now;
+  if(origin!==lastRouteOrigin&&routeCache.size){for(const[key,old]of routeCache){const rebuilt=buildTrafficRoute(old.geoPath,{originLon:b.originLon,originLat:b.originLat,roadClass:old.roadClass,lastSeen:old.lastSeen});if(rebuilt)routeCache.set(key,rebuilt);else routeCache.delete(key);}}lastRouteOrigin=origin;
+  let candidates=[];try{candidates=collectRenderedDrivableRoads(b.map);}catch{}if(!candidates.length)candidates=fallbackRoads(b);const seen=new Set();for(const candidate of candidates){const route=buildTrafficRoute(candidate.path,{originLon:b.originLon,originLat:b.originLat,roadClass:candidate.roadClass,lastSeen:now});if(!route||seen.has(route.key))continue;seen.add(route.key);routeCache.set(route.key,route);}for(const[key,route]of routeCache)if(now-route.lastSeen>ROUTE_STALE_MS*5)routeCache.delete(key);const fresh=[...routeCache.values()].filter(route=>now-route.lastSeen<=ROUTE_STALE_MS),focus=populationFocus(),pool=(fresh.length?fresh:[...routeCache.values()]).map(route=>({route,d:focus?nearestRouteDistance(route,focus.x,focus.y).offsetM:0})).sort((a,c)=>a.d-c.d||a.route.key.localeCompare(c.route.key)).slice(0,MAX_ROUTE_POOL).map(x=>x.route);if(pool.length){if(!routes.length&&!firstRoutesAt)firstRoutesAt=now;routes.splice(0,routes.length,...pool);}const v=viewport();if(v){v.dataset.worldLifeRoutes=String(routes.length);v.dataset.worldTrafficRoadSource=seen.size?"rendered-osm":"cached-or-fallback";v.dataset.worldTrafficRouteModel="nearest-progress-lookahead-v1";}
+}
+function populationFocus(){if(cachedFocusTick===lastPopulationTick)return cachedFocus;cachedFocusTick=lastPopulationTick;const b=bridge(),walk=globalThis.__arondightWalkMode,drive=globalThis.__arondightVehicleDrive;if(drive?.active&&drive.cameraAnchor)return cachedFocus=drive.cameraAnchor;if(walk?.mode==="foot"&&walk.position)return cachedFocus=walk.position;const airframe=b?.airframeFor?.(b.threeScene)||b?.airframe;if(airframe?.getWorldPosition){airframe.getWorldPosition(cameraPos);return cachedFocus=cameraPos;}return cachedFocus=b?.threeCamera?.position||null;}
+// a vehicle keeps its street: it is never re-bound to another one while it exists where it is
+function routeFor(record){return record.routeKey?routeCache.get(record.routeKey)||null:null;}
+function routePool(focus){if(!focus)return routes;if(cachedRoutePoolTick!==lastPopulationTick){cachedRoutePoolTick=lastPopulationTick;cachedRoutePool=[...routes].map(route=>({route,d:nearestRouteDistance(route,focus.x,focus.y).offsetM})).sort((a,c)=>a.d-c.d).slice(0,Math.min(routes.length,18)).map(x=>x.route);}return cachedRoutePool;}
+function laneWidth(route,record){const cls=String(route?.roadClass||""),width=/motorway|trunk|primary|secondary/.test(cls)?1.25:/service|living/.test(cls)? .64:.88;return(record.seed&1?1:-1)*width;}
+function sampleRoadRoute(route,distance,offset=0,direction=1){if(!route?.segments?.length)return null;const d=clamp(distance,0,route.length),segment=route.segments.find(item=>d<=item.start+item.d)||route.segments.at(-1),t=clamp((d-segment.start)/segment.d,0,1),nx=-segment.dy/segment.d,ny=segment.dx/segment.d;return{x:segment.a[0]+segment.dx*t+nx*offset,y:segment.a[1]+segment.dy*t+ny*offset,yaw:Math.atan2(segment.dy,segment.dx)+(direction<0?Math.PI:0),distance:d};}
+// far traffic drives its street analytically: a distance growing with time, there and back again,
+// always in the lane of the direction it is going (the same lane the physical driver keeps)
+function samplePingPongRoute(route,distance,lane=0){const period=Math.max(.01,route.length*2),cycle=mod(distance,period),direction=cycle<=route.length?1:-1,d=direction>0?cycle:period-cycle,p=sampleRoadRoute(route,d,lane*direction,direction);if(p)p.direction=direction;return p;}
+function vehicleSampleAt(record,route,epoch){return samplePingPongRoute(route,epoch*record.speed+(record.dOffset||0),laneWidth(route,record));}
+// leaving physics: the analytic drive continues exactly from where the car is, in its direction
+function syncAnalyticToPose(record,route,epoch,x,y){const n=nearestRouteDistance(route,x,y).distance;record.dOffset=(record.routeDirection>0?n:route.length*2-n)-epoch*record.speed;}
+function vehicleSpotTaken(record,p){const r0=record.kind==="bus"?14:10;for(const o of records){if(o===record||(o.kind!=="car"&&o.kind!=="bus")||!o.group.visible)continue;if(Math.hypot(o.group.position.x-p.x,o.group.position.y-p.y)<r0)return true;}return false;}
+// a vehicle comes into existence (or arrives after a far car was called over) only where nobody sees
+// it appear: out of every view, behind buildings, or far down the road
+function placeVehicle(record,epoch,now){if(now<(record.nextPlaceAt||0))return false;record.nextPlaceAt=now+VEHICLE_PLACE_MS;const focus=populationFocus(),pool=routePool(focus);if(!pool.length)return false;
+  for(let k=0;k<7;k++){let route,s,dir;
+    if(k===0&&!record.relocations){route=pool[mod(record.index*7+(record.kind==="bus"?5:1),pool.length)];s=mod((record.motion?.phase||0)*route.length,route.length);dir=record.seed&1?-1:1;}// its own seeded street first
+    else{route=pool[Math.floor(Math.random()*Math.min(pool.length,12))];s=2+Math.random()*Math.max(0,route.length-4);dir=Math.random()<.5?1:-1;}
+    const p=sampleRoadRoute(route,s,laneWidth(route,record)*dir,dir);if(!p)continue;
+    if(focus&&record.relocations){const d=Math.hypot(p.x-focus.x,p.y-focus.y);if(d<VEHICLE_PLACE_MIN_M||d>VEHICLE_PLACE_MAX_M)continue;}
+    if(vehicleSpotTaken(record,p)||!spawnGateOpen(p.x,p.y,groundHeightAt(p.x,p.y),{farEntryM:VEHICLE_ENTRY_M,heightM:record.kind==="bus"?3.2:1.6}))continue;
+    record.routeKey=route.key;record.routeDirection=dir;record.dOffset=(dir>0?s:route.length*2-s)-epoch*record.speed;record.placed=true;record.stalledSince=0;record.relocations=(record.relocations||0)+1;return true;}
+  return false;}
+function hideVehicle(record){record.group.visible=false;record.wheelPoses=null;record.physicsPose=null;if(record.physicsRegistered){rigidBodies()?.removeBody?.(record.id);record.physicsRegistered=false;}}
+function nearestRouteDistance(route,x,y){let best=0,bestDistance=Infinity;for(const segment of route?.segments||[]){const t=clamp(((x-segment.a[0])*segment.dx+(y-segment.a[1])*segment.dy)/(segment.d*segment.d),0,1),px=segment.a[0]+segment.dx*t,py=segment.a[1]+segment.dy*t,distance=Math.hypot(x-px,y-py);if(distance<bestDistance){bestDistance=distance;best=segment.start+segment.d*t;}}return{distance:best,offsetM:bestDistance};}
+function vehicleShape(record){return record.kind==="bus"?{half:[4,1.17,1.08],mass:9200}:{half:[1.78,.82,.42],mass:1420};}
+// Vehicles near the player (or the one being driven) are real Box3D cars
+// (chassis + 4 wheel joints, AI driver steering to its route target). Far
+// ones keep driving their route as a lightweight point (no physics body)
+// and become physical again — exactly where they are — when the player
+// comes close. Hysteresis avoids flapping at the boundary.
+const PARK_MS=180000,PARK_RELEASE_M=220;
+const PHYS_NEAR_M=150,PHYS_FAR_M=180,wheelOrigin=new THREE.Vector3(),wheelUp=new THREE.Vector3();
+// ---- the drivers
+// Speed a driver chooses right now: its cruising speed, slower into bends (lateral grip ≈ 3.5 m/s²
+// from the heading change to its look-ahead point), and it keeps a gap to whatever drives ahead of
+// it in its lane (≈1.6 s time gap + 6 m standstill distance; the player's car and parked cars count).
+function yawOf(pose){const q=pose.rotation;return Number.isFinite(pose.yaw)?pose.yaw:Math.atan2(2*(q[3]*q[2]+q[0]*q[1]),1-2*(q[1]*q[1]+q[2]*q[2]));}
+function driveSpeed(record,pose,target){let v=record.speed;const yaw=yawOf(pose),c=Math.cos(yaw),sn=Math.sin(yaw),px=pose.position[0],py=pose.position[1];
+  {let d=Math.atan2(Math.sin(target.yaw-yaw),Math.cos(target.yaw-yaw));d=Math.abs(d);const look=Math.max(6,Math.hypot(target.x-px,target.y-py));if(d>.12){const R=look/(2*Math.sin(Math.min(d,1.5)/2)+1e-3);v=Math.min(v,Math.max(3.2,Math.sqrt(3.5*R)));}}
+  const half=record.kind==="bus"?1.6:1.25;let gapMin=Infinity;
+  for(const o of records){if(o===record||(o.kind!=="car"&&o.kind!=="bus")||!o.group.visible||o.deadUntil)continue;const op=o.physicsPose?.position,ox=op?op[0]:o.group.position.x,oy=op?op[1]:o.group.position.y,dx=ox-px,dy=oy-py;if(Math.abs(dx)>40||Math.abs(dy)>40)continue;const along=dx*c+dy*sn;if(along<1||along>40)continue;if(Math.abs(-dx*sn+dy*c)>half+.6)continue;const len=(o.kind==="bus"?4:1.9)+(record.kind==="bus"?4:1.9);gapMin=Math.min(gapMin,along-len);}
+  if(gapMin<Infinity){const free=Math.max(0,gapMin-2.5);v=Math.min(v,free/1.6);}
+  return Math.max(0,v);}
+// Every driver has a character (fixed per car): most panic when the player rams or shoots at
+// their car (slam it into reverse, then floor it away), some get aggressive and try to run him
+// over, a few stop, curse and get out — now and then with a knife or a gun.
+function driverTemper(record){if(!record.driverTemper){const r=(hashText(`${record.id}:driver`)%1000)/1000;record.driverTemper=r<.6?"panic":r<.84?"aggressive":"hothead";}return record.driverTemper;}
+function playerThreatPos(){const D=globalThis.__arondightVehicleDrive,W=globalThis.__arondightWalkMode;if(D?.active&&D.pose?.position)return{x:D.pose.position[0],y:D.pose.position[1],car:true};if(W?.mode==="foot"&&!W.dead&&W.position)return{x:W.position.x,y:W.position.y,car:false};return null;}
+function startDriverMood(record,now,reason){if(now<(record.moodCool||0)||record.mood)return;const t=driverTemper(record);record.moodCool=now+20000;
+  record.mood={kind:t,reason,at:now,until:now+(t==="panic"?11000:t==="aggressive"?8000:2200)};
+  const v=viewport();if(v)v.dataset.driverMood=`${record.id}:${t}:${reason}`;
+  const g=record.group.position;if(t!=="panic"||Math.random()<.4)honk([g.x,g.y,g.z+.5],{kind:record.kind,style:t==="panic"?"double":"long",source:record.id});}
+function driverMood(record,pose,now){const v=pose.velocity||[0,0,0];
+  // rammed by the player's car: its velocity jumps while the player's car is right there
+  if(record.lastVel){const dv=Math.hypot(v[0]-record.lastVel[0],v[1]-record.lastVel[1]);if(dv>2.2){const P=playerThreatPos();if(P?.car&&Math.hypot(P.x-pose.position[0],P.y-pose.position[1])<7)startDriverMood(record,now,"rammed");}}
+  record.lastVel=[v[0],v[1]];
+  const m=record.mood;if(!m)return null;if(now>m.until){record.mood=null;return null;}return m;}
+function applyDriverMood(record,pose,now,m,targetPoint,physics){const id=record.id,P=playerThreatPos(),t=now-m.at;
+  if(m.kind==="panic"){if(t<1300){physics?.clearTarget?.(id);physics?.setDrive?.(id,{pedal:-1,steer:0,handbrake:false});return;}
+    if(targetPoint)physics?.setTarget?.(id,{position:[targetPoint.x,targetPoint.y,0],yaw:targetPoint.yaw,speedMps:Math.min(24,record.speed*1.9+4),maxAccelerationMps2:7});return;}
+  if(m.kind==="aggressive"&&P){physics?.setTarget?.(id,{position:[P.x,P.y,0],speedMps:14,maxAccelerationMps2:7});return;}
+  // hothead: stops dead, then the driver gets out and comes for the player (car stays parked)
+  physics?.clearTarget?.(id);physics?.setDrive?.(id,{pedal:0,steer:0,handbrake:true});
+  if(t>1500&&!m.exited){m.exited=true;const yaw=yawOf(pose);record.parked={x:pose.position[0],y:pose.position[1],yaw,until:now+60000};driverGetsOut(record,pose,yaw,now);}}
+// ---- who sits in the cars. Every car on the move has a driver (drawn seated, close by). Taking a car
+// throws its driver out: he lands beside it and, by his temper, runs off, stands and swears or comes at
+// you; people around shout too, and a witness reports it. A car someone was pulled out of stays empty
+// (parked) until nobody sees it any more. Rarely a hothead off the pavement does the same to a driver
+// waiting in traffic and races off with the car.
+const ROADSTER_PAINTS=[0xd8261f,0xe9ecef,0x15171a,0x2a5bd7,0x8e9aa6];
+const DRIVER_CAP=MOBILE?14:24,DRIVER_DRAW_M=70;let driverCrowd=null,driverScene=null;const driverOwner=[];
+function seatedDriver(r){return(r.kind==="car"||r.kind==="bus")&&!r.empty&&!r.parked&&!r.deadUntil&&!r.towed&&!r.remoteDriven;}
+function drawDrivers(dt){const scene=bridge()?.threeScene;if(!scene)return;if(driverScene!==scene){driverCrowd=createCrowd(scene,{capacity:DRIVER_CAP,name:"WORLD_DRIVERS"});driverScene=scene;driverOwner.length=0;}
+  const B=bridge(),cam=(B?.presentedCamera?.()||B?.threeCamera)?.position;if(!cam)return;let j=0;
+  for(const r of records){if(j>=DRIVER_CAP)break;if(!seatedDriver(r)||r.group.userData?.playerDriven||!shownInScene(r.group)||!bodyRendered(r))continue;const g=r.group.position;if((g.x-cam.x)**2+(g.y-cam.y)**2>DRIVER_DRAW_M*DRIVER_DRAW_M)continue;
+    r.group.updateMatrixWorld();const bus=r.kind==="bus";wheelOrigin.set(bus?3.05:-.15,bus?.72:.38,bus?.55:-.21-(CAR_STYLE_SEAT_DROP[r.style]||0))/* seated head top 1.49 above the seat origin: the sedan's roof lining is at 1.33 */.applyMatrix4(r.group.matrixWorld);
+    if(driverOwner[j]!==r.id){driverOwner[j]=r.id;driverCrowd.setColors(j,civilianColors(hashText(`${r.id}:driver`)));}
+    driverCrowd.set(j,{x:wheelOrigin.x,y:wheelOrigin.y,z:wheelOrigin.z,yaw:r.group.rotation.z-Math.PI/2,state:"drive",speed:0,dt});j++;}
+  driverCrowd.commit();}
+// a person put somewhere in plain sight right now (an ejected driver): he gets a draw slot at once
+function showPersonNow(a){if(a.slot){a.slot.group.userData.spawnHeld=false;return;}let slot=personSlots.find(s=>!s.agent);
+  if(!slot){const f=populationFocus();let far=-1;for(const s of personSlots){const b=s.agent;if(!b||b.fightUntil)continue;const d=f?Math.hypot(b.x-f.x,b.y-f.y):0;if(d>far){far=d;slot=s;}}if(slot)unbindPerson(slot);}
+  if(!slot)return;bindPerson(slot,a);slot.group.userData.spawnHeld=false;slot.group.visible=true;}
+function scoldAround(x,y,now,{except=null,mood="angry",max=3}={}){let n=0;for(const b of people){if(n>=max)break;if(b===except||!b.alive||b.knocked||!b.slot)continue;if(Math.hypot(b.x-x,b.y-y)<24&&Math.random()<.6){b.annoy=(b.annoy||0)+1;turnTo(b,x,y);setTimeout(()=>say(b,mood),250+n*450);n++;}}}
+function turnTo(b,x,y){b.yaw=Math.atan2(y-b.y,x-b.x);}
+let carjackSeq=0;
+function ejectDriver(record,pose,{by="player",now=performance.now()}={}){if(!pose?.position)return null;const yaw=yawOf(pose),sx=-Math.sin(yaw),sy=Math.cos(yaw),x=pose.position[0]+sx*1.8,y=pose.position[1]+sy*1.8;
+  let pick=null,bd=Infinity;for(const a of people){if(!a.alive||a.knocked||a.slot||a.fightUntil)continue;const d=Math.hypot(a.x-x,a.y-y);if(d<bd){bd=d;pick=a;}}if(!pick)return null;
+  let best=null,bdist=Infinity;for(const r of pedNet.routes.values()){const o={s:0,lateral:0,distance:0};projectOnRoute(r,x,y,o);if(o.distance<bdist){bdist=o.distance;best={r,o};}}
+  pick.x=x;pick.y=y;pick.yaw=yaw+Math.PI/2;pick.v=0;pick.fleeUntil=0;pick.leader=null;pick.crossing=false;if(best){pick.route=best.r.key;pick.s=best.o.s;}
+  record.empty=true;showPersonNow(pick);
+  if(by==="player"){const t=temperOf(pick);
+    if(t==="aggressive"&&Math.random()<.6){pick.fightUntil=now+10000;pick.foe=null;pick.annoy=3;if(armsOf(pick)==="gun"&&Math.random()<.7)pick.arms="fists";say(pick,"angry");}
+    else if(t==="runner"||Math.random()<.5){frighten(pick,pose.position[0],pose.position[1],now,{strength:1.2});say(pick,"scared");}
+    else{pick.state="wait";pick.waitUntil=now+2600;turnTo(pick,pose.position[0],pose.position[1]);say(pick,"angry");setTimeout(()=>{if(pick.alive&&!pick.knocked)frighten(pick,pose.position[0],pose.position[1],performance.now(),{strength:.6});},2600);}
+    scoldAround(x,y,now,{except:pick});
+    try{globalThis.__arondightWantedSystem?.reportCrime?.({id:`carjack-${(++carjackSeq).toString(36)}-${Math.round(now)}`,kind:"carjacking",severity:1,position:[x,y,0]});}catch{}}
+  const v=viewport();if(v)v.dataset.carjack=`${record.id}:${by}:${temperOf(pick)}`;return pick;}
+if(typeof window!=="undefined")addEventListener("arondight:vehicle-mode",e=>{const d=e?.detail;if(!d?.active||!d.id)return;const r=byId.get(String(d.id));if(!r||!seatedDriver(r))return;const pose=r.physicsPose||rigidBodies()?.pose?.(r.id);if(pose)ejectDriver(r,pose,{by:"player"});});
+// rare: a hothead pulls a driver out of a car waiting in traffic (in view, not too close) and races off
+let nextNpcCarjack=performance.now()+180000+Math.random()*180000;
+function npcCarjackCheck(now){if(now<nextNpcCarjack)return;nextNpcCarjack=now+30000;const f=populationFocus();if(!f)return;
+  for(const r of records){if(!seatedDriver(r)||r.group.userData?.playerDriven||!r.physicsPose||!shownInScene(r.group))continue;const p=r.physicsPose.position,v=r.physicsPose.velocity||[0,0,0],d=Math.hypot(p[0]-f.x,p[1]-f.y);if(d<18||d>70||Math.hypot(v[0],v[1])>1.2)continue;
+    let thief=null;for(const a of people){if(!a.alive||a.knocked||!a.slot||a.fightUntil||a.fleeUntil)continue;if(Math.hypot(a.x-p[0],a.y-p[1])<14){thief=a;break;}}if(!thief)continue;
+    const victim=ejectDriver(r,r.physicsPose,{by:"npc",now});if(!victim)return;r.empty=false;r.parked=null; /* the thief drives it now */
+    frighten(victim,p[0],p[1],now,{strength:1});say(victim,"scared");thief.x=p[0];thief.y=p[1];if(thief.slot)unbindPerson(thief.slot);thief.inCarUntil=now+90000; /* in the car: not drawn on the pavement meanwhile */
+    r.mood={kind:"panic",at:now-1400,until:now+25000};scoldAround(p[0],p[1],now,{except:victim,mood:"scared"});
+    const vv=viewport();if(vv)vv.dataset.npcCarjack=r.id;nextNpcCarjack=now+240000+Math.random()*240000;return;}}
+function driverGetsOut(record,pose,yaw,now){const sideX=-Math.sin(yaw),sideY=Math.cos(yaw),x=pose.position[0]+sideX*1.6,y=pose.position[1]+sideY*1.6;
+  // the driver is one of the city's people (someone off the pavements nearby who is not on screen)
+  let pick=null,bd=Infinity;for(const a of people){if(!a.alive||a.knocked||a.slot||a.fightUntil)continue;const d=Math.hypot(a.x-x,a.y-y);if(d<bd){bd=d;pick=a;}}if(!pick)return;
+  let best=null,bdist=Infinity;for(const r of pedNet.routes.values()){const o={s:0,lateral:0,distance:0};projectOnRoute(r,x,y,o);if(o.distance<bdist){bdist=o.distance;best={r,o};}}
+  pick.x=x;pick.y=y;pick.yaw=yaw+Math.PI/2;pick.v=0;pick.fleeUntil=0;pick.leader=null;if(best){pick.route=best.r.key;pick.s=best.o.s;}
+  record.empty=true;showPersonNow(pick);
+  pick.temper="aggressive";const r=Math.random();pick.arms=r<.05?"gun":r<.25?"knife":"fists";pick.fightUntil=now+14000;pick.foe=null;pick.annoy=3;say(pick,"angry");
+  const v=viewport();if(v)v.dataset.driverOut=`${record.id}:${pick.arms}`;}
+if(typeof window!=="undefined")addEventListener("arondight:foot-tracer",e=>{const b=e?.detail?.end;if(!Array.isArray(b))return;const now=performance.now();for(const r of records){if((r.kind!=="car"&&r.kind!=="bus")||!r.physicsPose||r.deadUntil||r.group.userData?.playerDriven)continue;const p=r.physicsPose.position;if(Math.hypot(p[0]-b[0],p[1]-b[1])<2.6)startDriverMood(r,now,"shot-at");}});
+function updatePhysicalVehicle(record,epoch,now){
+  // a car another multiplayer player is driving: his replicated car is drawn by the
+  // player runtime, our own copy of it steps aside (hidden, no physics)
+  if(record.remoteDriven){record.group.visible=false;record.wheelPoses=null;if(record.physicsRegistered){rigidBodies()?.removeBody?.(record.id);record.physicsRegistered=false;}return;}
+  const gunHeld=globalThis.__arondightGravityGun?.heldId===record.id,driven=Boolean(record.group.userData?.playerDriven)||gunHeld; // held by the gravity gun: like a driven car, nothing moves it behind the scenes
+  // traffic switched off: no traffic exists (the car the player sits in / on the tow hook stays)
+  if(!opts.traffic&&!driven&&!record.towed&&!record.parked){if(record.placed||record.group.visible||record.physicsRegistered){hideVehicle(record);stopWorldCriticalDamage(record.id);}record.placed=false;record.parked=null;return;}
+  // a wreck is gone for good; another car comes along later, out of view (never at the wreck)
+  if(record.deadUntil){if(Date.now()<record.deadUntil){hideVehicle(record);return;}record.deadUntil=0;record.placed=false;record.parked=null;}
+  if(!record.placed&&!driven&&!record.towed&&!placeVehicle(record,epoch,now)){hideVehicle(record);return;}
+  const physics=rigidBodies(),shape=vehicleShape(record),focus=populationFocus();let route=routeFor(record);
+  // a far car nobody sees can be called to the player's neighbourhood (traffic stays around the
+  // player, but only behind the scenes: it leaves out of view and arrives out of view)
+  if(!driven&&!record.towed&&!record.parked&&!record.physicsRegistered&&focus&&worldKey!=="training"&&now>=(record.nextRelocateAt||0)){const g=record.group.position;
+    if(!route||Math.hypot(g.x-focus.x,g.y-focus.y)>VEHICLE_RELOCATE_M){record.nextRelocateAt=now+VEHICLE_PLACE_MS*2;if(!record.group.visible||spawnGateOpen(g.x,g.y,g.z,{farEntryM:VEHICLE_VANISH_M})){const was=record.relocations;if(placeVehicle(record,epoch,now)&&record.relocations>was){route=routeFor(record);const v=viewport();if(v)v.dataset.worldPopulationRebinds=String((Number(v.dataset.worldPopulationRebinds)||0)+1);}}}}
+  let initial=route?vehicleSampleAt(record,route,epoch):null;
+  // A car the player left stays where it was parked (GTA): no route AI, handbrake on,
+  // until the player is far away or the park time ran out.
+  if(record.parked){const fp=populationFocus(),far=fp&&Math.hypot(record.parked.x-fp.x,record.parked.y-fp.y)>PARK_RELEASE_M;if(far||(now>record.parked.until&&!record.empty)){record.parked=null;record.empty=false; /* an emptied car only drives on again once nobody sees it (its owner came back) */rigidBodies()?.setDrive?.(record.id,null);if(route&&record.physicsPose)syncAnalyticToPose(record,route,epoch,record.physicsPose.position[0],record.physicsPose.position[1]);}}
+  if(record.parked)initial={x:record.parked.x,y:record.parked.y,yaw:record.parked.yaw};
+  if(!initial){const pp=record.physicsPose?.position;if(record.physicsRegistered&&pp)initial={x:pp[0],y:pp[1],yaw:Number(record.physicsPose.yaw)||record.group.rotation.z};
+    // its street is gone from the map cache (far away): it leaves only where nobody sees it
+    else{if(!record.group.visible||spawnGateOpen(record.group.position.x,record.group.position.y,record.group.position.z,{farEntryM:VEHICLE_VANISH_M})){hideVehicle(record);record.placed=false;}return;}}
+  const here=record.physicsRegistered&&record.physicsPose?record.physicsPose.position:[initial.x,initial.y],dist=focus?Math.hypot(here[0]-focus.x,here[1]-focus.y):0,near=driven||record.towed||!focus||dist<(record.physicsRegistered?PHYS_FAR_M:PHYS_NEAR_M);
+  if(!near){if(record.physicsRegistered){if(route&&record.physicsPose){syncAnalyticToPose(record,route,epoch,record.physicsPose.position[0],record.physicsPose.position[1]);initial=vehicleSampleAt(record,route,epoch)||initial;}physics?.removeBody?.(record.id);record.physicsRegistered=false;}
+    record.physicsPose=null;record.wheelPoses=null;record.group.position.set(initial.x,initial.y,groundHeightAt(initial.x,initial.y));record.group.rotation.set(0,0,initial.yaw);record.group.visible=true;return;}
+  if(!record.physicsRegistered){
+    const candidate={x:initial.x,y:initial.y,yaw:initial.yaw,half:shape.half};
+    const occupied=records.some(other=>{
+      if(other===record||!other.physicsRegistered||(other.kind!=="car"&&other.kind!=="bus"))return false;
+      const p=other.physicsPose||physics?.pose?.(other.id);return p&&vehicleFootprintsOverlap(candidate,{x:p.position[0],y:p.position[1],yaw:p.yaw,half:vehicleShape(other).half});
+    });
+    // the spot is blocked by a physical car right now: keep driving analytically (never vanish), retry
+    if(occupied){record.group.position.set(initial.x,initial.y,groundHeightAt(initial.x,initial.y));record.group.rotation.set(0,0,initial.yaw);record.group.visible=true;record.physicsPose=null;record.wheelPoses=null;return;}
+    if(initial.direction)record.routeDirection=initial.direction;// becomes physical driving on in the direction it was going
+  }
+  if(!record.physicsRegistered)record.physicsRegistered=Boolean(physics?.upsertBody?.({id:record.id,kind:record.kind,position:[initial.x,initial.y,groundHeightAt(initial.x,initial.y)+shape.half[2]],yaw:initial.yaw,halfExtents:shape.half,massKg:shape.mass}));
+  let pose=physics?.pose?.(record.id,record.physicsPose)||record.physicsPose;if(!driven&&pose?.position&&pose.position[2]<staticGroundHeightAt(pose.position[0],pose.position[1])-6){physics?.removeBody?.(record.id);record.physicsRegistered=false;pose=null;}// (the car the player drives is never dropped: the physics safety net puts it back on the ground)
+  if(record.towed){physics?.clearTarget?.(record.id);pose=physics?.pose?.(record.id,pose)||pose;}
+  else if(pose&&globalThis.__arondightGravityGun?.heldId===record.id){physics?.clearTarget?.(record.id);physics?.setDrive?.(record.id,null);}
+  else if(!driven&&pose&&record.parked){physics?.clearTarget?.(record.id);physics?.setDrive?.(record.id,{pedal:0,steer:0,handbrake:true});}
+  else if(!driven&&pose){const current=pose.position;let targetPoint;
+    if(route){const nearest=nearestRouteDistance(route,current[0],current[1]);if(nearest.distance>route.length-2.5)record.routeDirection=-1;else if(nearest.distance<2.5)record.routeDirection=1;const lookahead=Math.max(7,record.speed*1.3),targetDistance=clamp(nearest.distance+record.routeDirection*lookahead,0,route.length),offset=laneWidth(route,record)*record.routeDirection;targetPoint=sampleRoadRoute(route,targetDistance,offset,record.routeDirection);}
+    const mood=driverMood(record,pose,now);
+    if(mood){applyDriverMood(record,pose,now,mood,targetPoint,physics);}
+    else{const yielding=yieldsToPedestrian(record,pose,now);honkCheck(record,pose,now,yielding);if(targetPoint)physics?.setTarget?.(record.id,{position:[targetPoint.x,targetPoint.y,0],yaw:targetPoint.yaw,speedMps:yielding?0:driveSpeed(record,pose,targetPoint)});else{physics?.clearTarget?.(record.id);physics?.setDrive?.(record.id,{pedal:0,steer:0,handbrake:true});}}
+    pose=physics?.pose?.(record.id,pose)||pose;}
+  record.physicsPose=pose;
+  // drawn between the last two physics steps (smooth at any frame rate); logic keeps the stepped pose
+  if(pose){const rp=physics?.renderPose?.(record.id,record.drawPose||(record.drawPose={}));if(rp?.position)pose=rp;}
+  if(pose){const q=pose.rotation,off=Number(pose.groundOffset)||shape.half[2];record.group.quaternion.set(q[0],q[1],q[2],q[3]);wheelUp.set(0,0,1).applyQuaternion(record.group.quaternion);record.group.position.set(pose.position[0]-wheelUp.x*off,pose.position[1]-wheelUp.y*off,pose.position[2]-wheelUp.z*off);record.wheelPoses=pose.wheels||null;}
+  else{record.group.position.set(initial.x,initial.y,groundHeightAt(initial.x,initial.y));record.group.rotation.set(0,0,initial.yaw);record.wheelPoses=null;}
+  record.group.visible=true;if(driven){const view=viewport();if(view)view.dataset.worldDrivenVehicleAi="suspended-while-player-controls-v1";}
+}
+// All wheels of all vehicles: one instanced draw call. Physical cars use the
+// wheel bodies (spin, steering, suspension travel); far cars static wheels.
+const WHEEL_LAYOUT={car:{r:.34,pts:[[1.2,.78],[1.2,-.78],[-1.15,.78],[-1.15,-.78]]},bus:{r:.46,pts:[[2.6,1.08],[2.6,-1.08],[-2.55,1.08],[-2.55,-1.08]]}};
+let wheelMesh=null;const wq=new THREE.Quaternion(),wm=new THREE.Matrix4(),ws=new THREE.Vector3(),wp=new THREE.Vector3();
+// a vehicle's wheels are drawn only together with its body: visible along the whole
+// parent chain up to the scene, evaluated right before the frame is rendered
+function shownInScene(node){for(let o=node;o;o=o.parent){if(o.visible===false)return false;if(o.isScene)return true;}return false;}
+// ...and only while the body is on the render layer: far actors are moved off layer 0 (stylized_world_style
+// ACTOR_CULL_M) and the instanced wheels are not part of that actor — without this test every car further
+// than 260 m (seen from a jet, a parachute or a roof) was drawn as four bare wheels
+function bodyRendered(r){if(r.group.userData.styleCulled)return false;for(const c of r.group.children)if(c.isMesh&&c.visible&&(c.layers.mask&1))return true;return false;}
+// Presentation runs every drawn frame (logic may tick slower — 32 ms on phones): each physical
+// vehicle is placed at its interpolated pose for exactly this frame, the same pose the chase /
+// cockpit camera reads. Car body, wheels and camera are always on one time base: no judder.
+function presentVehicles(){const physics=rigidBodies();if(!physics?.renderPose)return;
+  for(const r of records){if((r.kind!=="car"&&r.kind!=="bus")||!r.physicsRegistered||!r.physicsPose||!r.group.visible||r.towed)continue;
+    const rp=physics.renderPose(r.id,r.drawPose||(r.drawPose={}));if(!rp?.position)continue;const q=rp.rotation,off=Number(rp.groundOffset)||vehicleShape(r).half[2];
+    r.group.quaternion.set(q[0],q[1],q[2],q[3]);wheelUp.set(0,0,1).applyQuaternion(r.group.quaternion);r.group.position.set(rp.position[0]-wheelUp.x*off,rp.position[1]-wheelUp.y*off,rp.position[2]-wheelUp.z*off);r.wheelPoses=rp.wheels||null;}}
+function updateWheelInstances(){
+  if(!root)return;if(!wheelMesh){wheelMesh=new THREE.InstancedMesh(wheelGeometry(),vehicleMaterial,4*Math.max(8,records.filter(r=>r.kind==="car"||r.kind==="bus").length));wheelMesh.name="WORLD_VEHICLE_WHEELS";wheelMesh.castShadow=true;wheelMesh.receiveShadow=true;wheelMesh.frustumCulled=false;wheelMesh.userData.flightFireIgnore=true;wheelMesh.raycast=()=>{};root.add(wheelMesh);}
+  let n=0;const cap=wheelMesh.instanceMatrix.count;
+  const nowW=performance.now();for(const r of records){if((r.kind!=="car"&&r.kind!=="bus")||!shownInScene(r.group)||!bodyRendered(r)||n+4>cap||nowW-(Number(r.group.userData.playerCockpit)||-1e9)<250)continue;const L=WHEEL_LAYOUT[r.kind],k=L.r/.34;ws.set(k,k,k);
+    if(r.wheelPoses?.length===4){for(const w of r.wheelPoses){wp.set(w.position[0],w.position[1],w.position[2]);wq.set(w.rotation[0],w.rotation[1],w.rotation[2],w.rotation[3]);wm.compose(wp,wq,ws);wheelMesh.setMatrixAt(n++,wm);}}
+    else{r.group.updateMatrixWorld();for(const[x,y]of L.pts){wp.set(x,y,L.r).applyMatrix4(r.group.matrixWorld);wm.compose(wp,r.group.quaternion,ws);wheelMesh.setMatrixAt(n++,wm);}}}
+  wheelMesh.count=n;wheelMesh.instanceMatrix.needsUpdate=true;
+}
+
+function rectSample(m,t,baseX=anchorX,baseY=anchorY){const w=2*m.hx,h=2*m.hy,per=2*(w+h),d=mod(t*m.speed+m.phase*per,per);let x,y,dx,dy;if(d<w){x=-m.hx+d;y=-m.hy;dx=1;dy=0;}else if(d<w+h){x=m.hx;y=-m.hy+(d-w);dx=0;dy=1;}else if(d<2*w+h){x=m.hx-(d-w-h);y=m.hy;dx=-1;dy=0;}else{x=-m.hx;y=m.hy-(d-2*w-h);dx=0;dy=-1;}const c=Math.cos(m.angle),s=Math.sin(m.angle),rx=x*c-y*s,ry=x*s+y*c,rdx=dx*c-dy*s,rdy=dx*s+dy*c;return{x:baseX+m.cx+rx,y:baseY+m.cy+ry,yaw:Math.atan2(rdy,rdx)};}
+// may something appear at (x,y,z)? Only where no player sees it appear (local presented view +
+// peers' views, buildings hide), or while the world is still being shown for the first time
+function spawnGateOpen(x,y,z,options){const t=performance.now();if(worldShownAt&&t-worldShownAt<SPAWN_GRACE_MS)return true;if(firstRoutesAt&&t-firstRoutesAt<ROUTES_GRACE_MS)return true;const g=globalThis.__spawnVisibilityGuard;return g?.canSpawnAt?Boolean(g.canSpawnAt(x,y,z,options)):true;}
+// A shot bird drops out of the sky: ballistic fall with air drag, tumbling,
+// wings folded; it lies on the (deformed) ground for a while, then is gone.
+function updateFallingBird(record){const f=record.fall,t=Date.now(),dt=Math.min(.05,(t-f.last)/1000);f.last=t;const g=record.group;
+  if(!f.landed){f.vz-=9.81*dt;const drag=Math.exp(-.9*dt);f.vx*=drag;f.vy*=drag;f.x+=f.vx*dt;f.y+=f.vy*dt;f.z+=f.vz*dt;f.roll+=f.spin*dt;const ground=groundHeightAt(f.x,f.y)+.05;if(f.z<=ground){f.z=ground;f.landed=t;}
+    g.position.set(f.x,f.y,f.z);g.rotation.set(f.roll,.6*Math.sin(f.roll*.7),g.rotation.z+f.spin*.35*dt);g.scale.set(1,.35,1);}
+  else{g.position.z=groundHeightAt(f.x,f.y)+.05;g.rotation.set(Math.PI*.5*Math.sign(f.spin||1),0,g.rotation.z);g.scale.set(1,.4,1);}
+  g.visible=true;if(f.landed&&t-f.landed>6000){record.fall=null;g.visible=false;g.scale.set(1,1,1);}}
+function updateBird(record,epoch,now){
+  if(!opts.birds){if(record.group.visible||record.fall){record.group.visible=false;record.fall=null;record.group.scale.set(1,1,1);}record.appeared=false;return;}
+  if(record.fall){updateFallingBird(record);if(!record.fall)record.appeared=false;return;}
+  if(record.deadUntil){if(Date.now()<record.deadUntil){record.group.visible=false;return;}record.deadUntil=0;record.appeared=false;}
+  const m=record.motion,a=epoch*m.omega+m.phase,flap=.82+.2*Math.sin(epoch*10+record.index),cx=anchorX+m.cx,cy=anchorY+m.cy;const bx=cx+Math.cos(a)*m.rx,by=cy+Math.sin(a*.94)*m.ry,bz=m.z+Math.sin(a*2.3+record.index)*2.1+Math.max(0,groundHeightAt(bx,by)),dx=-Math.sin(a)*m.rx,dy=.94*Math.cos(a*.94)*m.ry,yaw=Math.atan2(dy,dx);
+  // a (new) bird joins the flock only where nobody sees it appear
+  if(!record.appeared){record.group.visible=false;if(now<(record.gateAt||0))return;record.gateAt=now+GATE_RECHECK_MS;if(!spawnGateOpen(bx,by,bz,{farEntryM:BIRD_ENTRY_M,heightM:1}))return;record.appeared=true;}
+  record.group.position.set(bx,by,bz);/* the bird model points its head along +y: turn that onto the flight direction (rotation.z=yaw flew it sideways) */record.group.rotation.set(0,.08*Math.sin(a*3),yaw-Math.PI/2);record.group.scale.set(flap,1,1);record.group.visible=true;}
+function updateRecord(record,epoch,now){if(record.kind==="car"||record.kind==="bus"){updatePhysicalVehicle(record,epoch,now);return;}if(record.kind==="bird")updateBird(record,epoch,now);}
+
+function styleMap(){const b=bridge(),map=b?.map;if(!b?.active||!map?.getStyle||!map?.setPaintProperty||mapStyledFor===map)return;let changed=0;for(const layer of map.getStyle()?.layers||[]){const id=String(layer?.id||"").toLowerCase(),source=String(layer?.["source-layer"]||"").toLowerCase();try{if(layer.type==="fill-extrusion"&&(source==="building"||id.includes("building"))){map.setPaintProperty(layer.id,"fill-extrusion-opacity",1);changed++;}}catch{}}mapStyledFor=map;const v=viewport();if(v){v.dataset.worldVisualPalette="neon-tactical-v1";v.dataset.worldVisualPaletteLayers=String(changed);}}
+function maintain(now){const b=bridge();if(!b?.active||now-lastMaintenance<MAINTENANCE_MS)return;lastMaintenance=now;try{const opaque=makeBuildingsOpaque(b.map),depth=syncWorldBuildingDepthOcclusion(b),v=viewport();styleMap();if(v){v.dataset.worldBuildingsOpaque="1";v.dataset.worldBuildingsSolidified=String(opaque);v.dataset.worldBuildingDepthOccluders=String(depth);}}catch{}}
+
+function nodeRecord(hit){for(let n=hit?.object;n;n=n.parent){const id=String(n.userData?.worldProceduralId||n.userData?.worldPopulationId||"");if(id&&byId.has(id))return byId.get(id);}return null;}
+function sendDeath(record){try{bridge()?.vsSession?.sendFx?.({type:"impact",fx:FX_TYPE,id:`${record.id}-${Date.now().toString(36)}`.slice(-80),objectId:"npc-death",npcId:record.id,kind:record.kind,p:[record.group.position.x,record.group.position.y,record.group.position.z],yaw:record.group.rotation.z});}catch{}}
+function killRecord(record,{network=true,impulse=null}={}){
+  if(record?.kind==="person")return killPerson(record,{network,impulse});
+  if(!record||record.deadUntil)return false;
+  stopWorldCriticalDamage(record.id);
+  record.group.getWorldPosition(tmp);const physicsPose=rigidBodies()?.pose?.(record.id),position=[tmp.x,tmp.y,tmp.z],now=Date.now(),angle=range(record.seed,21,-Math.PI,Math.PI);
+  if(record.kind==="car"||record.kind==="bus"){record.deadUntil=now+(record.kind==="bus"?20000:16000);spawnWorldCarExplosion({position:[tmp.x,tmp.y,record.kind==="bus"?1.2:.45],yaw:record.group.rotation.z,velocity:physicsPose?.velocity||[Math.cos(record.group.rotation.z)*record.speed,Math.sin(record.group.rotation.z)*record.speed,0],color:record.color,seed:record.id,id:record.id});rigidBodies()?.removeBody?.(record.id);record.physicsRegistered=false;record.physicsPose=null;}
+  else if(record.kind==="bird"){record.deadUntil=now+9000;const yaw=record.group.rotation.z,m=record.motion||{},sp=(m.omega||.25)*(m.rx||30)*.8;record.fall={t:now,last:now,x:tmp.x,y:tmp.y,z:tmp.z,vx:Math.cos(yaw)*sp,vy:Math.sin(yaw)*sp,vz:1.2,spin:range(record.seed,22,-9,9),roll:0,landed:0};playAnimal("bird");}
+  else record.deadUntil=now+9000;
+  if(!record.fall)record.group.visible=false;
+  if(network){sendDeath(record);window.dispatchEvent(new CustomEvent("arondight:world-kill",{detail:{id:record.id,kind:record.kind,position,network:true}}));}
+  const v=viewport();if(v){v.dataset.worldLifeHits=String((Number(v.dataset.worldLifeHits)||0)+1);v.dataset.worldPopulationHits=String((Number(v.dataset.worldPopulationHits)||0)+1);v.dataset.worldLifeLastHit=record.kind;v.dataset.worldPopulationLastHit=record.kind;}return true;
+}
+// a shot person goes down (ragdoll, thrown away from the shooter) and gets up again while there is life left; the second hit kills
+function shotImpulse(hit){const cam=bridge()?.presentedCamera?.()||bridge()?.threeCamera,p=hit?.point;if(!cam?.position||!p)return[0,0,2];let dx=p.x-cam.position.x,dy=p.y-cam.position.y;const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;return[dx*2.6,dy*2.6,1.7];}
+function handleProceduralHit(hit){const record=nodeRecord(hit);if(!record)return false;if(record.kind==="person"?(!record.alive||record.knocked||!record.slot):record.deadUntil)return true;if(hit.playerAction===true){const source=String(bridge()?.vsSession?.getSelfId?.()||"");globalThis.__arondightWantedSystem?.reportCrime?.({id:`direct-${record.id}-${Date.now().toString(36)}-${Math.round(performance.now())}`,kind:record.kind==="person"?"person-hit":record.kind,playerId:source||undefined});}if(record.kind==="person"){const imp=shotImpulse(hit),r=globalThis.__arondightProceduralPopulation?.knockdown?.(record.id,{impulse:imp,damage:Number.isFinite(hit.weaponDamage)?hit.weaponDamage:55});if(r==="down"){globalThis.__peopleImpacts?.broadcast?.("pop",record.id,imp,55);/* direct player hit already attributed once at the dispatcher */}return true;}killRecord(record);return true;}
+function ensureHitBridge(){const b=bridge();if(!b||hitBridge===b)return;const base=typeof b.registerWorldPopulationHit==="function"?b.registerWorldPopulationHit.bind(b):null;const dispatcher=hit=>handleProceduralHit(hit)||(base?Boolean(base(hit)):false);dispatcher.__proceduralPopulationProvider=true;dispatcher.__worldLivelinessWrapper=true;dispatcher.__gameplayPolishLiteWrapper=true;b.__proceduralPopulationHit=handleProceduralHit;b.registerWorldPopulationHit=dispatcher;hitBridge=b;}
+function handleRemoteFx(event){const packet=event?.detail?.packet;if(packet?.objectId!=="npc-death"||packet.fx!==FX_TYPE)return;const record=byId.get(String(packet.npcId||""));/* sent as a valid "impact" packet: lan_vs only carries shot / impact / explosion */if(record&&(record.kind==="person"?record.alive:!record.deadUntil))killRecord(record,{network:false});}
+
+let lastTelemetryTick=-Infinity,hookRanAt=-Infinity;
+function frame(now=performance.now()){requestAnimationFrame(frame);{const b=bridge();if(b&&crowdHooked!==b&&typeof b.addPreRenderHook==="function"){b.addPreRenderHook(()=>{hookRanAt=performance.now();try{presentVehicles();}catch(e){console.warn("vehicle present",e);}try{updateCrowd();}catch(e){console.warn("crowd",e);}try{updateWheelInstances();}catch(e){console.warn("wheels",e);}});crowdHooked=b;}}const dt=Math.min(.05,Math.max(0,(now-lastFrame)/1000||0));lastFrame=now;void dt;syncSatelliteMigration();if(!ensureScene())return;ensureHitBridge();const visible=worldVisible();root.visible=visible;decorRoot.visible=visible;lightsOn(lightRoot,visible);if(!visible||now-lastPopulationTick<POPULATION_TICK_MS)return;lastPopulationTick=now;if(!worldShownAt)worldShownAt=now;if(!configureWorld())return;refreshAnchor();refreshRoutes(now);maintain(now);const epoch=Date.now()/1000;updateAmbientAnimals(epoch,now);try{updatePeople(now,populationFocus());}catch(e){console.warn("population people",e);}let alive=peopleShown,physicalVehicles=0,lowestVehicleZ=Infinity;for(const record of records){updateRecord(record,epoch,now);if(record.group.visible)alive++;if((record.kind==="car"||record.kind==="bus")&&record.physicsPose){physicalVehicles++;lowestVehicleZ=Math.min(lowestVehicleZ,record.group.position.z);}}if(now-hookRanAt>250){try{updateCrowd();updateWheelInstances();}catch(e){console.warn("population draw",e);}}/* frames drawn without pre-render hooks (training drone view) */if(now-lastTelemetryTick>=250){lastTelemetryTick=now;const v=viewport();if(v){v.dataset.worldLifeVisible=String(alive);v.dataset.worldLifeTotal=String(records.length);v.dataset.worldProceduralPopulation="1";v.dataset.worldPopulationTickHz=String(Math.round(1000/POPULATION_TICK_MS));v.dataset.worldAmbientAnimalTickHz=String(Math.round(1000/AMBIENT_ANIMAL_TICK_MS));v.dataset.worldDecorDrawCalls="instanced-trees+halo+animals-v1";v.dataset.worldPopulationStreaming="persistent-agents+out-of-view-arrivals-v7";v.dataset.worldPedestrianModel="persistent-goal-agents-v1";v.dataset.worldPedestrianAgents=String(people.length);v.dataset.worldPedestrianShown=String(peopleShown);v.dataset.worldPedestrianStreets=String(pedNet.routes.size);v.dataset.worldPedestrianRefusedArrivals=String(peopleSpawnRefused);v.dataset.worldPopulationGrounding="world-space-fixed-centres-v1";v.dataset.worldTrainingRoutes="fixed-local-road-network-v1";v.dataset.worldPopulationRebinds??="0";v.dataset.worldVehicleStallRecovery="impulse-nudge-v1";v.dataset.worldPedestrianRouting="sidewalk-network-destinations-v1";v.dataset.worldOptions=`${+opts.people}${+opts.traffic}${+opts.dogs}${+opts.cats}${+opts.birds}`;v.dataset.worldVehiclePhysics=rigidBodies()?.ready?"box3d-dynamic-force-controller-v1":"waiting-box3d";v.dataset.worldPhysicsVehicleVisuals=String(physicalVehicles);v.dataset.worldPhysicsVehicleLowestZ=Number.isFinite(lowestVehicleZ)?lowestVehicleZ.toFixed(3):"waiting";v.dataset.worldPopulationTelemetry="250ms";}}}
+
+export function installWorldProceduralPopulation(){if(installed)return;installed=true;globalThis.__arondightProceduralPopulation={
+    // traffic as the tow service (tow_service.mjs) sees it: physical cars near the player, their route and how far off it they are
+    // diagnostics: every vehicle record with what is drawn and what the physics says (CI probes)
+    diagVehicles(){const out=[],m=new THREE.Vector3();for(const r of records){if(r.kind!=="car"&&r.kind!=="bus")continue;let shown=true;for(let o=r.group;o;o=o.parent){if(!o.visible){shown=false;break;}if(o.isScene)break;}const meshes=r.group.children.filter(c=>c.isMesh);r.group.updateMatrixWorld(true);const finite=r.group.matrixWorld.elements.every(Number.isFinite),wp=r.wheelPoses;let wd=null;if(wp?.length===4){let cx=0,cy=0,cz=0;for(const w of wp){cx+=w.position[0]/4;cy+=w.position[1]/4;cz+=w.position[2]/4;}wd=Math.hypot(cx-r.group.position.x,cy-r.group.position.y,cz-r.group.position.z);}
+      m.set(0,0,1).applyQuaternion(r.group.quaternion);out.push({id:r.id,kind:r.kind,shown,inScene:Boolean(r.group.parent),meshes:meshes.length,meshesVisible:meshes.filter(x=>x.visible).length,bodyRendered:bodyRendered(r),styleCulled:Boolean(r.group.userData.styleCulled),geoVerts:meshes[0]?.geometry?.attributes?.position?.count||0,finite,wheels:wp?.length||0,wheelCenterDist:wd==null?null:+wd.toFixed(2),up:+m.z.toFixed(2),pos:[r.group.position.x,r.group.position.y,r.group.position.z].map(v=>+v.toFixed(1)),registered:Boolean(r.physicsRegistered),pose:Boolean(r.physicsPose),dead:Boolean(r.deadUntil),parked:Boolean(r.parked),towed:Boolean(r.towed),remote:Boolean(r.remoteDriven),cockpit:Boolean(r.group.userData.playerCockpit),relocations:r.relocations||0});}return out;},
+    vehicles(){const out=[],gun=globalThis.__arondightGravityGun?.heldId||"";for(const r of records){if((r.kind!=="car"&&r.kind!=="bus")||!r.physicsRegistered||!r.physicsPose||!r.group.visible||r.deadUntil||r.remoteDriven||r.id===gun)continue;const p=r.physicsPose,q=p.rotation||[0,0,0,1],up=1-2*(q[0]*q[0]+q[1]*q[1]),route=routeFor(r),near=route?nearestRouteDistance(route,p.position[0],p.position[1]):null;
+      out.push({id:r.id,kind:r.kind,x:p.position[0],y:p.position[1],z:p.position[2],yaw:Number.isFinite(p.yaw)?p.yaw:Math.atan2(2*(q[3]*q[2]+q[0]*q[1]),1-2*(q[1]*q[1]+q[2]*q[2])),speed:Math.hypot(p.velocity?.[0]||0,p.velocity?.[1]||0),up,parked:Boolean(r.parked),driven:Boolean(r.group.userData?.playerDriven),towed:Boolean(r.towed),offRoute:near?Math.max(0,near.offsetM-Math.abs(laneWidth(route,r))):0,hasRoute:Boolean(route)});}return out;},
+    // where this car belongs: its own lane on its own route, some way along its driving direction
+    lanePose(id,ahead=25){const r=byId.get(String(id||""));if(!r)return null;const route=routeFor(r),p=r.physicsPose;if(!route||!p)return null;const n=nearestRouteDistance(route,p.position[0],p.position[1]),dir=r.routeDirection||1,d=clamp(n.distance+dir*ahead,3,route.length-3),pt=sampleRoadRoute(route,d,laneWidth(route,r)*dir,dir);return pt?{x:pt.x,y:pt.y,yaw:pt.yaw}:null;},
+    towBegin(id){const r=byId.get(String(id||""));if(!r||r.towed||!r.physicsRegistered||r.group.userData?.playerDriven)return false;r.towed=true;r.parked=null;rigidBodies()?.clearTarget?.(r.id);rigidBodies()?.setDrive?.(r.id,null);return true;},
+    towEnd(id,{x,y,yaw}={}){const r=byId.get(String(id||""));if(!r||!r.towed)return false;r.towed=false;const shape=vehicleShape(r);if(Number.isFinite(x)&&Number.isFinite(y))rigidBodies()?.setPose?.(r.id,{position:[x,y,staticGroundHeightAt(x,y)+shape.half[2]+.08],yaw:Number(yaw)||0});return true;},
+    // people as vehicle impacts (people_impacts.mjs) see them: the drawn, standing ones
+    people(){peopleOut.length=0;let k=0;for(const slot of personSlots){const a=slot.agent;if(!a||!slot.group.visible||!a.alive||a.knocked)continue;const o=peopleOutPool[k]||(peopleOutPool[k]={id:"",x:0,y:0,z:0,yaw:0});k++;o.id=a.id;o.x=a.x;o.y=a.y;o.z=a.z;o.yaw=a.yaw;peopleOut.push(o);}return peopleOut;},
+    // Pure live agent snapshots for the sole native WebGL2 renderer.
+    // No THREE.Group visibility or graphical-slot ownership is involved.
+    nativePeople(center=[0,0]){
+      return opts.people?nativePopulationSnapshot(people,{center,maxPeople:PERSON_SLOTS,
+        radius:PEOPLE_SHOW_M,heightAt:staticGroundHeightAt}):[];
+    },
+    // a hit that is not (yet) fatal: the person goes down as a ragdoll and gets up again
+    knockdown(id,options={}){const a=byId.get(String(id||""));return a?.kind==="person"?knockPerson(a,options):null;},
+    // a fist (player melee): hurts, angers, and three or four of them put a person down (ragdoll)
+    punch(id,{dir=[0,0,0],damage=22,momentumNs=30}={}){const a=byId.get(String(id||""));if(a?.kind!=="person"||!a.alive||a.knocked)return null;a.hp=(Number.isFinite(a.hp)?a.hp:100)-damage;const now=performance.now(),k=Math.max(.5,momentumNs/30),hd=Math.hypot(dir[0],dir[1])||1;
+      if(a.hp<=0){killPerson(a,{network:true,impulse:[dir[0]/hd*1.8*k,dir[1]/hd*1.8*k,.8]});return"dead";}
+      if(a.hp<=35){knockPerson(a,{impulse:[dir[0]/hd*2*k,dir[1]/hd*2*k,.9],damage:0});return"down";}
+      // the punch lands with its momentum: a ~75 kg person rocks back a step (staggers)
+      const step=Math.min(.6,.22*k);a.x+=dir[0]/hd*step;a.y+=dir[1]/hd*step;a.v=0;const r=provoke(a,now,{punched:true});say(a,r==="fight"?"angry":"scared");return"hit";},
+    // every pedestrian with its destination (diagnostics / tests)
+    agents(){return people.filter(a=>a.alive).map(a=>({id:a.id,x:a.x,y:a.y,yaw:a.yaw,state:a.state,trip:a.trip,dest:a.dest?{x:a.dest.x,y:a.dest.y}:null,remaining:remainingWay(a.leader||a),route:a.route,home:a.home,shown:Boolean(a.slot?.group.visible),bound:Boolean(a.slot),knocked:Boolean(a.knocked),held:Boolean(a.slot?.group.userData.spawnHeld),companion:Boolean(a.leader),speed:a.v}));},
+    // the drawn object of a record (shots resolve a Box3D body id to what the player sees)
+    object(id){const r=byId.get(String(id||""));const g=r?.kind==="person"?r.slot?.group:r?.group;if(!g)return null;if(g.isMesh)return g;let mesh=null;g.traverse(n=>{if(!mesh&&n.isMesh)mesh=n;});return mesh||g;},
+    knockLog,get spawnVisibilityRoots(){return spawnVisibilityRoots;},roads(){return routes;},setRemoteDriven(id,on){const r=byId.get(String(id||""));if(!r)return false;r.remoteDriven=Boolean(on);return true;},parkAt(id,{x,y,yaw=0,ms=PARK_MS}={}){const r=byId.get(String(id||""));if(!r||(r.kind!=="car"&&r.kind!=="bus")||!Number.isFinite(x)||!Number.isFinite(y))return false;r.parked={until:performance.now()+ms,x,y,yaw};r.remoteDriven=false;if(r.physicsRegistered){const shape=vehicleShape(r),pose=r.physicsPose||rigidBodies()?.pose?.(r.id);if(!pose||Math.hypot(pose.position[0]-x,pose.position[1]-y)>1.5)rigidBodies()?.setPose?.(r.id,{position:[x,y,staticGroundHeightAt(x,y)+(pose?.groundOffset||shape.half[2])+.05],yaw});}return true;}};globalThis.addEventListener(VS_FX_EVENT,handleRemoteFx);requestAnimationFrame(frame);}
+
+installWorldProceduralPopulation();
