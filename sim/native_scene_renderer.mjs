@@ -8,6 +8,7 @@ import {extractFrustumPlanes,sphereVisible,geometryBoundingSphere,instancedBound
 import {screenRay,pickNativeMeshes} from "./native_scene_picking.mjs";
 import {nativeBuildBvh} from "./native_scene_bvh.mjs";
 import {NativeSunShadowMap} from "./native_sun_shadow.mjs";
+import {NativeSkyPass} from "./native_sky_pass.mjs";
 export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-sun-shadows-v6";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
@@ -60,7 +61,7 @@ const FRAG="#version 300 es\n"+[
 "uniform mat4 uSunShadowProjection;",
 "uniform float uSunShadowBias;",
 "uniform int uSunShadowEnabled;",
-"uniform int uHasTexture,uUnlit,uFacade;",
+"uniform int uHasTexture,uUnlit,uFacade,uTerrain;",
 "uniform int uPointLightCount;",
 "uniform vec4 uPointPosRange[6],uPointColorIntensity[6];",
 "out vec4 outColor;",
@@ -81,6 +82,19 @@ const FRAG="#version 300 es\n"+[
 "    base=mix(base,pane,glass*.94);",
 "    float ledge=(1.0-smoothstep(.05,.09,abs(cell.y-.28)))*farFade;",
 "    base=mix(base,base*1.2+vec3(.015),ledge*.18);",
+"  }",
+"  // World-space survey grid is a terrain MATERIAL only. It makes the",
+"  // original physically flat Box3D ground visibly navigable even without",
+"  // GPS permission, without inventing OpenStreetMap buildings or entities.",
+"  if(uTerrain==1){",
+"    vec2 cells=vWorld.xy/6.0;",
+"    vec2 offset=abs(fract(cells+0.5)-0.5);",
+"    vec2 aa=max(fwidth(cells)*1.25,vec2(.004));",
+"    float major=max(1.0-smoothstep(0.0,aa.x,offset.x),",
+"                    1.0-smoothstep(0.0,aa.y,offset.y));",
+"    float distanceFade=1.0-smoothstep(.07,.24,max(aa.x,aa.y));",
+"    float variation=.91+.09*sin(vWorld.x*.027)*cos(vWorld.y*.031);",
+"    base=base*variation+vec3(.18,.22,.19)*major*distanceFade;",
 "  }",
 "  float ndl=max(dot(n,sun),0.0);",
 "  vec3 hemis=mix(uGroundColor,uSkyColor,clamp(n.z*0.5+0.5,0.0,1.0));",
@@ -172,7 +186,7 @@ function program(gl){
  const v=shader(gl.VERTEX_SHADER,VERT),f=shader(gl.FRAGMENT_SHADER,FRAG),p=gl.createProgram();
  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){const e=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw Error("native program: "+e);}
- const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
+ const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uTerrain","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
  return {handle:p,u:Object.fromEntries(uniforms.map(k=>[k,gl.getUniformLocation(p,k)]))};
 }
 export class NativeSceneRenderer{
@@ -190,7 +204,7 @@ export class NativeSceneRenderer{
   this.pointLights={count:0,posRange:new Float32Array(24),colorIntensity:new Float32Array(24)};
   this.shadow=null;this.shadowConfig=shadows&&shadows!==false?{...shadows}:null;
   this.sceneRevision=0;this.shadowRevision=0;this.shadowCache=null;
-  this.onLost=e=>{e.preventDefault();this.lost=true;this.shadow?.dispose({contextLost:true});this.shadow=null;this.shadowCache=null;};
+  this.onLost=e=>{e.preventDefault();this.lost=true;this.shadow?.dispose({contextLost:true});this.sky?.dispose({contextLost:true});this.shadow=null;this.shadowCache=null;};
   this.onRestored=()=>{this.lost=false;this.init();for(const m of this.meshes.values())this.upload(m);};
   canvas.addEventListener?.("webglcontextlost",this.onLost,false);
   canvas.addEventListener?.("webglcontextrestored",this.onRestored,false);
@@ -198,6 +212,7 @@ export class NativeSceneRenderer{
  }
  init(){
   this.gpu=program(this.gl);
+  this.sky=new NativeSkyPass(this.gl);
   this.timer=this.gl.getExtension("EXT_disjoint_timer_query_webgl2");
   if(this.shadowConfig)this.shadow=new NativeSunShadowMap(this.gl,this.shadowConfig);
   this.shadowCache=null;
@@ -377,7 +392,7 @@ export class NativeSceneRenderer{
   }
   this.pending=rest;
  }
- render({clearColor=[.045,.07,.12,1]}={}){
+ render({clearColor=[.045,.07,.12,1],viewport=null}={}){
   if(this.disposed)throw Error("disposed native scene");
   if(this.lost)throw Error("native GL context lost; waiting for native restoration");
   const gl=this.gl,start=performance.now(),u=this.gpu.u;this.pollGpu();
@@ -389,9 +404,21 @@ export class NativeSceneRenderer{
    if(this.shadowCache?.key===key)shadowStats={drawCalls:0,resolution:this.shadow.resolution,reused:true};
    else{shadowStats=this.shadow.draw(this.meshes.values(),{focus:this.target,sunDirection:this.sunDirection});this.shadowCache={key};}
   }
-  gl.viewport(0,0,this.width,this.height);gl.clearColor(...clearColor);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  // Each stereo eye shares ONE native drawing buffer. Scissor all clears
+  // and shader draws so left/right views never erase each other.
+  const rect=viewport??{x:0,y:0,width:this.width,height:this.height};
+  if(![rect.x,rect.y,rect.width,rect.height].every(Number.isInteger)
+    ||rect.width<1||rect.height<1||rect.x<0||rect.y<0
+    ||rect.x+rect.width>this.width||rect.y+rect.height>this.height)
+   throw Error("native viewport must fit inside the drawing buffer");
+  if(viewport){gl.enable(gl.SCISSOR_TEST);gl.scissor(rect.x,rect.y,rect.width,rect.height);}
+  else gl.disable(gl.SCISSOR_TEST);
+  gl.viewport(rect.x,rect.y,rect.width,rect.height);
+  gl.clearColor(...clearColor);gl.clearDepth(1);gl.depthMask(true);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  this.sky.draw({eye:this.eye,target:this.target,fov:this.fov});
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(this.gpu.handle);
-  const camera=multiply4(perspective(this.fov,this.width/this.height,this.near,this.far),lookAt(this.eye,this.target,this.up));
+  const camera=multiply4(perspective(this.fov,rect.width/rect.height,this.near,this.far),lookAt(this.eye,this.target,this.up));
   gl.uniformMatrix4fv(u.uViewProjection,false,camera);
   for(const key of ["sunDirection","sunColor","skyColor","groundColor","fogColor","eye"])
    gl.uniform3fv(u["u"+key[0].toUpperCase()+key.slice(1)],new Float32Array(this[key]));
@@ -418,7 +445,8 @@ export class NativeSceneRenderer{
    const d=m.data,mat=m.material;
    gl.uniform4fv(u.uMaterial,new Float32Array(mat.color));
    gl.uniform1f(u.uAlphaCutoff,mat.alphaMode==="mask"?(mat.alphaCutoff??.5):0);
-   gl.uniform1i(u.uUnlit,mat.unlit?1:0);gl.uniform1i(u.uFacade,mat.facade?1:0);gl.uniform1i(u.uHasTexture,m.texture?1:0);
+   gl.uniform1i(u.uUnlit,mat.unlit?1:0);gl.uniform1i(u.uFacade,mat.facade?1:0);
+   gl.uniform1i(u.uTerrain,mat.terrain?1:0);gl.uniform1i(u.uHasTexture,m.texture?1:0);
    gl.uniform1i(u.uSkinEnabled,d.skin?1:0);if(d.skin)gl.uniformMatrix4fv(u["uBones[0]"],false,d.skin.bones);
    if(m.texture){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,m.texture);}
    if(mat.doubleSided)gl.disable(gl.CULL_FACE);else{gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);}
@@ -431,6 +459,7 @@ export class NativeSceneRenderer{
   if(transparent.length){gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);}
   for(const m of transparent)draw(m);
   gl.depthMask(true);gl.disable(gl.BLEND);gl.bindVertexArray(null);
+  if(viewport)gl.disable(gl.SCISSOR_TEST);
   if(timerQuery){gl.endQuery(this.timer.TIME_ELAPSED_EXT);this.pending.push(timerQuery);}
   stats.cpuMs=+(performance.now()-start).toFixed(3);this.stats=stats;return stats;
  }
@@ -438,6 +467,7 @@ export class NativeSceneRenderer{
   if(this.disposed)return;
   for(const m of this.meshes.values())this.free(m);
   this.meshes.clear();if(!this.lost){for(const q of this.pending)this.gl.deleteQuery(q);this.gl.deleteProgram(this.gpu.handle);}
-  this.pending=[];this.shadow?.dispose({contextLost:this.lost});this.shadow=null;this.disposed=true;this.canvas.removeEventListener?.("webglcontextlost",this.onLost);this.canvas.removeEventListener?.("webglcontextrestored",this.onRestored);
+  this.pending=[];this.shadow?.dispose({contextLost:this.lost});this.shadow=null;
+  this.sky?.dispose({contextLost:this.lost});this.sky=null;this.disposed=true;this.canvas.removeEventListener?.("webglcontextlost",this.onLost);this.canvas.removeEventListener?.("webglcontextrestored",this.onRestored);
  }
 }

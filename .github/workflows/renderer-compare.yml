@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/renderer-compare.yml"
+      - ".github/workflows/deploy.yml"
+      - "tests/no_three_production_dependency_test.mjs"
       - "sim/native_*.mjs"
       - "tests/native_*.mjs"
       - "tests/renderer_*.mjs"
@@ -66,6 +68,19 @@ jobs:
           node tests/native_point_lights_test.mjs
           node tests/native_airframe_presentation_test.mjs
           node tests/native_gameplay_camera_test.mjs
+          node tests/native_building_collision_bridge_test.mjs
+          node tests/native_spawn_clearance_test.mjs
+          node tests/native_camera_occlusion_test.mjs
+          node tests/native_game_input_test.mjs
+          node tests/native_launch_pad_test.mjs
+          node tests/native_osm_source_test.mjs
+          python3 tests/native_osm_snapshot_builder_test.py
+          node tests/native_bootstrap_contract_test.mjs
+          node tests/native_preview_release_contract_test.mjs
+          node tests/native_scene_graph_test.mjs
+          node tests/native_scene_graph_scaling_test.mjs
+          node tests/native_effects_test.mjs
+          node tests/native_combat_events_test.mjs
           node tests/native_gameplay_visibility_test.mjs
           node tests/native_rigid_visuals_test.mjs
           node tests/native_world_physics_view_test.mjs
@@ -73,6 +88,8 @@ jobs:
           node tests/native_gameplay_targeting_test.mjs
           node tests/native_osm_world_integration_test.mjs
           node tests/native_flight_pose_view_test.mjs
+          node tests/native_flight_physics_parity_test.mjs
+          node tests/native_flight_control_wasm_test.mjs
           node tests/native_road_geometry_test.mjs
           node tests/native_road_stream_test.mjs
           node tests/native_pedestrian_visuals_test.mjs
@@ -127,6 +144,7 @@ jobs:
       - name: Check strict renderer gate logic
         run: |
           node tests/renderer_exclusive_release_contract_test.mjs
+          node tests/no_three_production_dependency_test.mjs
           node tests/renderer_acceptance_selftest.mjs
       - name: Require a full no-Three native engine with 15 hardware scenarios
         run: node tests/renderer_acceptance_gate.mjs --gate

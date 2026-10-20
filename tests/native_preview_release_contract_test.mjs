@@ -1,0 +1,38 @@
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const workflow=readFileSync(".github/workflows/native-preview-publish.yml","utf8");
+const compiler=readFileSync(".github/workflows/box3d-upstream-wasm.yml","utf8");
+const preview=workflow.split(/^  native-preview-publish:\s*$/m)[1];
+assert.ok(preview,"same-repo native candidate must have a real publish path");
+assert.match(compiler,/^  push:\s*\n\s+branches:\s*\[main\]/m,"native test game should build from current main");
+assert.match(workflow,/workflow_run:/);
+assert.match(workflow,/workflows:\s*\["Compile latest upstream Box3D WebAssembly"\]/);
+assert.match(workflow,/types:\s*\[completed\]/);
+assert.match(preview,/workflow_run.conclusion\s*==\s*\x27success\x27/,"publish only after both real WASM build and Chromium browser smoke succeed");
+assert.match(preview,/workflow_run.event\s*==\s*'push'/);
+assert.match(preview,/workflow_run.head_branch\s*==\s*'main'/);
+assert.match(preview,/contents:\s*write/);
+assert.match(preview,/actions:\s*read/);
+assert.match(preview,/run-id:\s*\$\{\{ github\.event\.workflow_run\.id \}\}/);
+assert.doesNotMatch(compiler,/(?:contents|pages): write|git push/,'Box3D compiler must remain immutable/read-only');
+assert.match(preview,/git fetch origin gh-pages/);
+assert.match(preview,/git checkout -B gh-pages origin\/gh-pages/);
+assert.match(preview,/cp .*native_game\.html native\/index\.html/);
+assert.match(preview,/native\/build\.json/);
+assert.match(preview,/nativeReleaseVerified:false/,"preview must not falsely assert production hardware acceptance");
+assert.match(preview,/hardwareAcceptance:"pending"/);
+assert.ok(preview.includes("git add -- native/index.html native/build.json native/osm/demo-konstanz.json oppenheimer-sw.js"),"publish only preview HTML, provenance, authentic OSM snapshot and protected PWA worker");
+assert.match(preview,/tools\/build_native_osm_snapshot\.py/,"generate real OSM from provider on GitHub runner");
+assert.match(preview,/native\/osm\/demo-konstanz\.json/,"ship same-origin real OSM data with preview");
+assert.match(preview,/git fetch origin gh-pages/);
+assert.match(preview,/spawncity-app-v2/);
+assert.ok(preview.includes('const canonical=path==="/drone_simulator.html"'),"PWA worker must isolate canonical cache");
+assert.match(preview,/git push origin HEAD:gh-pages/);
+assert.doesNotMatch(preview,/git push --force|git push -f\b/,"never delete existing production pages");
+assert.doesNotMatch(preview,/git add -A|git add \./,"preview must stage only dedicated preview files and isolated PWA worker");
+assert.ok(!preview.includes("renderer_acceptance_gate.mjs --gate"),
+ "preview is a separate device test, not a fake bypass of production gate");
+const prod=readFileSync(".github/workflows/deploy.yml","utf8");
+assert.match(prod,/node tests\/renderer_acceptance_gate\.mjs --gate/,
+ "actual production still requires all 15 real-device acceptance scenarios");
+console.log("Native preview stages authentic same-origin OSM in isolated /native/, retaining original live game and full hardware gate.");

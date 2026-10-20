@@ -40,7 +40,7 @@ export class NativeTerrainStream{
    if(!changed){retained++;continue;}
    const mesh=buildNativeTerrainTile({id:key,x0,y0,step:this.options.step,cells:this.options.cells,heightAt:this.heightAt,albedoAt:this.albedoAt});
    this.renderer.upsert(key,{positions:mesh.positions,normals:mesh.normals,colors:mesh.colors,uvs:mesh.uvs,
-     indices:mesh.indices,material:{color:[1,1,1,1],alphaMode:"opaque",doubleSided:true}});
+     indices:mesh.indices,material:{color:[1,1,1,1],alphaMode:"opaque",doubleSided:true,terrain:true,castShadow:false}});
    this.live.set(key,{x0,y0});
    bytesUploaded+=mesh.positions.byteLength+mesh.normals.byteLength+mesh.colors.byteLength+mesh.uvs.byteLength+mesh.indices.byteLength;
    uploaded++;
