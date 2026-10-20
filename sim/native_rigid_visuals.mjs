@@ -33,16 +33,24 @@ function cubeGeometry(kind){
  };
  prism([-.5,-.5,-.5],[.5,.5,.5],base);
  if(kind==="car"||kind==="bus"){
-  // Roofline and glass are parts of the same instanced car mesh.
-  const glass=[.17,.3,.42,1];
-  prism([-.38,-.37,.5],[.38,.37,kind==="bus"?.76:.68],glass);
+  const glass=[.55,.74,.8,1],lamp=[.95,.97,.9,1],tail=[.72,.12,.08,1];
+  prism([-.28,-.32,.5],[.16,.32,kind==="bus"?.78:.66],glass);
+  prism([.46,-.42,-.08],[.5,.42,.08],lamp);
+  prism([-.5,-.36,.02],[-.46,.36,.16],tail);
  }else if(kind==="drone"){
-  const accent=[.14,.17,.2,1];
-  prism([-.76,-.11,-.14],[.76,.11,.05],accent);
-  prism([-.11,-.76,-.14],[.11,.76,.05],accent);
+  const accent=[.12,.14,.16,1],rotor=[.2,.22,.24,1];
+  prism([-.9,-.08,-.22],[.9,.08,-.02],accent);
+  prism([-.08,-.9,-.22],[.08,.9,-.02],accent);
+  prism([-.9,-.22,-.08],[-.62,.22,.02],rotor);
+  prism([.62,-.22,-.08],[.9,.22,.02],rotor);
+  prism([-.22,-.9,-.08],[.22,-.62,.02],rotor);
+  prism([-.22,.62,-.08],[.22,.9,.02],rotor);
  }else if(kind==="jet"){
-  prism([-.95,-.18,-.12],[.95,.18,.05],[.56,.62,.67,1]);
-  prism([-.12,-.95,-.12],[.12,.95,.05],[.6,.69,.72,1]);
+  const metal=[.78,.82,.86,1],canopy=[.45,.62,.7,1];
+  prism([-.15,-.92,-.2],[.15,.72,.16],metal);
+  prism([-.72,-.18,-.08],[.72,.22,.02],metal);
+  prism([-.04,.55,.05],[.04,.92,.38],metal);
+  prism([-.12,.18,.16],[.12,.48,.42],canopy);
  }
  return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c),uvs:new Float32Array(uv)};
 }

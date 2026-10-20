@@ -80,6 +80,7 @@ export class NativeGameRuntime{
    flight:this.flightView,
    interpolationAlpha:()=>clamp(this.rigidPhaseMs/WORLD_STEP_MS,0,1),
    gameplayState:this.gameplayState,
+   rendererOptions:{shadows:{resolution:512,extent:96,bias:.0016}},
    ...(peerTimeline?{peer:{timeline:peerTimeline,connected:()=>true,mode:()=>"drone"}}:{}),
    ...(osmHeightAt?{heightAt:osmHeightAt}:{})
   });
@@ -280,6 +281,24 @@ export class NativeGameRuntime{
     }
     spawnClearance.streetFoot={...street,from:foot.position.slice(0,3),to:next};
    }
+   const placeOnStreet=(id,altitude)=>{
+    const pose=this.rigids.pose(id);
+    if(!pose?.position)return null;
+    const street=chooseNativeStreetSpawn(snapshot.roads,collision,{
+     origin:snapshot.origin,from:pose.position.slice(0,2),kind:"car",maxDistanceM:140
+    });
+    if(!street)return null;
+    const ground=Number(heightAt(...street.position));
+    if(!Number.isFinite(ground))throw Error("native OSM vehicle spawn has invalid physical terrain height");
+    const next=[...street.position,ground+altitude];
+    if(!this.rigids.setPose(id,{position:next,yaw:street.yaw}))
+     throw Error("Box3D rejected genuine OSM street spawn for "+id);
+    return {id,...street,from:pose.position.slice(0,3),to:next};
+   };
+   const streetCar=placeOnStreet("player-car",1.15);
+   const streetJet=placeOnStreet("player-jet",6.5);
+   if(streetCar)spawnClearance.streetCar=streetCar;
+   if(streetJet)spawnClearance.streetJet=streetJet;
   }
   this.osmCollisionOrigin=collision.originKey;
   // The same collision snapshot drives camera occlusion and rigid bodies.

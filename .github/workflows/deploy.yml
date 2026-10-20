@@ -171,6 +171,13 @@ jobs:
           cd /tmp/spawncity-publish
           git init -q
           git checkout -qb gh-pages
+          # The native test build lives only under /native/ and is published by
+          # a later job. Keep it across this force-push or the preview 404s.
+          if git fetch --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages; then
+            if git cat-file -e FETCH_HEAD:native/index.html 2>/dev/null; then
+              git archive FETCH_HEAD native | tar -x
+            fi
+          fi
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add -A

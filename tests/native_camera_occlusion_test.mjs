@@ -18,6 +18,10 @@ assert.equal(buildingLaunchPointClear(closeWall,elevated.slice(0,2),{clearanceM:
 const rooftop={hash:"roof",footprintCount:1,prismCount:1,prisms:[building(4.5,-7,2,4,2)]};
 assert.deepEqual(unobstructedNativeChaseEye(desired,target,rooftop),desired,
  "building below the physical camera cannot occlude view");
+const interior={hash:"interior",footprintCount:1,prismCount:1,prisms:[building(0,-20,30,40,18)]};
+const above=unobstructedNativeChaseEye(desired,target,interior);
+assert.ok(above[2]>18,"a chase eye inside an OSM footprint must clear the roof");
+assert.equal(buildingLaunchPointClear(interior,above.slice(0,2),{clearanceM:.35}),false);
 assert.throws(()=>unobstructedNativeChaseEye([NaN,0,0],target,snapshot),/finite Box3D/);
 assert.throws(()=>unobstructedNativeChaseEye(desired,target,snapshot,{samples:1}),/ray steps/);
 const state={mode:"car",car:{active:true,pose:{position:[10,-5,1],rotation:[0,0,0,1],yaw:0},speedMps:0},

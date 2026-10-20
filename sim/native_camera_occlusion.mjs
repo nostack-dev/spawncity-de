@@ -27,12 +27,24 @@ export function unobstructedNativeChaseEye(eye,target,snapshot,{clearanceM=.35,s
  // of the CAR (not above any building). The local chassis stays in frame,
  // and this still uses one camera, one GPU, and exactly the Box3D pose.
  const planarDistance=Math.hypot(dx*far,dy*far);
+ let next;
  if(planarDistance<2.1){
   const offset=Math.hypot(dx,dy);
   const horizontal=offset>1e-6?Math.min(1.15,offset)*.5/offset:0;
-  return [target[0]+dx*horizontal,target[1]+dy*horizontal,
+  next=[target[0]+dx*horizontal,target[1]+dy*horizontal,
    Math.max(target[2]+3.4,eye[2])];
+ }else{
+  const t=Math.max(.05,far-1/samples);
+  next=[target[0]+dx*t,target[1]+dy*t,target[2]+dz*t];
  }
- const t=Math.max(.05,far-1/samples);
- return [target[0]+dx*t,target[1]+dy*t,target[2]+dz*t];
+ // A car parked inside a footprint still has its chase eye inside that
+ // volume. Climbing 3.4 m is not enough for an 8–18 m OSM roof.
+ let z=next[2];
+ for(let n=0;n<4;n++){
+  const cover=snapshot.prisms.filter(prism=>z>=prism.base-.2&&z<=prism.top+.35
+   &&!buildingLaunchPointClear({prisms:[prism]},next.slice(0,2),{clearanceM}));
+  if(!cover.length)break;
+  z=Math.max(...cover.map(prism=>Number(prism.top)||0))+1.8;
+ }
+ return [next[0],next[1],z];
 }

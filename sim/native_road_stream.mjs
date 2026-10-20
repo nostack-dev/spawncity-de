@@ -48,7 +48,7 @@ export class NativeRoadStream{
     const mesh=pack.mesh;
     this.renderer.upsert(id,{positions:mesh.positions,normals:mesh.normals,
       colors:mesh.colors,uvs:mesh.uvs,indices:mesh.indices,
-      material:{color:[1,1,1,1],doubleSided:true}});
+      material:{color:[1,1,1,1],doubleSided:true,castShadow:false}});
     this.live.set(id,hash);uploaded++;
     bytesSaved+=pack.bytesBefore-pack.bytesAfter;
     bytesUploaded+=pack.bytesAfter;
