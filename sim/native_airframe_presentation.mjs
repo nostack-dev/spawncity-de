@@ -4,7 +4,7 @@
 // No THREE scene, no graphics fallback or secondary physics state.
 import {fromTRS,multiply4,identity4} from "./native_render_math.mjs";
 import {StabilizedExternalCameraRig,externalCameraFrame} from "./camera_stabilization.mjs";
-export const NATIVE_AIRFRAME_PRESENTATION_VERSION="box3d-native-airframe-v1";
+export const NATIVE_AIRFRAME_PRESENTATION_VERSION="box3d-native-airframe-v2-225mm";
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const vec3=x=>Array.isArray(x)||ArrayBuffer.isView(x)?[Number(x[0]),Number(x[1]),Number(x[2])]:
   [Number(x?.x),Number(x?.y),Number(x?.z)];
@@ -33,6 +33,10 @@ export function flightPresentationPose(state){
  return {position,quaternion,velocity};
 }
 function bodyGeometry(span){
+ // Same 225 mm quad as the old peer model: carbon plate, colour canopy,
+ // diagonal arms, motor bells, skids, red nose, FPV camera. Nose is -X.
+ // Sizes come from that mesh; motor positions follow the live span.
+ const k=span/.225;
  const p=[],n=[],c=[];
  const tri=(a,b,d,normal,color)=>{for(const v of[a,b,d]){p.push(...v);n.push(...normal);c.push(...color);}};
  const quad=(a,b,d,e,normal,color)=>{tri(a,b,d,normal,color);tri(a,d,e,normal,color);};
@@ -44,25 +48,38 @@ function bodyGeometry(span){
   quad(a,b,B,A,[0,-1,0],color);quad(b,d,D,B,[1,0,0],color);
   quad(d,e,E,D,[0,1,0],color);quad(e,a,A,E,[-1,0,0],color);
  };
- box([0,0,0],[.055,.045,.022],[.15,.19,.24]);
- box([-.054,0,.008],[.025,.023,.009],[.12,.39,.65]);
+ const armBox=(cx,cy,z,len,yaw,hy,hz,color)=>{
+  const cs=Math.cos(yaw),sn=Math.sin(yaw),hx=len/2;
+  const corner=(sx,sy,sz)=>[cx+(sx*hx)*cs-(sy*hy)*sn,cy+(sx*hx)*sn+(sy*hy)*cs,z+sz*hz];
+  const a=corner(-1,-1,-1),b=corner(1,-1,-1),d=corner(1,1,-1),e=corner(-1,1,-1);
+  const A=corner(-1,-1,1),B=corner(1,-1,1),D=corner(1,1,1),E=corner(-1,1,1);
+  const up=[0,0,1],side=[-sn,cs,0],fwd=[cs,sn,0];
+  quad(e,d,b,a,up.map(v=>-v),color);quad(A,B,D,E,up,color);
+  quad(a,b,B,A,side.map(v=>-v),color);quad(b,d,D,B,fwd,color);
+  quad(d,e,E,D,side,color);quad(e,a,A,E,fwd.map(v=>-v),color);
+ };
+ const carbon=[.133,.153,.180],dark=[.078,.094,.114],accent=[.212,.902,1],nose=[1,.310,.396];
+ box([0,0,0],[.055*k,.0375*k,.015*k],carbon);
+ box([.005*k,0,.027*k],[.0425*k,.03*k,.013*k],accent);
  const arm=span/(2*Math.sqrt(2));
  for(const sx of[-1,1])for(const sy of[-1,1]){
-  const x=sx*arm,y=sy*arm,length=Math.hypot(x,y),nx=x/length,ny=y/length,nxPerp=-ny,nyPerp=nx,w=.006;
-  const a=[-nxPerp*w,-nyPerp*w,.002],b=[x-nxPerp*w,y-nyPerp*w,.002];
-  const d=[x+nxPerp*w,y+nyPerp*w,.002],e=[nxPerp*w,nyPerp*w,.002];
-  quad(a,b,d,e,[0,0,1],[.25,.28,.32]);
-  const hub=[x,y,.008];
-  box(hub,[.017,.017,.008],sy===sx?[.30,.34,.40]:[.44,.30,.25]);
+  const x=sx*arm,y=sy*arm;
+  armBox(x/2,y/2,0,Math.hypot(x,y),Math.atan2(y,x),.007*k,.004*k,carbon);
+  box([x,y,.012*k],[.016*k,.016*k,.011*k],dark);
+  box([x,y,.026*k],[.011*k,.011*k,.004*k],accent);
  }
+ for(const y of[-.03,.03])box([0,y*k,-.03*k],[.06*k,.004*k,.004*k],dark);
+ box([-.072*k,0,.004*k],[.02*k,.012*k,.012*k],nose);
+ box([-.05*k,0,.022*k],[.014*k,.013*k,.011*k],dark);
  return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c)};
 }
 function rotorGeometry(blades=2){
+ // Unscaled length is the 0.11 m reference. The live 0.127 m prop is the instance scale.
  const p=[],n=[],c=[];
  for(let blade=0;blade<blades;blade++){
-  const angle=blade*Math.PI/blades,cs=Math.cos(angle),sn=Math.sin(angle),l=.042,w=.008,z=.016;
+  const angle=blade*Math.PI/blades,cs=Math.cos(angle),sn=Math.sin(angle),l=.055,w=.005,z=.032;
   const corners=[[-l,-w],[l,-w],[l,w],[-l,w]].map(([x,y])=>[x*cs-y*sn,x*sn+y*cs,z]);
-  for(const i of[0,1,2,0,2,3]){p.push(...corners[i]);n.push(0,0,1);c.push(.52,.58,.66);}
+  for(const i of[0,1,2,0,2,3]){p.push(...corners[i]);n.push(0,0,1);c.push(.06,.07,.08);}
  }
  return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c)};
 }
