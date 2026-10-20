@@ -113,7 +113,7 @@ export class NativeGameRuntime{
   const carAxes=["pedal","steer"],jetAxes=["lift","yawIn","pitchIn","rollIn","brake"];
   for(const key of axes)if(input[key]!==undefined&&Number.isFinite(input[key]))
    this.flightControls[key]=key==="throttle"?clamp(input[key],0,1):
-     key==="groundClearance"?clamp(input[key],.5,20):clamp(input[key],-1,1);
+     key==="groundClearance"?clamp(input[key],.5,120):clamp(input[key],-1,1);
   if(input.arm!==undefined)this.flightControls.arm=Boolean(input.arm);
   if(input.gameMode!==undefined)this.flightControls.gameMode=Boolean(input.gameMode);
   if(input.foot)for(const key of footAxes)if(Number.isFinite(input.foot[key]))

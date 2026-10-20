@@ -7,7 +7,7 @@ import {NativeGameRuntime,NativeGameInput,fetchNativeOsm,NATIVE_DEMO_CITY} from 
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
-const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("overlay"),
+const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("gameMenu"),
  status=$("status"),menuStatus=$("gameMenuStatus"),telemetry=$("telemetry");
 if(!viewport||!startButton||!menu||!status)throw Error("SpawnCity native boot requires its real fullscreen UI");
 let session=null,launching=false,reported=0,lastStatus="";
@@ -175,6 +175,7 @@ async function launch(){
    };
   };
   menu.hidden=true;
+  document.body.classList.add("solo-flight");
   document.documentElement.dataset.engine="native-webgl2";
   viewport.dataset.renderer="native-webgl2-only";
   setModePressed("drone");

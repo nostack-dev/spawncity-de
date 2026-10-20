@@ -1,6 +1,9 @@
-// Single input owner for the native SpawnCity game. No THREE, old controller
-// scene, alternate RAF, global key handler overrides, or framework dependency.
-// Desktop keyboard/mouse/touchpad, touch virtual sticks, Xbox/standard pads.
+// Single input owner for the native SpawnCity game. In the browser it is the
+// same control layer as main: desktop_controls.mjs writes the drone sample,
+// applyGameStick and the AGL height law turn it into Flight Core commands,
+// and foot / car / jet use the same keys as the live game.
+import "./desktop_controls.mjs";
+import {applyGameStick,stepGroundClearanceTarget,clearanceRateMps,clearanceLeadM,MIN_GAME_CLEARANCE_M,MAX_GAME_CLEARANCE_M} from "./control_semantics.mjs";
 export const NATIVE_GAME_INPUT_VERSION="native-game-input-v1";
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,Number(x)||0));
 const deadzone=(v,d=.12)=>Math.abs(v)<=d?0:Math.sign(v)*Math.min(1,(Math.abs(v)-d)/(1-d));
@@ -48,8 +51,43 @@ export class NativeGameInput{
   this.arm=false;this.closed=false;this.pointers=new Map();
   this.touch={left:{x:0,y:0},right:{x:0,y:0}};
   this.handlers=[];this.root=stickRoot;this.pointerLocked=false;
+  this.main=Boolean(globalThis.__arondightDesktopInput)&&this.win===globalThis.window;
+  this.prevArm=false;this.prevCam=false;this.heightHeld=false;this.mouseStick={x:0,y:0};this.lastMs=0;
+  if(this.main){
+   this.walk={mode:"drone",
+    setMode:mode=>{try{runtime.setMode(mode==="foot"?"foot":"drone");}catch{}this.syncModeClasses();},
+    applyMouseLook:({dx,dy}={})=>{
+     const deg=.12;
+     this.yaw+=((Number(dx)||0)*deg)*Math.PI/180;
+     this.pitch=clamp(this.pitch-((Number(dy)||0)*deg*.85)*Math.PI/180,-1.2,1.2);
+    }};
+   globalThis.__arondightWalkMode=this.walk;
+   globalThis.__arondightRealWorld||={lookYawDeg:0,lookPitchDeg:0,lookSnapping:false,renderLookHud(){}};
+   this.syncModeClasses();
+  }
   const listen=(target,type,fn,options)=>{target?.addEventListener?.(type,fn,options);
    this.handlers.push(()=>target?.removeEventListener?.(type,fn,options));};
+  if(this.main){
+   // Drone keys, pointer lock and the mouse sample belong to desktop_controls.
+   // These listeners only cover the modes that module leaves to the vehicle.
+   listen(win,"keydown",e=>{
+    if(this.closed||e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
+    if(e.target?.closest?.("input,textarea,select,[contenteditable=true]"))return;
+    const mode=runtime.mode;
+    if(mode==="drone")return;
+    const move=new Set(["KeyW","KeyA","KeyS","KeyD","Space","ShiftLeft","ShiftRight","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
+    if(move.has(e.code)){this.keys.add(e.code);e.preventDefault?.();return;}
+    if(e.code==="KeyV"&&mode==="foot"){try{runtime.setMode("drone");}catch{}e.preventDefault?.();return;}
+    if(e.code==="KeyF"){
+     try{runtime.setMode(mode==="foot"?"car":"foot");}catch{}
+     e.preventDefault?.();return;
+    }
+    if(e.code==="KeyC"){this.cycleCamera();e.preventDefault?.();}
+   });
+   listen(win,"keyup",e=>this.keys.delete(e.code));
+   listen(win,"blur",()=>this.releaseInputs());
+   return;
+  }
   listen(win,"keydown",e=>{
    if(this.closed||e.repeat||e.target?.closest?.("input,textarea,select,[contenteditable=true]"))return;
    if(controlKeys.has(e.code))e.preventDefault?.();
@@ -96,8 +134,99 @@ export class NativeGameInput{
   this.keys.clear();this.look=[0,0];this.pointers.clear();
   this.touch.left={x:0,y:0};this.touch.right={x:0,y:0};
  }
+ syncModeClasses(){
+  const body=this.doc?.body;if(!body?.classList)return;
+  const mode=this.runtime.mode;
+  body.classList.toggle("jet-mode",mode==="jet");
+  body.classList.toggle("player-driving",mode==="car");
+  body.classList.toggle("on-foot-mode",mode==="foot");
+  globalThis.__arondightOnFootMode=mode==="foot";
+  if(this.walk)this.walk.mode=mode==="foot"?"foot":"drone";
+ }
+ cycleCamera(){
+  const m=this.runtime.world?.flightCameraMode??"follow";
+  const next=m==="follow"?"fpv":m==="fpv"?"third":"follow";
+  this.runtime.world?.setFlightCameraMode?.(next);
+ }
+ steerHeight(axis){
+  let agl=null,vz=0;
+  try{
+   const p=this.runtime.flight?.position?.(),v=this.runtime.flight?.linear?.();
+   const ground=this.runtime.world?.terrain?.heightAt?.(p?.[0],p?.[1]);
+   if(p&&Number.isFinite(ground)){agl=p[2]-ground;vz=Number(v?.[2])||0;}
+  }catch{/* height falls back to the integrated target */}
+  if(Math.abs(axis)>1e-4){
+   this.heightHeld=true;
+   const rate=clearanceRateMps(axis);
+   this.clearance=agl==null?stepGroundClearanceTarget(this.clearance,axis,.016):
+    clamp(agl+clearanceLeadM(rate),MIN_GAME_CLEARANCE_M,MAX_GAME_CLEARANCE_M);
+   return;
+  }
+  if(this.heightHeld){
+   this.heightHeld=false;
+   if(agl!=null)this.clearance=clamp(agl+clearanceLeadM(vz),MIN_GAME_CLEARANCE_M,MAX_GAME_CLEARANCE_M);
+  }
+ }
+ sampleMain(){
+  this.syncModeClasses();
+  const now=typeof performance!=="undefined"?performance.now():0;
+  const dt=this.lastMs?clamp((now-this.lastMs)/1000,1/240,.1):1/60;
+  this.lastMs=now;
+  const mode=this.runtime.mode;
+  const held=code=>this.keys.has(code);
+  const base={arm:this.arm,gameMode:true,groundClearance:this.clearance,throttle:0,roll:0,pitch:0,yaw:0,bodyPitch:0,
+   foot:{forward:0,strafe:0,yaw:this.yaw,pitch:this.pitch,sprint:false,jump:false},
+   car:{pedal:0,steer:0,handbrake:true},
+   jet:{lift:0,yawIn:0,pitchIn:0,rollIn:0,brake:0}};
+  if(mode==="drone"){
+   const d=globalThis.__arondightDesktopDroneInput;
+   const gamepad=Array.from(this.navigator?.getGamepads?.()??[]).find(p=>p?.connected&&p.mapping==="standard")??null;
+   const desktopFlying=Boolean(d?.active)&&(d.left.x||d.left.y||Math.abs(d.right.x)>.02||Math.abs(d.right.y)>.02||d.heightAxis||d.arm||d.camera);
+   if(gamepad&&!desktopFlying){
+    const p=resolveNativeInput({gamepad,mode,arm:this.arm,clearance:this.clearance,yaw:this.yaw,pitch:this.pitch,keys:new Set()});
+    base.roll=p.controls.roll;base.pitch=p.controls.pitch;base.yaw=p.controls.yaw;base.throttle=p.controls.throttle;
+    base.bodyPitch=p.controls.bodyPitch||0;this.clearance=p.clearance;base.groundClearance=this.clearance;
+   }else if(d?.active){
+    applyGameStick(base,"left",d.left);
+    applyGameStick(base,"right",d.right);
+    this.steerHeight(Number(d.heightAxis)||0);
+    base.groundClearance=this.clearance;
+    if(d.arm&&!this.prevArm)this.arm=!this.arm;
+    if(d.camera&&!this.prevCam)this.cycleCamera();
+    this.prevArm=Boolean(d.arm);this.prevCam=Boolean(d.camera);
+    base.arm=this.arm;
+   }
+  }else if(mode==="foot"){
+   base.foot.forward=clamp((held("KeyW")?1:0)-(held("KeyS")?1:0),-1,1);
+   base.foot.strafe=clamp((held("KeyD")?1:0)-(held("KeyA")?1:0),-1,1);
+   base.foot.sprint=held("ShiftLeft")||held("ShiftRight");
+   base.foot.jump=held("Space");
+   base.foot.yaw=this.yaw;base.foot.pitch=this.pitch;
+  }else if(mode==="car"){
+   base.car.pedal=clamp((held("KeyW")?1:0)-(held("KeyS")?1:0),-1,1);
+   base.car.steer=clamp((held("KeyD")?1:0)-(held("KeyA")?1:0),-1,1);
+   base.car.handbrake=held("Space");
+  }else if(mode==="jet"){
+   let lift=(held("KeyW")?1:0)-(held("KeyS")?1:0);
+   let yawIn=(held("KeyD")?1:0)-(held("KeyA")?1:0);
+   let pitchIn=(held("ArrowUp")?-1:0)+(held("ArrowDown")?1:0);
+   let rollIn=(held("ArrowRight")?1:0)-(held("ArrowLeft")?1:0);
+   const desk=globalThis.__arondightDesktopInput;
+   if(desk?.active&&desk.locked){
+    const d=desk.takeMouseDelta?.()||{x:0,y:0};
+    const a=1-Math.exp(-dt/.025);
+    this.mouseStick.x+=(clamp(d.x/dt/730,-1,1)-this.mouseStick.x)*a;
+    this.mouseStick.y+=(clamp(d.y/dt/730,-1,1)-this.mouseStick.y)*a;
+    rollIn+=this.mouseStick.x;pitchIn-=this.mouseStick.y;
+   }else this.mouseStick.x=this.mouseStick.y=0;
+   base.jet={lift:clamp(lift,-1,1),yawIn:clamp(yawIn,-1,1),pitchIn:clamp(pitchIn,-1,1),rollIn:clamp(rollIn,-1,1),brake:0};
+  }
+  this.runtime.setControls(base);
+  return {mode,controls:base,yaw:this.yaw,pitch:this.pitch,clearance:this.clearance};
+ }
  sample(){
   if(this.closed)return null;
+  if(this.main)return this.sampleMain();
   const gamepad=Array.from(this.navigator?.getGamepads?.()??[]).find(p=>p?.connected&&p.mapping==="standard")??null;
   const p=resolveNativeInput({keys:this.keys,gamepad,look:this.look,sticks:this.pointers.size?this.touch:null,
    mode:this.runtime.mode,arm:this.arm,clearance:this.clearance,yaw:this.yaw,pitch:this.pitch});
