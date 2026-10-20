@@ -15,6 +15,8 @@ import "./immersive_soundscape.mjs";
 import "./native_fire_audio.mjs";
 import "./sniper_scope.mjs";
 import "./native_ads.mjs";
+import "./native_mode_overlay.mjs";
+import {installNativeModeOverlay} from "./native_mode_overlay.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
@@ -126,6 +128,7 @@ async function launch(){
    onError:error=>{console.error("native game",error);report("Native engine halted: "+error.message,true);}
   });
   input=new NativeGameInput(game,{canvas});
+  installNativeModeOverlay();
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});
   const vitals=installNativeVitals(game);
   const wanted=installNativeWanted(game);
