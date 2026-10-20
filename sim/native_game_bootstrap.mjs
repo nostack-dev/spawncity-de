@@ -26,7 +26,7 @@ import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 import {installNativeCityLife,tickNativeCityLife} from "./native_city_life.mjs";
 import {installNativePolice,tickNativePolice} from "./native_police_ground.mjs";
 import {installNativeWorldLife,tickNativeWorldLife} from "./native_world_life.mjs";
-import {installNativePlaces,tickNativePlaces} from "./native_places.mjs";
+import {installNativeSession,tickNativeSession} from "./native_session.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
 const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("gameMenu"),
@@ -145,6 +145,7 @@ async function launch(){
    onError:error=>{console.error("native game",error);report("Native engine halted: "+error.message,true);}
   });
   input=new NativeGameInput(game,{canvas});
+  installNativeSession(game);
   installNativeModeOverlay();
   const actions=document.getElementById("soloTopbarActions");
   if(actions){
@@ -157,7 +158,7 @@ async function launch(){
   const vitals=installNativeVitals(game);
   const wanted=installNativeWanted(game);
   game.beforeFrame=()=>input.sample();
-  game.afterFrame=(frame,now)=>{weapons.tick(now);syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);updateTelemetry(game,now);};
+  game.afterFrame=(frame,now)=>{weapons.tick(now);syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
    button.addEventListener("click",()=>{
     globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);
