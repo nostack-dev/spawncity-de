@@ -143,7 +143,8 @@ export class NativeGameRuntime{
    }
   }else this.rigids.clearTarget("player-foot");
   if(this.mode==="car")
-   this.rigids.setDrive("player-car",{...this.carInput,maxSpeed:36,maxReverse:9});
+   // Live car: D is +1 and turns right. This rack's positive angle is a left turn.
+   this.rigids.setDrive("player-car",{...this.carInput,steer:-this.carInput.steer,maxSpeed:36,maxReverse:9});
   else this.rigids.setDrive("player-car",null);
   Object.assign(this.jetAirframe.input,this.mode==="jet"?this.jetInput:
    {lift:0,yawIn:0,pitchIn:0,rollIn:0,brake:1});
