@@ -16,6 +16,11 @@ import "./native_fire_audio.mjs";
 import "./sniper_scope.mjs";
 import "./native_ads.mjs";
 import "./native_mode_overlay.mjs";
+import "./world_options_menu.mjs";
+import "./changelog_menu.mjs";
+import "./player_settings_sections.mjs";
+import {mountPlayerControlSettings} from "./control_settings.mjs";
+import {mountAudioSettings} from "./audio_settings.mjs";
 import {installNativeModeOverlay} from "./native_mode_overlay.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 import {installNativeCityLife,tickNativeCityLife} from "./native_city_life.mjs";
@@ -23,6 +28,8 @@ export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1
 const $=id=>document.getElementById(id);
 const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("gameMenu"),
  status=$("status"),menuStatus=$("gameMenuStatus"),telemetry=$("telemetry");
+const settings=mountPlayerControlSettings({parent:menu,buttonText:"SETTINGS"});
+mountAudioSettings({dialog:settings.dialog});
 if(!viewport||!startButton||!menu||!status)throw Error("SpawnCity native boot requires its real fullscreen UI");
 let session=null,launching=false,reported=0,lastStatus="";
 let activeOsm=null,osmEpoch=0;
@@ -132,6 +139,13 @@ async function launch(){
   });
   input=new NativeGameInput(game,{canvas});
   installNativeModeOverlay();
+  const actions=document.getElementById("soloTopbarActions");
+  if(actions){
+    const open=document.createElement("button");
+    open.type="button";open.textContent="SETTINGS";
+    open.addEventListener("click",()=>settings.dialog.showModal());
+    actions.appendChild(open);
+  }
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});
   const vitals=installNativeVitals(game);
   const wanted=installNativeWanted(game);
