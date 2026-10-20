@@ -7,6 +7,7 @@ import {NativeGameRuntime,NativeGameInput,fetchNativeOsm,NATIVE_DEMO_CITY} from 
 import {installNativeWeapons} from "./native_weapons.mjs";
 import {syncNativeViewmodel} from "./native_viewmodels.mjs";
 import {installNativeVitals} from "./native_vitals.mjs";
+import {installNativeWanted} from "./native_wanted.mjs";
 import {openQuitConfirm} from "./quit_confirm.mjs";
 import "./neon_ui_theme.mjs";
 import "./immersive_soundscape.mjs";
@@ -126,6 +127,7 @@ async function launch(){
   input=new NativeGameInput(game,{canvas});
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});
   const vitals=installNativeVitals(game);
+  const wanted=installNativeWanted(game);
   game.beforeFrame=()=>input.sample();
   game.afterFrame=(frame,now)=>{weapons.tick(now);syncNativeViewmodel(game);vitals.sync(now);updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
@@ -163,6 +165,7 @@ async function launch(){
   $("soloReset")?.addEventListener("click",()=>{
    globalThis.__arondightPlayerDamageModel?.reset?.();
    globalThis.__arondightDroneDamageModel?.reset?.();
+   wanted.clear("reset");
    report("Reset");
   });
   addEventListener("keydown",event=>{if(event.code==="Escape"&&!event.repeat)openQuitConfirm();});
