@@ -24,8 +24,10 @@ export function auditRuntime(root="."){
     if(imported||usages||hooks||old)reports.push({path:"sim/"+name,importsThree:imported,threeCalls:usages,shaderHooks:hooks,threeRendererConstructors:old});
   }
   const workflow=readFileSync(join(root,".github/workflows/deploy.yml"),"utf8");
-  const bundlesThree=/(?:npm\s+install|pnpm\s+add)[^\n]*\bthree@|^\s+three@[0-9]/m.test(workflow);
-  return {files:files.length,threeImportCount:imports.length,threeImports:imports,threeCalls:symbols,shaderHooks,threeRendererConstructors:rendererConstructors,bundlesThree,modules:reports,nativeOnly:!imports.length&&!rendererConstructors&&!bundlesThree};
+  const threePins=[...workflow.matchAll(/\bthree@([0-9][\w.\-]*)/g)].map(m=>m[1]);
+  const legacyThreePinned=threePins.length===1&&threePins[0]==="0.185.1";
+  const bundlesThree=threePins.length>0&&!legacyThreePinned;
+  return {files:files.length,threeImportCount:imports.length,threeImports:imports,threeCalls:symbols,shaderHooks,threeRendererConstructors:rendererConstructors,bundlesThree,legacyThreePinned,modules:reports,nativeOnly:!imports.length&&!rendererConstructors&&!bundlesThree};
 }
 
 const numeric=(n,k)=>{if(!Number.isFinite(n))throw Error("Missing/invalid "+k);return n;};
@@ -74,8 +76,12 @@ export function verifyRendererEvidence(report){
 // failure of the legacy game, and a software-renderer report cannot unlock
 // the cutover.
 export function releaseDecision(audit,proof){
-  if(audit?.bundlesThree)return {pass:false,mode:"rejected",nativeCutover:false,reason:"three-package-bundled"};
-  if(!audit?.nativeOnly)return {pass:true,mode:"legacy-production",nativeCutover:false,reason:"legacy game may publish; native cutover is not claimed"};
+  if(audit?.bundlesThree)return {pass:false,mode:"rejected",nativeCutover:false,reason:"three-package-not-the-legacy-pin"};
+  if(!audit?.nativeOnly){
+    if(!audit?.legacyThreePinned)return {pass:false,mode:"legacy-production",nativeCutover:false,reason:"legacy game needs the pinned three@0.185.1 renderer to build"};
+    return {pass:true,mode:"legacy-production",nativeCutover:false,reason:"legacy game may publish; native cutover is not claimed"};
+  }
+  if(audit?.legacyThreePinned)return {pass:false,mode:"native-cutover",nativeCutover:false,reason:"native cutover must not install Three.js"};
   const accepted=proof?.pass===true;
   return {pass:accepted,mode:"native-cutover",nativeCutover:accepted,reason:accepted?"native cutover accepted":"native cutover blocked until 15 real-device proofs pass"};
 }
@@ -90,6 +96,6 @@ if(process.argv[1]?.endsWith("/renderer_acceptance_gate.mjs")){
   const result={audit,proof,decision,pass:decision.pass};
   mkdirSync("artifacts/renderer-gate",{recursive:true});
   writeFileSync("artifacts/renderer-gate/readiness.json",JSON.stringify(result,null,2)+"\n");
-  console.log(JSON.stringify({mode:decision.mode,nativeCutover:decision.nativeCutover,reason:decision.reason,nativeOnly:audit.nativeOnly,threeImports:audit.threeImportCount,threeCalls:audit.threeCalls,shaderHooks:audit.shaderHooks,threeRendererConstructors:audit.threeRendererConstructors,bundlesThree:audit.bundlesThree,requiredScenarios:proof.required,providedScenarios:proof.scenarios,failures:proof.failures.slice(0,18)},null,2));
+  console.log(JSON.stringify({mode:decision.mode,nativeCutover:decision.nativeCutover,reason:decision.reason,nativeOnly:audit.nativeOnly,legacyThreePinned:audit.legacyThreePinned,threeImports:audit.threeImportCount,threeCalls:audit.threeCalls,shaderHooks:audit.shaderHooks,threeRendererConstructors:audit.threeRendererConstructors,bundlesThree:audit.bundlesThree,requiredScenarios:proof.required,providedScenarios:proof.scenarios,failures:proof.failures.slice(0,18)},null,2));
   if(process.argv.includes("--gate")&&!decision.pass){console.error("Native render engine release gate NOT MET: do not deploy a claimed Three-free renderer.");process.exitCode=1;}
 }

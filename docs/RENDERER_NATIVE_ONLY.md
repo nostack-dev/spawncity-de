@@ -24,9 +24,11 @@ so they can be ported one system at a time onto the exports of `sim/native_engin
 (renderer, scene graph, camera, pick, lights, instancing, particles, loop).
 Do not add a Three shim, a second canvas, or a `?render=` fallback to make a
 partial port look shipped. `renderer_acceptance_gate.mjs --gate` allows this
-legacy game to publish. It fails only when that game has stopped importing
-Three and a native cutover is claimed without the 15 real-device comparisons,
-or if the Three.js package is bundled again.
+legacy game to publish, and the page bundle installs the pinned `three@0.185.1`
+so that existing game can actually be built. Any other Three.js version, a CDN
+fetch, or keeping that pin after the game no longer imports Three fails the
+gate. It also fails when a native cutover is claimed without the 15 real-device
+comparisons.
 
 ## Historical implementation log
 

@@ -17,10 +17,12 @@ assert.ok(deploy.indexOf(guard)<deploy.indexOf(original),"fail closed before exp
 assert.ok(deploy.indexOf(guard)<deploy.indexOf(bundle),"a half-ported game must never bundle");
 assert.ok(deploy.indexOf(guard)<release,"a half-ported game must never publish");
 const production=deploy.slice(deploy.indexOf("- name: Bundle self-contained Pages"),release);
-assert.doesNotMatch(production,/\bthree(?:@[\w.\-]+|\s)|\balias:three\b|\bcdn\b/i,
- "production must not install, alias or fetch the deleted Three.js dependency");
+assert.match(production,/\bthree@0\.185\.1\b/,"the legacy game bundle needs its pinned renderer");
+assert.doesNotMatch(production,/\bthree@(?!0\.185\.1\b)|\balias:three\b|\bcdn\b/i,
+ "production must not fetch Three.js from a CDN or install any version except 0.185.1");
 const audit=auditRuntime();
-assert.equal(audit.bundlesThree,false,"Three.js may not re-enter the production dependency list");
+assert.equal(audit.bundlesThree,false,"only the pinned legacy renderer version may be installed");
+assert.equal(audit.legacyThreePinned,true,"deploy must pin three@0.185.1 exactly once");
 assert.ok(Number.isInteger(audit.threeImportCount),"every remaining source import must be audited");
 console.log(JSON.stringify({
  productionThreeDependency:"deleted",
