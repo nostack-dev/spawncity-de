@@ -26,6 +26,7 @@ import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 import {installNativeCityLife,tickNativeCityLife} from "./native_city_life.mjs";
 import {installNativePolice,tickNativePolice} from "./native_police_ground.mjs";
 import {installNativeWorldLife,tickNativeWorldLife} from "./native_world_life.mjs";
+import {installNativePlaces,tickNativePlaces} from "./native_places.mjs";
 import {installNativeSession,tickNativeSession} from "./native_session.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
