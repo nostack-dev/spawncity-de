@@ -38,7 +38,7 @@ export function syncNativeViewmodel(game){
   const key=NATIVE_VIEWMODEL_MESHES[name]?name:"smg";
   if(shown!==key){
     const geo=geometry(key);
-    renderer.upsert(ID,{...geo,material:{color:[1,1,1,1],unlit:false,doubleSided:true,castShadow:false,frustumCulled:false,viewmodel:true}});
+    renderer.upsert(ID,{...geo,material:{color:[1,1,1,1],doubleSided:true,castShadow:false,frustumCulled:false}});
     shown=key;
   }
   const hold=HOLD[key]||HOLD.smg;
