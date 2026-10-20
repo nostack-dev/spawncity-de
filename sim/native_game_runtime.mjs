@@ -207,6 +207,7 @@ export class NativeGameRuntime{
   if(car){
    this.gameplayState.car.pose={position:car.position,rotation:car.rotation,yaw:car.yaw};
    this.gameplayState.car.speedMps=Math.hypot(...car.velocity);
+   globalThis.__arondightVehicleDrive=this.mode==="car"?{active:true,vehicleId:"player-car",speedMps:this.gameplayState.car.speedMps,throttle:Math.abs(this.carInput.pedal||0)}:{active:false};
   }
   const jet=this.rigids.renderPose("player-jet",clamp(this.rigidPhaseMs/WORLD_STEP_MS,0,1));
   if(jet){

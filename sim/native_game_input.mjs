@@ -94,6 +94,10 @@ export class NativeGameInput{
      this.yaw=wrapFpsAngleRad(this.yaw+(s.invertLookHorizontal?-1:1)*(Number(dx)||0)*.0026*h);
      this.pitch=clamp(this.pitch-(s.invertLookVertical?-1:1)*(Number(dy)||0)*.0026*v,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
      return {yaw:this.yaw,pitch:this.pitch};
+    },
+    get position(){
+     const p=runtime.rigids?.pose?.("player-foot")?.position;
+     return p?{x:p[0],y:p[1],z:p[2]}:null;
     }};
    globalThis.__arondightWalkMode=this.walk;
    globalThis.__arondightRealWorld||={lookYawDeg:0,lookPitchDeg:0,lookSnapping:false,renderLookHud(){}};
