@@ -4,6 +4,8 @@
 // This module does not render by itself: it populates NativeSceneRenderer.
 import {fromTRS} from "./native_render_math.mjs";
 import {ORIGINAL_SEDAN,ORIGINAL_BUS,ORIGINAL_WHEEL} from "./native_original_vehicles.mjs";
+import {ORIGINAL_DRONE,ORIGINAL_JET,ORIGINAL_HUMAN} from "./native_actor_meshes.mjs";
+import {rotateByQuaternion} from "./native_airframe_presentation.mjs";
 export const NATIVE_RIGID_VISUALS_VERSION="box3d-native-instanced-visuals-v3-original-car";
 const CATEGORIES=["car","bus","drone","jet","prop","human"];
 const RGB={car:[1,1,1,1],bus:[1,1,1,1],drone:[.25,.48,.63,1],jet:[1,1,1,1],prop:[.7,.69,.63,1],human:[1,1,1,1],wheel:[1,1,1,1]};
@@ -79,37 +81,9 @@ function cubeGeometry(kind){
  }
  return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c),uvs:new Float32Array(uv)};
 }
-function jetGeometry(){
- // Metres, body frame of the flight model: +Y nose, +X right wing, +Z up.
- const p=[],n=[],c=[],uv=[];
- const add=(a,b,d,e,color,normal)=>{
-  const vertices=[a,b,d,a,d,e],uvs=[[0,0],[1,0],[1,1],[0,0],[1,1],[0,1]];
-  vertices.forEach((v,i)=>{p.push(...v);n.push(...normal);c.push(color[0],color[1],color[2]);uv.push(...uvs[i]);});
- };
- const prism=(lo,hi,color)=>{
-  const [x,y,z]=lo,[X,Y,Z]=hi;
-  add([x,y,z],[x,Y,z],[x,Y,Z],[x,y,Z],color,[-1,0,0]);
-  add([X,Y,z],[X,y,z],[X,y,Z],[X,Y,Z],color,[1,0,0]);
-  add([X,y,z],[x,y,z],[x,y,Z],[X,y,Z],color,[0,-1,0]);
-  add([x,Y,z],[X,Y,z],[X,Y,Z],[x,Y,Z],color,[0,1,0]);
-  add([x,Y,Z],[X,Y,Z],[X,y,Z],[x,y,Z],color,[0,0,1]);
-  add([x,y,z],[X,y,z],[X,Y,z],[x,Y,z],color,[0,0,-1]);
- };
- const metal=[.78,.82,.86],glass=[.4,.62,.72],dark=[.16,.18,.2];
- prism([-.72,-7.2,-.65],[.72,5.2,.6],metal);
- prism([-.2,5.2,-.22],[.2,8.9,.25],metal);
- prism([-6,-4.1,-.12],[6,1.5,.16],metal);
- prism([-2.4,-6.7,.02],[2.4,-5.1,.2],metal);
- prism([-.07,-6.9,.15],[.07,-5.3,2.35],metal);
- prism([-.36,1.5,.45],[.36,4.3,1.12],glass);
- prism([-.55,-6.4,-.35],[.55,-5.2,.25],dark);
- return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c),uvs:new Float32Array(uv)};
-}
-const GEOMETRIES=Object.fromEntries(CATEGORIES.map(kind=>[kind,kind==="jet"?jetGeometry():kind==="car"?ORIGINAL_SEDAN:kind==="bus"?ORIGINAL_BUS:cubeGeometry(kind)]));
+const GEOMETRIES={car:ORIGINAL_SEDAN,bus:ORIGINAL_BUS,drone:ORIGINAL_DRONE,jet:ORIGINAL_JET,human:ORIGINAL_HUMAN,prop:cubeGeometry("prop")};
 const WHEEL=ORIGINAL_WHEEL;
-// Original meshes are already in metres. Stretching them to the collider
-// turned the sedan into a slab and left the cabin open.
-const REAL_SIZE=new Set(["car","bus","jet"]);
+const REAL_SIZE=new Set(["car","bus","jet","drone","human"]);
 const finite3=values=>Array.isArray(values)&&values.length===3&&values.every(Number.isFinite);
 const finite4=values=>Array.isArray(values)&&values.length===4&&values.every(Number.isFinite);
 const saneExtents=h=>finite3(h)&&h.every(v=>v>.01&&v<300);
@@ -141,10 +115,14 @@ export class NativeRigidVisuals{
    const kind=box3dVisualCategory(body);
    const group=grouped.get(kind);
    const half=body.halfExtents;
-   // Cars and people fill their Box3D box. The jet mesh is already in metres
-   // in the flight-model frame, so it is not stretched to the hull's stand-in box.
+   let position=pose.position;
+   // The soldier mesh stands on z=0. The collider origin is its centre.
+   if(kind==="human"){
+    const down=rotateByQuaternion([0,0,-half[2]],pose.rotation);
+    position=[pose.position[0]+down[0],pose.position[1]+down[1],pose.position[2]+down[2]];
+   }
    const visualScale=REAL_SIZE.has(kind)?[1,1,1]:half.map(v=>2*v);
-   group.transforms.push(...fromTRS(pose.position,pose.rotation,visualScale));
+   group.transforms.push(...fromTRS(position,pose.rotation,visualScale));
    const color=RGB[kind];group.tints.push(...color);group.ids.push(String(body.id));
    count++;
    if(Array.isArray(pose.wheels))for(const wheel of pose.wheels){
@@ -167,7 +145,7 @@ export class NativeRigidVisuals{
    }
    const instances={transforms:new Float32Array(batch.transforms),tints:new Float32Array(batch.tints)};
    if(this.active.has(name))this.renderer.updateInstances(name,instances);
-   else{this.renderer.upsert(name,{...geometry,instances,material:{doubleSided:false,alphaMode:"opaque"}});this.active.add(name);}
+   else{this.renderer.upsert(name,{...geometry,instances,material:{doubleSided:kind==="jet"||kind==="drone"||kind==="human",alphaMode:"opaque"}});this.active.add(name);}
    // Only commit a new collision-target index AFTER the GPU accepted that
    // exact instance order. A failed upload must not make shots hit another car.
    this.instanceIds.set(name,batch.ids);

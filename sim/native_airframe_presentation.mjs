@@ -3,6 +3,7 @@
 // motor spacing, FPV rigid optical mount, follow/third stabilized camera.
 // No THREE scene, no graphics fallback or secondary physics state.
 import {fromTRS,multiply4,identity4} from "./native_render_math.mjs";
+import {ORIGINAL_DRONE} from "./native_actor_meshes.mjs";
 import {StabilizedExternalCameraRig,externalCameraFrame} from "./camera_stabilization.mjs";
 export const NATIVE_AIRFRAME_PRESENTATION_VERSION="box3d-native-airframe-v2-225mm";
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
@@ -33,45 +34,11 @@ export function flightPresentationPose(state){
  return {position,quaternion,velocity};
 }
 function bodyGeometry(span){
- // Same 225 mm quad as the old peer model: carbon plate, colour canopy,
- // diagonal arms, motor bells, skids, red nose, FPV camera. Nose is -X.
- // Sizes come from that mesh; motor positions follow the live span.
- const k=span/.225;
- const p=[],n=[],c=[];
- const tri=(a,b,d,normal,color)=>{for(const v of[a,b,d]){p.push(...v);n.push(...normal);c.push(...color);}};
- const quad=(a,b,d,e,normal,color)=>{tri(a,b,d,normal,color);tri(a,d,e,normal,color);};
- const box=(center,half,color)=>{
-  const [x,y,z]=center,[u,v,w]=half;
-  const a=[x-u,y-v,z-w],b=[x+u,y-v,z-w],d=[x+u,y+v,z-w],e=[x-u,y+v,z-w];
-  const A=[x-u,y-v,z+w],B=[x+u,y-v,z+w],D=[x+u,y+v,z+w],E=[x-u,y+v,z+w];
-  quad(e,d,b,a,[0,0,-1],color);quad(A,B,D,E,[0,0,1],color);
-  quad(a,b,B,A,[0,-1,0],color);quad(b,d,D,B,[1,0,0],color);
-  quad(d,e,E,D,[0,1,0],color);quad(e,a,A,E,[-1,0,0],color);
- };
- const armBox=(cx,cy,z,len,yaw,hy,hz,color)=>{
-  const cs=Math.cos(yaw),sn=Math.sin(yaw),hx=len/2;
-  const corner=(sx,sy,sz)=>[cx+(sx*hx)*cs-(sy*hy)*sn,cy+(sx*hx)*sn+(sy*hy)*cs,z+sz*hz];
-  const a=corner(-1,-1,-1),b=corner(1,-1,-1),d=corner(1,1,-1),e=corner(-1,1,-1);
-  const A=corner(-1,-1,1),B=corner(1,-1,1),D=corner(1,1,1),E=corner(-1,1,1);
-  const up=[0,0,1],side=[-sn,cs,0],fwd=[cs,sn,0];
-  quad(e,d,b,a,up.map(v=>-v),color);quad(A,B,D,E,up,color);
-  quad(a,b,B,A,side.map(v=>-v),color);quad(b,d,D,B,fwd,color);
-  quad(d,e,E,D,side,color);quad(e,a,A,E,fwd.map(v=>-v),color);
- };
- const carbon=[.133,.153,.180],dark=[.078,.094,.114],accent=[.212,.902,1],nose=[1,.310,.396];
- box([0,0,0],[.055*k,.0375*k,.015*k],carbon);
- box([.005*k,0,.027*k],[.0425*k,.03*k,.013*k],accent);
- const arm=span/(2*Math.sqrt(2));
- for(const sx of[-1,1])for(const sy of[-1,1]){
-  const x=sx*arm,y=sy*arm;
-  armBox(x/2,y/2,0,Math.hypot(x,y),Math.atan2(y,x),.007*k,.004*k,carbon);
-  box([x,y,.012*k],[.016*k,.016*k,.011*k],dark);
-  box([x,y,.026*k],[.011*k,.011*k,.004*k],accent);
- }
- for(const y of[-.03,.03])box([0,y*k,-.03*k],[.06*k,.004*k,.004*k],dark);
- box([-.072*k,0,.004*k],[.02*k,.012*k,.012*k],nose);
- box([-.05*k,0,.022*k],[.014*k,.013*k,.011*k],dark);
- return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c)};
+  // The live 225 mm peer drone, scaled to the airframe's motor span.
+  // Props stay on flight/rotors so they can spin.
+  const k=span/.225,src=ORIGINAL_DRONE,positions=new Float32Array(src.positions.length);
+  for(let i=0;i<positions.length;i++)positions[i]=src.positions[i]*k;
+  return {positions,normals:src.normals,colors:src.colors};
 }
 function rotorGeometry(blades=2){
  // Unscaled length is the 0.11 m reference. The live 0.127 m prop is the instance scale.

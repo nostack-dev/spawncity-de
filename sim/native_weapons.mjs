@@ -2,6 +2,8 @@
 // ones the game already uses. Hits are Box3D rays. The picture is NativeEffects.
 // Nothing here builds a second world or imports Three.js.
 import {bulletImpulse} from "./ballistics.mjs";
+import {fromTRS} from "./native_render_math.mjs";
+import {ORIGINAL_MISSILE,ORIGINAL_GUIDED,ORIGINAL_GRENADE} from "./native_actor_meshes.mjs";
 
 export const NATIVE_WEAPONS_VERSION="live-rates-box3d-ray-v1";
 const FOOT=["smg","glock","sniper","grenade","rocket","fists","knife"];
@@ -13,12 +15,21 @@ const NAMES={smg:"SMG",glock:"PISTOL",sniper:"SNIPER",grenade:"GRENADE",rocket:"
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
 const add=(a,b,s=1)=>[a[0]+b[0]*s,a[1]+b[1]*s,a[2]+b[2]*s];
 function unit(v){const l=Math.hypot(v[0],v[1],v[2]);return l<1e-6?[0,1,0]:[v[0]/l,v[1]/l,v[2]/l];}
+// Live missiles point along local -Z. This is setFromUnitVectors((0,0,-1), direction).
+function facing(dir){
+  const d=unit(dir),c=[d[1],-d[0],0],dot=-d[2];
+  if(dot>0.999999)return [0,0,0,1];
+  if(dot<-0.999999)return [1,0,0,0];
+  const s=Math.sqrt((1+dot)*2),inv=1/s;
+  return [c[0]*inv,c[1]*inv,c[2]*inv,s*.5];
+}
+const ORDNANCE={missile:ORIGINAL_MISSILE,guided:ORIGINAL_GUIDED,grenade:ORIGINAL_GRENADE};
 function selfId(mode){return {foot:"player-foot",car:"player-car",jet:"player-jet"}[mode]||"";}
 
 export function installNativeWeapons(game,{armed=()=>false}={}){
   if(!game?.rigids?.raycast||!game?.world?.effects?.emit)throw Error("weapons need the native engine");
   const state={foot:"smg",drone:"gun",nextFoot:0,nextDrone:0,held:false,jetHeld:false,touchFire:false};
-  const rounds=[];
+  const rounds=[],drawn=new Set();
   let frames=0,fpsWindow=performance.now(),fps=0;
   const label=()=>NAMES[game.mode==="foot"?state.foot:game.mode==="drone"?state.drone:""]||"";
   function publish(){const view=typeof document==="undefined"?null:document.getElementById("viewport");if(view){view.dataset.footWeapon=state.foot;view.dataset.droneExtendedWeapon=state.drone;}}
@@ -49,10 +60,10 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,at:now}}));
     return true;
   }
-  function launch(now,{speed,life,blast,guided,clientX,clientY}){
+  function launch(now,{speed,life,blast,guided,mesh,clientX,clientY}){
     const ray=aim(clientX,clientY);if(!ray)return false;
     const look=game.rigids.raycast(ray.origin,ray.direction,420);
-    rounds.push({pos:[...ray.origin],dir:[...ray.direction],speed,life,blast,target:guided?look?.id||null:null,born:now});
+    rounds.push({pos:[...ray.origin],dir:[...ray.direction],speed,life,blast,mesh:mesh||(guided?"guided":"missile"),target:guided?look?.id||null:null,born:now});
     game.world.effects.emit({kind:"muzzle",position:ray.origin,velocity:[0,0,0],lifeMs:80,size:.4});
     return true;
   }
@@ -60,7 +71,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     if(game.mode!=="foot"||now<state.nextFoot)return false;
     const mode=state.foot;
     const ok=mode==="grenade"||mode==="rocket"
-      ?launch(now,{speed:mode==="rocket"?40:18,life:mode==="rocket"?4:2.4,blast:mode==="rocket"?5:6,guided:mode==="rocket",clientX,clientY})
+      ?launch(now,{speed:mode==="rocket"?40:18,life:mode==="rocket"?4:2.4,blast:mode==="rocket"?5:6,guided:mode==="rocket",mesh:mode==="grenade"?"grenade":"missile",clientX,clientY})
       :shootHitscan(now,FOOT_RANGE[mode],FOOT_KIND[mode]||"9mm",clientX,clientY);
     if(ok)state.nextFoot=now+FOOT_MS[mode];
     return ok;
@@ -69,7 +80,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     if(game.mode!=="drone"||now<state.nextDrone||!armed())return false;
     const mode=state.drone;
     if(mode==="gun"){if(!shootHitscan(now,650,"5.56"))return false;state.nextDrone=now+92;return true;}
-    if(!launch(now,{speed:mode==="guided"?48:31,life:mode==="guided"?6:7.2,blast:mode==="guided"?9:8,guided:mode==="guided"}))return false;
+    if(!launch(now,{speed:mode==="guided"?48:31,life:mode==="guided"?6:7.2,blast:mode==="guided"?9:8,guided:mode==="guided",mesh:mode==="guided"?"guided":"missile"}))return false;
     state.nextDrone=now+950;return true;
   }
   const foot={
@@ -115,6 +126,22 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     addEventListener("pointerdown",onDown,true);
     addEventListener("pointerup",onUp,true);
   }
+  function paintRounds(){
+    const renderer=game.world?.renderer;
+    if(!renderer?.upsert)return;
+    const batches={missile:[],guided:[],grenade:[]};
+    for(const p of rounds){
+      const kind=batches[p.mesh]?p.mesh:"missile";
+      batches[kind].push(...fromTRS(p.pos,facing(p.dir)));
+    }
+    for(const kind of Object.keys(batches)){
+      const id="ordnance/"+kind,data=batches[kind];
+      if(!data.length){if(drawn.has(kind)){renderer.remove(id);drawn.delete(kind);}continue;}
+      const transforms=new Float32Array(data);
+      if(drawn.has(kind))renderer.updateInstances(id,{transforms});
+      else{renderer.upsert(id,{...ORDNANCE[kind],instances:{transforms},material:{color:[1,1,1,1],doubleSided:true,castShadow:false,frustumCulled:false}});drawn.add(kind);}
+    }
+  }
   return {
     get fps(){return fps;},get weapon(){return label();},
     tick(now=performance.now()){
@@ -137,7 +164,11 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
         if((frames&3)===0)game.world.effects.emit({kind:"smoke",position:p.pos,velocity:[0,0,.4],lifeMs:220,size:.25});
         if(p.life<=0)rounds.splice(i,1);
       }
+      paintRounds();
     },
-    dispose(){if(typeof window==="undefined")return;removeEventListener("keydown",onKey);removeEventListener("keyup",onKeyUp);removeEventListener("mousedown",onDown,true);removeEventListener("mouseup",onUp,true);removeEventListener("pointerdown",onDown,true);removeEventListener("pointerup",onUp,true);}
+    dispose(){
+      const renderer=game.world?.renderer;
+      for(const kind of drawn)renderer?.remove?.("ordnance/"+kind);
+      drawn.clear();if(typeof window==="undefined")return;removeEventListener("keydown",onKey);removeEventListener("keyup",onKeyUp);removeEventListener("mousedown",onDown,true);removeEventListener("mouseup",onUp,true);removeEventListener("pointerdown",onDown,true);removeEventListener("pointerup",onUp,true);}
   };
 }
