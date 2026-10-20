@@ -4,6 +4,7 @@
 import {bulletImpulse} from "./ballistics.mjs";
 import {fromTRS} from "./native_render_math.mjs";
 import {findXboxGamepad} from "./xbox_gamepad.mjs";
+import {nativeFireShot,tickNativeFireFx} from "./native_fire_fx.mjs";
 import {ORIGINAL_MISSILE,ORIGINAL_GUIDED,ORIGINAL_GRENADE} from "./native_actor_meshes.mjs";
 
 export const NATIVE_WEAPONS_VERSION="live-rates-box3d-ray-v1";
@@ -47,16 +48,14 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     game.world.effects.emit({kind:"spark",position:hit.point,velocity:[0,0,1.2],lifeMs:180,size:.18});
     if(hit.id&&hit.id!==selfId(game.mode))game.rigids.applyImpulse(hit.id,bulletImpulse(direction,kind),{point:hit.point});
   }
-  function tracer(from,to){
-    const dir=unit(sub(to,from)),dist=Math.hypot(to[0]-from[0],to[1]-from[1],to[2]-from[2]);
-    game.world.effects.emit({kind:"tracer",position:add(from,dir,Math.min(dist,.6)),velocity:dir.map(v=>v*40),lifeMs:70,size:.08,gravity:0});
-    game.world.effects.emit({kind:"muzzle",position:from,velocity:[0,0,0],lifeMs:40,size:.22});
+  function tracer(from,to,mode,weapon,clientX,clientY){
+    nativeFireShot(game,{from,to,mode,weapon,clientX,clientY});
   }
   function shootHitscan(now,range,kind,clientX,clientY){
     const ray=aim(clientX,clientY);if(!ray)return false;
     const hit=game.rigids.raycast(ray.origin,ray.direction,range);
     const end=hit?.point||add(ray.origin,ray.direction,Math.min(range,80));
-    tracer(ray.origin,end);
+    tracer(ray.origin,end,game.mode,game.mode==="foot"?state.foot:state.drone,clientX,clientY);
     if(hit&&hit.id!==selfId(game.mode))impact(hit,kind,ray.direction);
     if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,at:now}}));
     return true;
@@ -65,7 +64,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     const ray=aim(clientX,clientY);if(!ray)return false;
     const look=game.rigids.raycast(ray.origin,ray.direction,420);
     rounds.push({pos:[...ray.origin],dir:[...ray.direction],speed,life,blast,mesh:mesh||(guided?"guided":"missile"),target:guided?look?.id||null:null,born:now});
-    game.world.effects.emit({kind:"muzzle",position:ray.origin,velocity:[0,0,0],lifeMs:80,size:.4});
+    nativeFireShot(game,{from:ray.origin,to:add(ray.origin,ray.direction,1.2),mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,clientX,clientY});
     if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,at:now}}));
     return true;
   }
@@ -171,6 +170,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
         if(p.life<=0)rounds.splice(i,1);
       }
       paintRounds();
+      tickNativeFireFx(game,now);
     },
     dispose(){
       const renderer=game.world?.renderer;
