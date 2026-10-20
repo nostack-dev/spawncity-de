@@ -69,15 +69,27 @@ export function verifyRendererEvidence(report){
   return {pass:failures.length===0,failures,scenarios:groups.length,required:REQUIRED_DEVICES.length*REQUIRED_MODES.length};
 }
 
+// Legacy SpawnCity may publish. A native cutover may not, until sim/ no longer
+// imports Three and the 15 real-device proofs pass. Missing proofs are not a
+// failure of the legacy game, and a software-renderer report cannot unlock
+// the cutover.
+export function releaseDecision(audit,proof){
+  if(audit?.bundlesThree)return {pass:false,mode:"rejected",nativeCutover:false,reason:"three-package-bundled"};
+  if(!audit?.nativeOnly)return {pass:true,mode:"legacy-production",nativeCutover:false,reason:"legacy game may publish; native cutover is not claimed"};
+  const accepted=proof?.pass===true;
+  return {pass:accepted,mode:"native-cutover",nativeCutover:accepted,reason:accepted?"native cutover accepted":"native cutover blocked until 15 real-device proofs pass"};
+}
+
 if(process.argv[1]?.endsWith("/renderer_acceptance_gate.mjs")){
   const reportPath=process.env.NATIVE_RENDERER_EVIDENCE||"artifacts/renderer-acceptance.json";
   const audit=auditRuntime();
   let evidence=null;
   if(existsSync(reportPath))try{evidence=JSON.parse(readFileSync(reportPath,"utf8"));}catch(e){evidence={error:String(e)};}
   const proof=verifyRendererEvidence(evidence);
-  const result={audit,proof,pass:audit.nativeOnly&&proof.pass};
+  const decision=releaseDecision(audit,proof);
+  const result={audit,proof,decision,pass:decision.pass};
   mkdirSync("artifacts/renderer-gate",{recursive:true});
   writeFileSync("artifacts/renderer-gate/readiness.json",JSON.stringify(result,null,2)+"\n");
-  console.log(JSON.stringify({nativeOnly:audit.nativeOnly,threeImports:audit.threeImportCount,threeCalls:audit.threeCalls,shaderHooks:audit.shaderHooks,threeRendererConstructors:audit.threeRendererConstructors,bundlesThree:audit.bundlesThree,requiredScenarios:proof.required,providedScenarios:proof.scenarios,failures:proof.failures.slice(0,18)},null,2));
-  if(process.argv.includes("--gate")&&!result.pass){console.error("Native render engine release gate NOT MET: do not merge/deploy a claimed Three-free renderer.");process.exitCode=1;}
+  console.log(JSON.stringify({mode:decision.mode,nativeCutover:decision.nativeCutover,reason:decision.reason,nativeOnly:audit.nativeOnly,threeImports:audit.threeImportCount,threeCalls:audit.threeCalls,shaderHooks:audit.shaderHooks,threeRendererConstructors:audit.threeRendererConstructors,bundlesThree:audit.bundlesThree,requiredScenarios:proof.required,providedScenarios:proof.scenarios,failures:proof.failures.slice(0,18)},null,2));
+  if(process.argv.includes("--gate")&&!decision.pass){console.error("Native render engine release gate NOT MET: do not deploy a claimed Three-free renderer.");process.exitCode=1;}
 }

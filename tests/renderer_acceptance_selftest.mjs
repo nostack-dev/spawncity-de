@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {auditRuntime,verifyRendererEvidence,REQUIRED_DEVICES,REQUIRED_MODES} from "./renderer_acceptance_gate.mjs";
+import {auditRuntime,verifyRendererEvidence,releaseDecision,REQUIRED_DEVICES,REQUIRED_MODES} from "./renderer_acceptance_gate.mjs";
 
 const make=()=>({
   schema:"spawncity-native-renderer-proof-v1",
@@ -37,4 +37,13 @@ assert.ok(audit.threeImportCount>20&&audit.threeCalls>200,"runtime source inspec
 assert.ok(audit.threeRendererConstructors>=1,"detect the remaining legacy production WebGLRenderer");
 assert.equal(audit.bundlesThree,false,"deleted production dependency must stay deleted");
 assert.equal(audit.nativeOnly,false,"removing npm Three without porting imports never qualifies as a native release");
+const legacy=releaseDecision(audit,verifyRendererEvidence(null));
+assert.equal(legacy.mode,"legacy-production");
+assert.equal(legacy.pass,true,"the legacy game may publish while the native cutover is not claimed");
+assert.equal(legacy.nativeCutover,false);
+const blocked=releaseDecision({nativeOnly:true,bundlesThree:false},verifyRendererEvidence(null));
+assert.equal(blocked.mode,"native-cutover");
+assert.equal(blocked.pass,false,"a Three-free tree without 15 real-device proofs must not ship");
+assert.equal(releaseDecision({nativeOnly:true,bundlesThree:false},verifyRendererEvidence(make())).pass,true);
+assert.equal(releaseDecision({nativeOnly:false,bundlesThree:true},verifyRendererEvidence(make())).pass,false,"reinstalling Three.js must fail closed");
 console.log("Native renderer acceptance selftest passed: static legacy engine and reduced-visual/GPU fake wins rejected.");

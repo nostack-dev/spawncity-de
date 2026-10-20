@@ -10,6 +10,26 @@ Until a complete replacement is implemented, the proven legacy version may
 remain the currently published game. The unfinished new engine must **not** be
 deployed to users or masquerade as a finished release.
 
+## 2026-10-19 — Engine sealed, game migration still later
+
+The native engine now has one door: `sim/native_engine.mjs`
+(`spawncity-native-engine-v1`). `/native/` boots through that module.
+`tests/native_engine_seal_test.mjs` walks the whole static import graph and
+fails if Three.js, `simulator.mjs` or `real_world_bootstrap.mjs` enters it.
+Packages other than the pinned `box3d.js` runtime are rejected.
+
+That seal is the engine. It is not the game cutover. The live
+`drone_simulator.html` modules that still import Three stay outside the graph
+so they can be ported one system at a time onto the exports of `sim/native_engine.mjs`
+(renderer, scene graph, camera, pick, lights, instancing, particles, loop).
+Do not add a Three shim, a second canvas, or a `?render=` fallback to make a
+partial port look shipped. `renderer_acceptance_gate.mjs --gate` allows this
+legacy game to publish. It fails only when that game has stopped importing
+Three and a native cutover is claimed without the 15 real-device comparisons,
+or if the Three.js package is bundled again.
+
+## Historical implementation log
+
 The existing codebase imports Three in dozens of runtime modules for scene
 graphs, player/vehicle meshes, skeletal animation, materials, cameras,
 frustum culling, world interaction, raycasting and animation, shadows, sky,

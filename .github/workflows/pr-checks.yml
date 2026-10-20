@@ -32,3 +32,5 @@ jobs:
           node tests/renderer_three_reduction_test.mjs
           node tests/native_stereo_sbs_test.mjs
           node tests/native_shader_prewarm_test.mjs
+          node --check sim/native_engine.mjs
+          node tests/native_engine_seal_test.mjs

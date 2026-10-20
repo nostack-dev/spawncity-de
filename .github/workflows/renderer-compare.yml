@@ -131,10 +131,9 @@ jobs:
             artifacts/native-world/
           if-no-files-found: warn
   full-native-release-gate:
-    # Intentionally FAILS until ALL in-game Three dependencies have been
-    # replaced and desktop, Android Chrome and iPhone Safari device GPU
-    # measurements prove full visual/physics/gameplay quality and speed gains.
-    # No native-city toggle, no fallback, no partial shipping.
+    # Green while drone_simulator.html is still the legacy renderer.
+    # Red when sim/ no longer imports Three but the 15 real-device proofs
+    # are missing, or when Three.js is bundled again. No native/Three hybrid.
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -147,7 +146,9 @@ jobs:
           node tests/renderer_exclusive_release_contract_test.mjs
           node tests/no_three_production_dependency_test.mjs
           node tests/renderer_acceptance_selftest.mjs
-      - name: Require a full no-Three native engine with 15 hardware scenarios
+          node --check sim/native_engine.mjs
+          node tests/native_engine_seal_test.mjs
+      - name: Block a native cutover that lacks 15 real-device proofs
         run: node tests/renderer_acceptance_gate.mjs --gate
       - name: Retain exact missing migration blockers
         if: always()
