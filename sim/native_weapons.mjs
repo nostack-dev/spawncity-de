@@ -57,7 +57,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     const end=hit?.point||add(ray.origin,ray.direction,Math.min(range,80));
     tracer(ray.origin,end);
     if(hit&&hit.id!==selfId(game.mode))impact(hit,kind,ray.direction);
-    if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,at:now}}));
+    if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,at:now}}));
     return true;
   }
   function launch(now,{speed,life,blast,guided,mesh,clientX,clientY}){
@@ -65,6 +65,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     const look=game.rigids.raycast(ray.origin,ray.direction,420);
     rounds.push({pos:[...ray.origin],dir:[...ray.direction],speed,life,blast,mesh:mesh||(guided?"guided":"missile"),target:guided?look?.id||null:null,born:now});
     game.world.effects.emit({kind:"muzzle",position:ray.origin,velocity:[0,0,0],lifeMs:80,size:.4});
+    if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,at:now}}));
     return true;
   }
   function fireFoot(now,clientX,clientY){

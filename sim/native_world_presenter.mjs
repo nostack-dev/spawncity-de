@@ -14,6 +14,7 @@ import {NativeRigidVisuals} from "./native_rigid_visuals.mjs";
 import {nativeWorldPhysicsView,nativeRigidRuntimeView} from "./native_world_physics_view.mjs";
 import {nativeFlightPoseView} from "./native_flight_pose_view.mjs";
 import {nativeGameplayCamera,nativeLiveGameplayState} from "./native_gameplay_camera.mjs";
+import {shakeNativeCamera} from "./camera_shake.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
 import {NativeStreetLamps} from "./native_street_lamps.mjs";
@@ -169,6 +170,7 @@ export class NativeWorldPresenter{
   }
   this.lastFrameAt=now;
   if(!this.camera)throw Error("native world requires camera before rendering");
+  this.camera=shakeNativeCamera(this.camera,now,this.gameMode||"drone");
   this.renderer.resize(viewport.width,viewport.height);
   this.renderer.setCamera(this.camera);
   const physics=this.rigids.update(),people=this.people?.update()||null,peer=this.peer?.update(now)||null;

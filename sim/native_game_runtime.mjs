@@ -137,6 +137,7 @@ export class NativeGameRuntime{
     const gap=probe?pose.position[2]-half-probe.point[2]:1;
     const grounded=Boolean(probe)&&gap<.18&&pose.velocity[2]<1.6;
     const motion=stepFootMotion(this.footMotion,{now:performance.now(),dt,jumpHeld:this.footInput.jump,grounded,vz:pose.velocity[2],gapM:Math.max(0,gap),dead:Boolean(globalThis.__arondightPlayerDamageModel?.dead)});
+    if(Number.isFinite(motion.landImpact)&&typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:player-land",{detail:{impactMps:motion.landImpact}}));
     if(motion.landImpact>FOOT_FALL_SAFE_MPS){
      const span=FOOT_FALL_LETHAL_MPS-FOOT_FALL_SAFE_MPS;
      globalThis.__arondightPlayerDamageModel?.damage?.(Math.round(100*Math.min(1,(motion.landImpact-FOOT_FALL_SAFE_MPS)/span)));
@@ -199,6 +200,8 @@ export class NativeGameRuntime{
    const a=this.gameplayState.walk,eye=foot.position;
    a.position={x:eye[0],y:eye[1],z:eye[2]+.72};
    a.yaw=this.footInput.yaw;a.pitch=this.footInput.pitch;
+   a.speedMps=Math.hypot(foot.velocity[0],foot.velocity[1]);
+   a.sprinting=Boolean(this.footInput.sprint);a.airborne=Boolean(this.footMotion?.airborne);
   }
   const car=this.rigids.renderPose("player-car",clamp(this.rigidPhaseMs/WORLD_STEP_MS,0,1));
   if(car){

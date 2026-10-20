@@ -31,7 +31,8 @@ function onWeapon(event){
   // Full-auto builds up to a steady rumble (capped), heavy weapons punch.
   if(w==="smg"||w==="drone-gun"||w==="gun")addTrauma(m==="drone"?.07:.035,.42);
   else if(w==="missile"||w==="nuke")addTrauma(.28);
-  else if(w==="grenade"||w==="launcher")addTrauma(.2);
+  else if(w==="grenade"||w==="rocket"||w==="guided"||w==="launcher")addTrauma(.2);
+  else if(w==="sniper")addTrauma(.16,.6);
   else if(w==="glock")addTrauma(.3,.7);
   else addTrauma(clamp(d.intensity,0,.5)*.4,.6);
 }
@@ -46,6 +47,35 @@ function onImpact(event){
   const mine=(drive()?.active&&id===drive()?.vehicleId)||d.kind==="drone";if(!mine||speed<2.5)return;addTrauma(clamp((speed-2.5)/14,0,.7));
 }
 function noise(t,o){return Math.sin(t*1.0+o)*.5+Math.sin(t*2.31+o*1.7)*.3+Math.sin(t*4.17+o*2.3)*.2;}
+const unit3=v=>{const l=Math.hypot(v[0],v[1],v[2])||1;return [v[0]/l,v[1]/l,v[2]/l];};
+const cross3=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+function turn(v,axis,angle){
+  const c=Math.cos(angle),s=Math.sin(angle),d=v[0]*axis[0]+v[1]*axis[1]+v[2]*axis[2],x=cross3(axis,v);
+  return [v[0]*c+x[0]*s+axis[0]*d*(1-c),v[1]*c+x[1]*s+axis[1]*d*(1-c),v[2]*c+x[2]*s+axis[2]*d*(1-c)];
+}
+// Same trauma sample the Three hook used to bake into the camera, applied to
+// the native eye/target/up. Zero trauma returns the camera unchanged.
+export function shakeNativeCamera(camera,now=performance.now(),modeName="drone"){
+  if(!camera?.eye||!camera?.target)return camera;
+  const dt=clamp((now-lastNow)/1000,0,.1);lastNow=now;
+  if(trauma<=0)return camera;
+  trauma=Math.max(0,trauma-DECAY_PER_S*dt);const s=trauma*trauma;if(s<1e-4)return camera;
+  const t=now/1000*FREQ,scale=modeName==="drone"?.85:1;
+  const pitch=MAX_ANGLE_RAD*s*scale*noise(t,seed);
+  const yaw=MAX_ANGLE_RAD*s*scale*noise(t,seed+11);
+  const roll=MAX_ANGLE_RAD*.7*s*scale*noise(t,seed+23);
+  const slide=MAX_OFFSET_M*s*scale*noise(t*.8,seed+37);
+  const heave=MAX_OFFSET_M*s*scale*noise(t*.8,seed+51);
+  let f=unit3([camera.target[0]-camera.eye[0],camera.target[1]-camera.eye[1],camera.target[2]-camera.eye[2]]);
+  let u=unit3(camera.up||[0,0,1]);
+  let r=cross3(f,u);if(Math.hypot(...r)<1e-6)r=[1,0,0];else r=unit3(r);
+  u=unit3(cross3(r,f));
+  f=unit3(turn(turn(f,r,pitch),u,yaw));
+  u=unit3(turn(u,f,roll));
+  const dist=Math.hypot(camera.target[0]-camera.eye[0],camera.target[1]-camera.eye[1],camera.target[2]-camera.eye[2])||1;
+  const eye=[camera.eye[0]+r[0]*slide+u[0]*heave,camera.eye[1]+r[1]*slide+u[1]*heave,camera.eye[2]+r[2]*slide+u[2]*heave];
+  return {...camera,eye,up:u,target:[eye[0]+f[0]*dist,eye[1]+f[1]*dist,eye[2]+f[2]*dist]};
+}
 function apply(scene,camera,now){
   const dt=clamp((now-lastNow)/1000,0,.1);lastNow=now;if(trauma<=0||!camera)return;
   trauma=Math.max(0,trauma-DECAY_PER_S*dt);const s=trauma*trauma;if(s<1e-4)return;

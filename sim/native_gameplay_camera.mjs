@@ -4,6 +4,7 @@
 // gate has passed for all five game modes on actual devices.
 import {fpsVerticalFovDegForAspect} from "./camera_pitch_contract.mjs";
 import {firstPersonDeathFall} from "./player_vitals_logic.mjs";
+import {addFpsShotImpulse,createFpsCameraMotionState,stepFpsCameraMotion} from "./fps_control_math.mjs";
 import {rotateByQuaternion} from "./native_airframe_presentation.mjs";
 import {unobstructedNativeChaseEye} from "./native_camera_occlusion.mjs";
 export const NATIVE_GAMEPLAY_CAMERA_VERSION="box3d-mode-cameras-v1";
@@ -28,6 +29,25 @@ const camera=(eye,target,{up=[0,0,1],fovDeg=72,near=.05,far=5000}={})=>{
  if(!(far>near&&near>0&&fovDeg>0&&fovDeg<180))throw Error("invalid native camera projection");
  return {eye,target,up,fov:fovDeg*RAD,near,far};
 };
+const footMotion=createFpsCameraMotionState();
+let footClock=0;
+function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+function unit(v){const l=Math.hypot(v[0],v[1],v[2])||1;return [v[0]/l,v[1]/l,v[2]/l];}
+function rolledUp(forward,roll){
+  const f=unit(forward);let r=cross(f,[0,0,1]);
+  if(Math.hypot(...r)<1e-5)r=[1,0,0];else r=unit(r);
+  const u=unit(cross(r,f)),c=Math.cos(roll),s=Math.sin(roll);
+  return [u[0]*c+r[0]*s,u[1]*c+r[1]*s,u[2]*c+r[2]*s];
+}
+function stepFootView(w,now){
+  const dt=footClock?Math.min(.05,Math.max(0,(now-footClock)/1000)):0;footClock=now;
+  const airborne=Boolean(w.airborne),speed=airborne?0:Math.max(0,Number(w.speedMps)||0);
+  return stepFpsCameraMotion(footMotion,{dt,speedMps:speed,sprinting:Boolean(w.sprinting)&&!airborne});
+}
+if(typeof window!=="undefined"){
+  addEventListener("arondight:weapon-fired",event=>{if(String(event?.detail?.mode||"")==="foot")addFpsShotImpulse(footMotion);});
+  addEventListener("arondight:player-land",event=>{const impact=Number(event?.detail?.impactMps)||0;footMotion.shakeEnergy=Math.min(1,footMotion.shakeEnergy+.12+.05*impact);});
+}
 // Same mode precedence as the product's player camera-provider chain:
 // a jet/passenger overrides a car, a car overrides on-foot, then drone.
 // Multiplayer observation is deliberate: mere presence of a remote peer must
@@ -50,19 +70,24 @@ export function nativeGameplayCamera(state,{aspect=16/9,now=performance.now()}={
    throw Error("foot camera requires real __arondightWalkMode state");
   const eye=xyz(w.position);
   const head=state.look||{};
-  let yaw=w.yaw+finite(head.yawDeg,0)*RAD;
-  let pitch=clamp(w.pitch+finite(head.pitchDeg,0)*RAD,-1.45,1.45);
+  const motion=stepFootView(w,now);
+  let yaw=w.yaw+finite(head.yawDeg,0)*RAD+motion.bobYaw+motion.recoilYaw+motion.shakeYaw;
+  let pitch=clamp(w.pitch+finite(head.pitchDeg,0)*RAD+motion.bobPitch+motion.recoilPitch+motion.shakePitch,-1.45,1.45);
   const fall=globalThis.__arondightPlayerDamageModel;
+  let roll=motion.bobRoll+motion.recoilRoll+motion.shakeRoll;
   if(fall?.dead){
    const down=firstPersonDeathFall(now-(Number(fall.deathStartedAt)||now));
-   eye[2]+=down.eyeHeightM-1.68;pitch=down.pitchOffsetRad;
+   eye[2]+=down.eyeHeightM-1.68;pitch=down.pitchOffsetRad;roll+=down.rollRad;
   }
+  const side=[Math.cos(w.yaw),-Math.sin(w.yaw),0],sway=motion.bobX+motion.shakeX;
+  eye[0]+=side[0]*sway;eye[1]+=side[1]*sway;eye[2]+=motion.bobZ+motion.shakeZ;
   const forward=[Math.sin(yaw)*Math.cos(pitch),Math.cos(yaw)*Math.cos(pitch),Math.sin(pitch)];
   // Existing FPS contract specifies H-FOV=90 deg, converted for viewport.
   const vertical=fpsVerticalFovDegForAspect(aspect);
   const zoom=Math.max(1,finite(state.adsZoom,1));
   const fovDeg=2*Math.atan(Math.tan(vertical*RAD/2)/zoom)/RAD;
-  return {mode,camera:camera(eye,add(eye,forward,12),{fovDeg,near:.035,far:5000})};
+  const up=Math.abs(roll)>1e-6?rolledUp(forward,roll):[0,0,1];
+  return {mode,camera:camera(eye,add(eye,forward,12),{up,fovDeg,near:.035,far:5000})};
  }
  if(mode==="car"){
   const car=state.car,pose=car?.pose;
