@@ -1,0 +1,82 @@
+name: Publish Native Experiment
+
+on:
+  push:
+    branches: ["experiment/render-replace"]
+  workflow_dispatch:
+
+# Publishes ONLY /native/ on gh-pages. Never touches the production game.
+permissions:
+  contents: write
+
+concurrency:
+  group: spawncity-native-experiment-publish
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    container:
+      image: emscripten/emsdk:6.0.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Box3D and the native browser page
+        run: |
+          set -euxo pipefail
+          bash tools/build_box3d_upstream_wasm.sh
+          mkdir -p generated
+          em++ sim/Arondight45_DroneFC_SIL_WASM.cpp -std=c++17 -O3 \
+            -s MODULARIZE=1 -s EXPORT_ES6=1 -s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
+            -s FILESYSTEM=0 -s SINGLE_FILE=1 -s ALLOW_MEMORY_GROWTH=0 \
+            -s INITIAL_MEMORY=16777216 \
+            -s 'EXPORTED_RUNTIME_METHODS=["HEAPU8"]' \
+            -s 'EXPORTED_FUNCTIONS=["_fc_input_buffer","_fc_output_buffer","_fc_input_size","_fc_output_size","_fc_reset","_fc_process","_fc_protocol_version"]' \
+            -s ENVIRONMENT=web -o generated/flight_core.mjs
+          npm install --prefix /tmp/spawncity-native-bundle --ignore-scripts --no-audit --no-fund esbuild@0.25.8
+          ln -s /tmp/spawncity-native-bundle/node_modules node_modules
+          ./node_modules/.bin/esbuild sim/native_game_bootstrap.mjs --bundle --format=esm --platform=browser --target=es2022 --minify \
+            --alias:box3d.js/dist/box3d.inline.mjs="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" \
+            --outfile=/tmp/native-game-browser.bundle.mjs
+          mkdir -p artifacts/native-browser
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          page=Path("native_game.html").read_text()
+          marker='<script type="module" src="./sim/native_game_bootstrap.mjs"></script>'
+          assert marker in page
+          code=Path("/tmp/native-game-browser.bundle.mjs").read_text().replace("</script","<\\/script")
+          page=page.replace(marker,'<script type="module">\n'+code+'\n</script>')
+          page='<!-- SPAWNCITY_NATIVE_CANDIDATE_SHA:'+os.environ.get("GITHUB_SHA","CI")+' -->\n'+page
+          Path("artifacts/native-browser/native_game.html").write_text(page)
+          PY
+          if grep -Eq 'THREE[.]WebGLRenderer|three[.]module[.]js' artifacts/native-browser/native_game.html; then
+            echo "legacy graphics in native candidate" >&2
+            exit 1
+          fi
+      - name: Publish only /native/, leave the game alone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euxo pipefail
+          test -s artifacts/native-browser/native_game.html
+          if python3 tools/build_native_osm_snapshot.py /tmp/native-konstanz-osm.json; then
+            echo "Fresh OSM snapshot."
+          else
+            echo "OSM fetch failed; keeping any existing snapshot."
+          fi
+          git fetch origin gh-pages
+          git checkout -B gh-pages origin/gh-pages
+          mkdir -p native/osm
+          cp artifacts/native-browser/native_game.html native/index.html
+          if test -s /tmp/native-konstanz-osm.json; then
+            cp /tmp/native-konstanz-osm.json native/osm/demo-konstanz.json
+          fi
+          test -s native/osm/demo-konstanz.json
+          node -e 'const fs=require("fs");fs.writeFileSync("native/build.json",JSON.stringify({sha:process.env.SOURCE_SHA,renderer:"native-webgl2",nativeReleaseVerified:false,scope:"preview-only",url:"https://spawncity.de/native/"})+"\n")'
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -- native/index.html native/build.json native/osm/demo-konstanz.json
+          git commit -m "Publish native experiment ${SOURCE_SHA} at /native/ only"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages

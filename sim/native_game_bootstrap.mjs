@@ -7,6 +7,8 @@ import {NativeGameRuntime,NativeGameInput,fetchNativeOsm,NATIVE_DEMO_CITY} from 
 import {installNativeWeapons} from "./native_weapons.mjs";
 import {syncNativeViewmodel} from "./native_viewmodels.mjs";
 import {installNativeVitals} from "./native_vitals.mjs";
+import {openQuitConfirm} from "./quit_confirm.mjs";
+import "./neon_ui_theme.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
@@ -37,6 +39,9 @@ function updateTelemetry(game,now){
  telemetry.textContent=game.mode.toUpperCase()+" · "+(session?.weapons?.weapon||"")+" · "+
   friendly(spd)+" m/s · Z "+friendly(pos[2])+" m · "+(session?.weapons?.fps??"—")+" fps · "+
   (gpu?.drawCalls??"—")+" draws · backlog "+friendly(game.backlogMs)+" ms";
+ const stateLabel=$("soloState"),altLabel=$("soloAlt");
+ if(stateLabel)stateLabel.textContent=(session?.input?.arm?"ARMED":"DISARMED")+" · "+game.mode.toUpperCase();
+ if(altLabel)altLabel.textContent=friendly(spd)+" m/s · Z "+friendly(pos[2])+" m";
  setModePressed(game.mode);
  const arm=$("armButton");
  if(arm&&session?.input)arm.setAttribute("aria-pressed",String(session.input.arm));
@@ -144,8 +149,19 @@ async function launch(){
    const current=game.world.flightCameraMode??"follow";
    const next=current==="follow"?"fpv":current==="fpv"?"third":"follow";
    game.world.setFlightCameraMode(next);
+   $("cameraButton").textContent=next==="follow"?"FOLLOW":next==="fpv"?"FPV":"THIRD";
    report("Camera "+next.toUpperCase());
   });
+  $("soloExit")?.addEventListener("click",event=>{
+   if(event.isTrusted){openQuitConfirm();return;}
+   location.reload();
+  });
+  $("soloReset")?.addEventListener("click",()=>{
+   globalThis.__arondightPlayerDamageModel?.reset?.();
+   globalThis.__arondightDroneDamageModel?.reset?.();
+   report("Reset");
+  });
+  addEventListener("keydown",event=>{if(event.code==="Escape"&&!event.repeat)openQuitConfirm();});
   $("fullscreenButton")?.addEventListener("click",async()=>{
    try{
     if(document.fullscreenElement)await document.exitFullscreen();

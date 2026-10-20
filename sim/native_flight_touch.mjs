@@ -24,11 +24,15 @@ export function installNativeFlightTouch(){
   if(typeof document==="undefined"||document.getElementById("soloHud"))return;
   const view=document.getElementById("viewport");if(!view)return;
   const hud=document.createElement("div");hud.id="soloHud";
-  hud.innerHTML=`<div id="soloLeft" class="solo-stick"><div class="solo-ring"></div><div class="solo-knob"></div><span>FWD / STRAFE</span></div>
-  <div id="soloClearance"><small>ALT TARGET</small><strong id="soloClearanceValue">1.2 m</strong><div id="soloHeightPad" class="solo-height-pad" aria-label="Climb or descend"><span class="solo-height-up">CLIMB</span><div class="solo-height-track"></div><div id="soloHeightKnob" class="solo-height-knob"></div><span class="solo-height-hold">HOLD</span><span class="solo-height-down">DESCEND</span></div></div>
+  hud.innerHTML=`<div id="soloTopbar" data-toolbar-layout="actions-status-v1"><div id="soloTopbarActions" role="toolbar" aria-label="Simulator actions"><button id="soloExit" type="button">EXIT</button><button id="soloReset" type="button">RESET</button></div><div id="soloTopbarStatus" role="status" aria-label="Flight status"><span id="soloState">DISARMED</span><span id="soloAlt">AGL 0.0 m</span><span id="soloGamepadStatus" hidden>XBOX</span></div></div>
+  <div id="soloLeft" class="solo-stick"><div class="solo-ring"></div><div class="solo-knob"></div><span>FWD / STRAFE</span></div>
+  <div id="soloClearance"><small>ALT TARGET</small><strong id="soloClearanceValue">1.2 m</strong><div id="soloHeightPad" class="solo-height-pad" aria-label="Climb or descend altitude target"><span class="solo-height-up">CLIMB</span><div class="solo-height-track"></div><div id="soloHeightKnob" class="solo-height-knob"></div><span class="solo-height-hold">HOLD</span><span class="solo-height-down">DESCEND</span></div><span id="soloRangeStatus">AGL —</span></div>
   <div id="soloRight" class="solo-stick"><div class="solo-ring"></div><div class="solo-knob"></div><span>TURN / PITCH</span></div>
-  <div id="soloGamepadHelp" hidden>LS MOVE · RS TURN/PITCH · LT/RT ALT −/+ · RB FIRE · A ARM · Y WEAPON · VIEW CAM · ↓ ON FOOT</div>`;
+  <div id="soloGamepadHelp" hidden>LS MOVE · RS TURN/PITCH · LT/RT ALT −/+ · LB+RS LOOK · RB FIRE · A ARM · Y WEAPON · VIEW CAM · ↓ ON FOOT</div>`;
   view.appendChild(hud);
+  const actions=hud.querySelector("#soloTopbarActions");
+  const toolbar=document.getElementById("toolbar");
+  if(actions&&toolbar){for(const node of [...toolbar.children])actions.appendChild(node);toolbar.hidden=true;}
   const foot=document.createElement("div");foot.id="footHud";
   foot.innerHTML=`<div id="footLookZone" aria-label="Drag anywhere to look"></div><div id="footReadout"><b>WALK</b></div><div id="footReticle" aria-hidden="true"></div>
   <div id="footMove" class="foot-stick" aria-label="Move"><div class="ring"></div><div class="knob"></div><span>MOVE</span></div>
@@ -36,8 +40,20 @@ export function installNativeFlightTouch(){
   <button id="footFire" type="button">FIRE</button><button id="footJump" type="button">JUMP</button>`;
   view.appendChild(foot);
   const style=document.createElement("style");style.dataset.nativeFlightTouch=NATIVE_FLIGHT_TOUCH_VERSION;
-  style.textContent=`#soloHud{display:none;position:absolute;inset:0;z-index:8;pointer-events:none}
-body.solo-flight:not(.desktop-input):not(.on-foot-mode):not(.player-driving):not(.jet-mode):not(.pad-input) #soloHud{display:block}
+  style.textContent=`#soloHud{display:block;position:absolute;inset:0;z-index:8;pointer-events:none}
+#hud,#help,#toolbar{display:none!important}
+body.solo-flight #soloTopbar{top:max(5px,env(safe-area-inset-top));left:50%;width:min(calc(100% - 16px),980px);transform:translateX(-50%);display:grid;grid-template-rows:auto auto;gap:4px;position:absolute;z-index:30;pointer-events:none}
+body.solo-flight #soloTopbarActions{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;padding:4px;border:1px solid #7cccfb3b;border-radius:12px;background:linear-gradient(180deg,#0d2133e8,#071522dc);box-shadow:0 7px 22px #0006,inset 0 1px #ffffff12;pointer-events:auto}
+body.solo-flight #soloTopbarStatus{display:flex;align-items:center;justify-content:center;gap:4px;pointer-events:none}
+body.solo-flight #soloTopbar button,body.solo-flight #soloTopbar span{box-sizing:border-box;padding:5px 8px;font:800 10px/1 system-ui,sans-serif;border-radius:8px;white-space:nowrap;color:#e7f4ff}
+body.solo-flight #soloTopbar button{display:inline-flex;align-items:center;justify-content:center;min-height:30px;border:1px solid #6b839b77;background:#102033;cursor:pointer}
+body.solo-flight #soloTopbar button[aria-pressed=true]{background:#ffb42d;color:#162136;border-color:#ffb42d}
+body.solo-flight #soloTopbarStatus>span{display:inline-flex;align-items:center;min-height:20px;padding:3px 7px;border:1px solid #8ecdf02d;background:#071522c2;color:#d9efff;font-size:9px}
+body.solo-flight #soloExit{background:#672532df;border-color:#d76f7d77}
+body.solo-flight #soloReset{background:#704819dc;border-color:#e1ad6170}
+body.solo-flight #soloCamera{background:#164c6cdd}
+body.desktop-input #soloLeft,body.desktop-input #soloRight,body.desktop-input #soloClearance,body.desktop-input #soloArm,body.desktop-input #soloKill{display:none!important}
+body.pad-input #soloGamepadHelp{display:block!important}
 .solo-stick{position:absolute;width:min(34vw,230px);aspect-ratio:1;bottom:max(18px,env(safe-area-inset-bottom));pointer-events:auto;touch-action:none}
 #soloLeft{left:max(16px,env(safe-area-inset-left))}#soloRight{right:max(16px,env(safe-area-inset-right))}
 .solo-ring{position:absolute;inset:0;border-radius:50%;border:2px solid #ffffff66;background:#0b18265c}
