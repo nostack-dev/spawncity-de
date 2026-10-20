@@ -19,7 +19,7 @@ const clamp=(n,lo,hi)=>Math.min(hi,Math.max(lo,n));
 export function nativeOverpassQuery({lon,lat},radiusM=metres){
  if(!isLL(Number(lon),Number(lat))||!Number.isFinite(radiusM)||radiusM<100||radiusM>1500)
   throw Error("native OSM query requires finite GPS fix and bounded radius");
- return '[out:json][timeout:18];(way["building"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["highway"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+'););out geom;';
+ return '[out:json][timeout:18];(way["building"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["highway"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["waterway"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["natural"="water"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["landuse"~"meadow|grassland|farmland"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+'););out geom;';
 }
 const height=(tags)=>{
  const explicit=parseFloat(String(tags?.height??""));
@@ -29,7 +29,7 @@ const height=(tags)=>{
 };
 export function parseNativeOverpass(json,{maxBuildings=1300,maxRoads=800}={}){
  if(!Array.isArray(json?.elements))throw Error("OSM requires actual Overpass JSON");
- const buildings=[],roads=[],seen=new Set();
+ const buildings=[],roads=[],water=[],pastures=[],seen=new Set();
  for(const e of json.elements){
   if(e?.type!=="way"||!Array.isArray(e.geometry)||!e.geometry.length)continue;
   const tags=e.tags??{},id="osm-way-"+String(e.id);
@@ -47,9 +47,15 @@ export function parseNativeOverpass(json,{maxBuildings=1300,maxRoads=800}={}){
    props.class=String(tags.highway);
    roads.push({id,properties:props,geometry:{type:"LineString",coordinates}});
    seen.add(id);
+  }else if((tags.waterway||tags.natural==="water")&&water.length<400&&coordinates.length>=2){
+   water.push({id,properties:props,geometry:{type:coordinates.length>=4&&ringKey(coordinates[0])===ringKey(coordinates.at(-1))?"Polygon":"LineString",coordinates:coordinates.length>=4&&ringKey(coordinates[0])===ringKey(coordinates.at(-1))?[coordinates]:coordinates}});
+   seen.add(id);
+  }else if(["meadow","grassland","farmland"].includes(tags.landuse)&&pastures.length<200&&coordinates.length>=4){
+   pastures.push({id,properties:props,geometry:{type:"Polygon",coordinates:[coordinates]}});
+   seen.add(id);
   }
  }
- return {buildings,roads,source:"openstreetmap-overpass",synthetic:false};
+ return {buildings,roads,water,pastures,source:"openstreetmap-overpass",synthetic:false};
 }
 export async function fetchNativeOsm(origin,{fetchImpl=globalThis.fetch,
  endpoints=DEFAULT_ENDPOINTS,timeoutMs=16000,radiusM=metres,signal=null,

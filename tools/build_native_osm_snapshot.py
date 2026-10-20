@@ -67,7 +67,9 @@ def convert_osm(xml, url):
             if "k" in tag.attrib and "v" in tag.attrib
         }
         building, road = bool(tags.get("building")), bool(tags.get("highway"))
-        if not building and not road:
+        water = bool(tags.get("waterway")) or tags.get("natural") == "water"
+        pasture = tags.get("landuse") in {"meadow", "grassland", "farmland"}
+        if not building and not road and not water and not pasture:
             continue
         refs = [nd.attrib.get("ref") for nd in way.findall("nd")]
         if any(ref not in nodes for ref in refs):
