@@ -109,7 +109,7 @@ async function launch(){
   canvas.tabIndex=0;viewport.append(canvas);
   report("Initializing one native GPU and original Flight Core…");
   game=new NativeGameRuntime(canvas,{
-   b3,flightCoreFactory:FlightCoreFactory,frameBudgetMs:4,
+   b3,flightCoreFactory:FlightCoreFactory,
    onError:error=>{console.error("native game",error);report("Native engine halted: "+error.message,true);}
   });
   input=new NativeGameInput(game,{canvas});
