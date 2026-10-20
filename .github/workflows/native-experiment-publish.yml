@@ -19,6 +19,9 @@ jobs:
     timeout-minutes: 40
     container:
       image: emscripten/emsdk:6.0.2
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Compile Box3D and the native browser page
