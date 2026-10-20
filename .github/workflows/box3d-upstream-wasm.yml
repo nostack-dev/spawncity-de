@@ -10,7 +10,40 @@ on:
       - "tests/control_semantics_test.mjs"
       - "docs/box3d-upstream-wasm.md"
       - ".github/workflows/deploy.yml"
+      - "sim/native_flight_physics.mjs"
+      - "tests/native_flight_physics_box3d_test.mjs"
+      - "tests/native_flight_physics_parity_test.mjs"
+      - "sim/native_flight_controller_wasm.mjs"
+      - "tests/native_flight_control_wasm_test.mjs"
+      - "tests/native_flight_controller_sil_test.mjs"
+      - "sim/native_game_runtime.mjs"
+      - "tests/native_game_runtime_box3d_test.mjs"
+      - "sim/world_rigid_body_physics.mjs"
+      - "tests/native_foot_body_direction_test.mjs"
+      - "sim/native_building_collision_bridge.mjs"
+      - "sim/native_spawn_clearance.mjs"
+      - "tests/native_spawn_clearance_test.mjs"
+      - "sim/native_camera_occlusion.mjs"
+      - "tests/native_camera_occlusion_test.mjs"
+      - "sim/native_game_input.mjs"
+      - "tests/native_building_collision_bridge_test.mjs"
+      - "tests/native_game_input_test.mjs"
+      - "native_game.html"
+      - "sim/native_game_bootstrap.mjs"
+      - "sim/native_osm_source.mjs"
+      - "tests/native_osm_source_test.mjs"
+      - "tests/native_bootstrap_contract_test.mjs"
+      - "tests/native_full_browser_smoke.mjs"
+      - "sim/native_launch_pad.mjs"
+      - "tests/native_launch_pad_test.mjs"
       - "tests/production_box3d_bundle_contract_test.mjs"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/box3d-upstream-wasm.yml"
+      - "sim/native_*.mjs"
+      - "tests/native_*.mjs"
+      - "native_game.html"
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,6 +68,7 @@ jobs:
         run: |
           node tests/box3d_upstream_contract_test.mjs artifacts/box3d-upstream-wasm
           node tests/physics_validation_test.mjs
+          node tests/native_flight_physics_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
           node tests/world_building_collision_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
           node tests/blast_physics_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
           node tests/jet_flight_box3d_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
@@ -51,12 +85,12 @@ jobs:
           done
           (cd artifacts/box3d-upstream-wasm && sha256sum -c SHA256SUMS.txt)
           node tests/production_box3d_deploy_source_test.mjs
-      - name: Ensure whole SpawnCity game bundles exclusively the new verified WASM
+      - name: Verify sole native WebGL2 and flight model bundle without Three.js
         run: |
           set -eux
-          # Bundle the actual shared flight-controller C++ module, not a stub.
-          # This is the PR bundle-input test; production deploy still builds
-          # the flight core separately with its pinned emsdk 4.0.10.
+          # The legacy renderer can no longer be bundled: Three.js has been
+          # removed from production. Test the real 1 kHz physics and sole
+          # native presenter here; full gameplay/device release remains gated.
           mkdir -p generated
           em++ sim/Arondight45_DroneFC_SIL_WASM.cpp -std=c++17 -O3 \
             -s MODULARIZE=1 -s EXPORT_ES6=1 -s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
@@ -65,17 +99,55 @@ jobs:
             -s 'EXPORTED_RUNTIME_METHODS=["HEAPU8"]' \
             -s 'EXPORTED_FUNCTIONS=["_fc_input_buffer","_fc_output_buffer","_fc_input_size","_fc_output_size","_fc_reset","_fc_process","_fc_protocol_version"]' \
             -s ENVIRONMENT=web -o generated/flight_core.mjs
-          npm install --prefix /tmp/spawncity-upstream-bundle --ignore-scripts --no-audit --no-fund \
-            three@0.185.1 box3d.js@0.1.1 maplibre-gl@5.24.0 esbuild@0.25.8 mqtt@5.15.2 nostr-tools@2.24.1 \
-            qrcode-generator@1.4.4 jsqr@1.4.0 trystero@0.25.3 @trystero-p2p/mqtt@0.25.3 @trystero-p2p/torrent@0.25.3
-          ln -s /tmp/spawncity-upstream-bundle/node_modules node_modules
-          ./node_modules/.bin/esbuild sim/real_world_bootstrap.mjs --bundle --format=esm --platform=browser --target=es2022 --minify \
-            --alias:box3d.js/dist/box3d.inline.mjs="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" --alias:box3d.js/inline="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" \
-            --metafile=/tmp/upstream-game.meta.json --outfile=/tmp/upstream-game.bundle.mjs
-          node tests/production_box3d_bundle_contract_test.mjs --input-only /tmp/upstream-game.meta.json
-          test "$(wc -c < /tmp/upstream-game.bundle.mjs)" -gt 1000000
+          em++ sim/Arondight45_DroneFC_SIL_WASM.cpp -std=c++17 -O3 \
+            -s MODULARIZE=1 -s EXPORT_ES6=1 -s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
+            -s FILESYSTEM=0 -s SINGLE_FILE=1 -s ALLOW_MEMORY_GROWTH=0 \
+            -s INITIAL_MEMORY=16777216 \
+            -s 'EXPORTED_RUNTIME_METHODS=["HEAPU8"]' \
+            -s 'EXPORTED_FUNCTIONS=["_fc_input_buffer","_fc_output_buffer","_fc_input_size","_fc_output_size","_fc_reset","_fc_process","_fc_protocol_version"]' \
+            -s ENVIRONMENT=node -o generated/flight_core_node.mjs
+          node tests/native_flight_controller_sil_test.mjs \
+            artifacts/box3d-upstream-wasm/box3d.inline.mjs generated/flight_core_node.mjs
+          node tests/native_game_runtime_box3d_test.mjs \
+            artifacts/box3d-upstream-wasm/box3d.inline.mjs generated/flight_core_node.mjs
+          node tests/native_foot_body_direction_test.mjs artifacts/box3d-upstream-wasm/box3d.inline.mjs
+          npm install --prefix /tmp/spawncity-native-bundle --ignore-scripts --no-audit --no-fund \
+            esbuild@0.25.8
+          ln -s /tmp/spawncity-native-bundle/node_modules node_modules
+          ./node_modules/.bin/esbuild sim/native_world_presenter.mjs --bundle --format=esm --platform=browser --target=es2022 --outfile=/tmp/native-world.bundle.mjs
+          ./node_modules/.bin/esbuild sim/native_flight_physics.mjs --bundle --format=esm --platform=browser --target=es2022 --outfile=/tmp/native-flight.bundle.mjs
+          ./node_modules/.bin/esbuild sim/native_game_runtime.mjs --bundle --format=esm --platform=browser --target=es2022 --outfile=/tmp/native-game.bundle.mjs
+          # The exact pinned Box3D upstream + real Flight Core are compiled
+          # INTO ONE standalone browser entry; no CDN/fallback/second GPU.
+          ./node_modules/.bin/esbuild sim/native_game_bootstrap.mjs --bundle --format=esm --platform=browser --target=es2022 --minify \
+            --alias:box3d.js/dist/box3d.inline.mjs="$GITHUB_WORKSPACE/artifacts/box3d-upstream-wasm/box3d.inline.mjs" \
+            --outfile=/tmp/native-game-browser.bundle.mjs
+          mkdir -p artifacts/native-browser
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          page=Path("native_game.html").read_text()
+          marker='<script type="module" src="./sim/native_game_bootstrap.mjs"></script>'
+          assert marker in page
+          code=Path("/tmp/native-game-browser.bundle.mjs").read_text().replace("</script","<\\/script")
+          page=page.replace(marker,'<script type="module">\n'+code+'\n</script>')
+          page='<!-- SPAWNCITY_NATIVE_CANDIDATE_SHA:'+os.environ.get("GITHUB_SHA","CI")+' -->\n'+page
+          Path("artifacts/native-browser/native_game.html").write_text(page)
+          PY
+          node tests/native_bootstrap_contract_test.mjs artifacts/native-browser/native_game.html
+          if grep -E 'three/src/|three\.module\.js|THREE\.WebGLRenderer' /tmp/native-world.bundle.mjs /tmp/native-flight.bundle.mjs /tmp/native-game.bundle.mjs; then
+            echo "Forbidden legacy Three renderer in native bundles" >&2
+            exit 1
+          fi
+          node tests/native_flight_physics_parity_test.mjs
           rm node_modules
           rm -rf generated
+      - name: Upload self-contained native browser game for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-native-webgl2-browser
+          path: artifacts/native-browser/native_game.html
+          retention-days: 14
       - name: Upload compiled native + inline WASM and SHA-256 provenance
         if: always()
         uses: actions/upload-artifact@v4
@@ -84,3 +156,32 @@ jobs:
           path: artifacts/box3d-upstream-wasm/
           if-no-files-found: warn
           retention-days: 30
+
+  native-browser-smoke:
+    needs: build-latest-box3d
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch exact self-contained original-WASM native game
+        uses: actions/download-artifact@v4
+        with:
+          name: spawncity-native-webgl2-browser
+          path: artifacts/native-browser
+      - name: Install pinned headless Chromium driver
+        run: |
+          npm install --prefix /tmp/spawncity-native-browser --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0 pngjs@7.0.0
+          ln -s /tmp/spawncity-native-browser/node_modules node_modules
+      - name: Boot real compiled native game and exercise WebGL2, modes and mobile DPR
+        run: |
+          set -euo pipefail
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_full_browser_smoke.mjs artifacts/native-browser/native_game.html
+      - name: Retain Chromium functional evidence (not physical-device GPU metrics)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawncity-native-browser-smoke
+          path: artifacts/native-browser-smoke/
+          if-no-files-found: ignore
+          retention-days: 14

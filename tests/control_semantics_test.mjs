@@ -12,7 +12,7 @@ import {
 // The unrelated Kurzlernen/Editor3D workflows are intentionally not copied.
 assert.deepEqual(
   readdirSync(".github/workflows").sort(),
-  ["box3d-upstream-wasm.yml","deploy.yml","esp32-hil.yml","gameplay-regression.yml","player-suggestions.yml","pr-checks.yml","published-browser-regressions.yml","renderer-compare.yml"],
+  ["box3d-upstream-wasm.yml","deploy.yml","esp32-hil.yml","gameplay-regression.yml","native-preview-publish.yml","player-suggestions.yml","pr-checks.yml","published-browser-regressions.yml","renderer-compare.yml"],
   "SpawnCity's game Actions must be complete and contain no unrelated legacy workflows",
 );
 
@@ -21,6 +21,15 @@ for(const name of ["gameplay-regression.yml","esp32-hil.yml","published-browser-
   assert.match(ci,/contents: read/);
   assert.doesNotMatch(ci,/(contents|pages|issues): write/,"game verification must have read-only permissions");
 }
+// Only the isolated, passing-main native test publisher may write to Pages.
+// All physics, safety, game QA and actual production checks remain read-only.
+const previewPublisher=readFileSync(".github/workflows/native-preview-publish.yml","utf8");
+assert.match(previewPublisher,/workflow_run:/);
+assert.match(previewPublisher,/workflow_run.conclusion\s*==\s*'success'/);
+assert.match(previewPublisher,/workflow_run.head_branch\s*==\s*'main'/);
+assert.match(previewPublisher,/workflow_run.event\s*==\s*'push'/);
+assert.match(previewPublisher,/native\/index\.html native\/build\.json/);
+assert.doesNotMatch(previewPublisher,/git push --force|git push -f\b/);
 const deploy=readFileSync(".github/workflows/deploy.yml","utf8");
 assert.doesNotMatch(deploy,/continue-on-error:\s*true\s*\n\s*env:\s*\n\s*GH_SHA/, "live release checks must not hide failures");
 

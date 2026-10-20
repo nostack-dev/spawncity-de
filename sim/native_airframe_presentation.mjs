@@ -108,9 +108,13 @@ export class NativeAirframePresentation{
      horizontal.map(v=>v/mag):this.cameraRig.initialized?[...this.cameraRig.heading]:[-1,0,0];
    const rig=this.cameraRig.update({position,velocity,heading,mode,dt});
    const third=mode==="third",scale=thirdDistanceM/Math.hypot(2.25,1.05);
+   // Keep the original real-physics stabilized anchor. A camera pressed
+   // against the flat Box3D ground stared only at a single olive pixel
+   // color, despite 21 GPU draw calls and green browser tests. Compose the
+   // chase shot above the physical aircraft and include the horizon.
    const frame=externalCameraFrame(rig.anchor,rig.heading,third?
-     {back:2.25*scale,up:1.05*scale,lookAhead:.55,lookUp:.18}:
-     {back:1.65,up:.78,lookAhead:.38,lookUp:.10});
+     {back:3.2*scale,up:1.40*scale,lookAhead:.55,lookUp:.35}:
+     {back:2.65,up:1.36,lookAhead:.38,lookUp:.32});
    eye=frame.position;target=frame.target;
    fov=third?clamp(62*fpvFovDeg/105,35,100):clamp(52*fpvFovDeg/105,30,90);
    near=.06;

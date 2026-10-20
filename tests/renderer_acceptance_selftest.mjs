@@ -34,5 +34,7 @@ for(const mut of [
 const audit=auditRuntime();
 assert.equal(audit.nativeOnly,false,"existing Three-dependent main game must NOT be incorrectly released as Three-free");
 assert.ok(audit.threeImportCount>20&&audit.threeCalls>200,"runtime source inspection should cover whole sim directory");
-assert.ok(audit.threeRendererConstructors>=1&&audit.bundlesThree,"detect actual production renderer dependency and bundler");
+assert.ok(audit.threeRendererConstructors>=1,"detect the remaining legacy production WebGLRenderer");
+assert.equal(audit.bundlesThree,false,"deleted production dependency must stay deleted");
+assert.equal(audit.nativeOnly,false,"removing npm Three without porting imports never qualifies as a native release");
 console.log("Native renderer acceptance selftest passed: static legacy engine and reduced-visual/GPU fake wins rejected.");

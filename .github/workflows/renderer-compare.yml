@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/renderer-compare.yml"
+      - ".github/workflows/deploy.yml"
+      - "tests/no_three_production_dependency_test.mjs"
       - "sim/native_*.mjs"
       - "tests/native_*.mjs"
       - "tests/renderer_*.mjs"
@@ -66,6 +68,19 @@ jobs:
           node tests/native_point_lights_test.mjs
           node tests/native_airframe_presentation_test.mjs
           node tests/native_gameplay_camera_test.mjs
+          node tests/native_building_collision_bridge_test.mjs
+          node tests/native_spawn_clearance_test.mjs
+          node tests/native_camera_occlusion_test.mjs
+          node tests/native_game_input_test.mjs
+          node tests/native_launch_pad_test.mjs
+          node tests/native_osm_source_test.mjs
+          python3 tests/native_osm_snapshot_builder_test.py
+          node tests/native_bootstrap_contract_test.mjs
+          node tests/native_preview_release_contract_test.mjs
+          node tests/native_scene_graph_test.mjs
+          node tests/native_scene_graph_scaling_test.mjs
+          node tests/native_effects_test.mjs
+          node tests/native_combat_events_test.mjs
           node tests/native_gameplay_visibility_test.mjs
           node tests/native_rigid_visuals_test.mjs
           node tests/native_world_physics_view_test.mjs
@@ -73,6 +88,8 @@ jobs:
           node tests/native_gameplay_targeting_test.mjs
           node tests/native_osm_world_integration_test.mjs
           node tests/native_flight_pose_view_test.mjs
+          node tests/native_flight_physics_parity_test.mjs
+          node tests/native_flight_control_wasm_test.mjs
           node tests/native_road_geometry_test.mjs
           node tests/native_road_stream_test.mjs
           node tests/native_pedestrian_visuals_test.mjs
@@ -112,6 +129,28 @@ jobs:
             artifacts/native-scene/
             artifacts/native-world/
           if-no-files-found: warn
+  native-published-geometry-edges:
+    name: Reject blank real-world native screenshots
+    # Tests the current public candidate's actually painted real OSM scene.
+    # This job does NOT authorize the separate full-production cutover.
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium PNG pixel analysis
+        run: |
+          npm install --prefix /tmp/spawncity-native-edge-qa --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0 pngjs@7.0.0
+          ln -s /tmp/spawncity-native-edge-qa/node_modules node_modules
+      - name: Prove visible geometry in the four live native preview modes
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          PUBLIC_ORIGIN="$(node tools/public_site.mjs origin)"
+          CHROME_BIN="$CHROME_BIN" node tests/native_preview_public_osm_test.mjs "${PUBLIC_ORIGIN}/native/"
+
   full-native-release-gate:
     # Intentionally FAILS until ALL in-game Three dependencies have been
     # replaced and desktop, Android Chrome and iPhone Safari device GPU
@@ -127,6 +166,7 @@ jobs:
       - name: Check strict renderer gate logic
         run: |
           node tests/renderer_exclusive_release_contract_test.mjs
+          node tests/no_three_production_dependency_test.mjs
           node tests/renderer_acceptance_selftest.mjs
       - name: Require a full no-Three native engine with 15 hardware scenarios
         run: node tests/renderer_acceptance_gate.mjs --gate

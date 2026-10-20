@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import {nativeLaunchPadMesh,NativeLaunchPad} from "../sim/native_launch_pad.mjs";
+const sample=(x,y)=>.4+.05*x-.015*y;
+const p=nativeLaunchPadMesh({center:[0,0],heightAt:sample,segments:24});
+assert.ok(p.triangles>=200,"startup marker needs real scene contrast at ground level");
+assert.equal(p.positions.length,p.normals.length);
+assert.equal(p.positions.length,p.colors.length);
+assert.ok(p.positions.every(Number.isFinite));
+assert.ok(p.colors.every(Number.isFinite));
+assert.ok(p.colors.some(c=>c===1),"physical launch marker has visible bright surface paint");
+assert.equal(p.physicalGroundM,.4);
+for(let i=0;i<p.positions.length;i+=3){
+ const x=p.positions[i],y=p.positions[i+1],z=p.positions[i+2];
+ assert.ok(Math.abs(z-(sample(x,y)+.025))<1e-5,"marker must follow unchanged Box3D ground elevation");
+ assert.equal(p.normals[i+2],1);
+}
+assert.throws(()=>nativeLaunchPadMesh({center:[Infinity,0],heightAt:sample}),/physical terrain/);
+assert.throws(()=>nativeLaunchPadMesh({heightAt:()=>NaN}),/physical launch terrain/);
+let uploads=[],removed=[];
+const renderer={upsert(id,mesh){uploads.push({id,mesh});},remove(id){removed.push(id);}};
+const pad=new NativeLaunchPad(renderer,{heightAt:sample});
+assert.equal(uploads.length,1);
+assert.equal(uploads[0].id,"game/physical-launch-pad");
+assert.equal(uploads[0].mesh.material.unlit,true);
+assert.equal(uploads[0].mesh.material.castShadow,false);
+assert.ok(uploads[0].mesh.positions.length>600);
+assert.ok(pad.refresh());
+assert.equal(uploads.length,2);
+pad.dispose();assert.deepEqual(removed,["game/physical-launch-pad"]);
+pad.dispose();assert.equal(removed.length,1,"GPU landmark cannot leak across PWA resets");
+console.log("native start marker: visible ground-scale cue, authoritative terrain Z and exact GPU cleanup");

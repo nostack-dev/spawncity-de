@@ -50,6 +50,13 @@ const world=new NativeWorldPresenter(canvas,{
  cityOptions:{buildingsPerStep:2,chunkSize:100}
 });
 world.setCamera({eye:[33,-75,40],target:[0,0,3],fov:1,near:.1,far:700});
+world.emitEffect({kind:"blast",position:[1,-10,8],startMs:performance.now(),lifeMs:9000,size:2});
+const originalEffects=world.effects.active.length;
+window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{weapon:"smg",intensity:.5,source:"foot-screen",mode:"foot"}}));
+window.dispatchEvent(new CustomEvent("arondight:foot-tracer",{detail:{start:[0,-20,10],end:[0,4,10],weapon:"smg",hand:0}}));
+window.dispatchEvent(new CustomEvent("arondight:world-explosion",{detail:{position:[4,1,3],radiusM:8,maxDamage:100,kind:"missile"}}));
+if(!world.combatEvents.connected||world.combatEvents.received!==3||world.effects.active.length!==originalEffects+4)
+ throw Error("real SpawnCity combat events did not reach sole native particle renderer");
 const ring=(x,y)=>[[x,y],[x+8,y],[x+8,y+8],[x,y+8]];
 const buildings=[];
 for(let i=0;i<16;i++)buildings.push({key:"building-"+i,center:[-34+(i%4)*19,10+Math.floor(i/4)*19],
@@ -70,6 +77,7 @@ const first=world.draw(performance.now()+300);
 if(first.pointLights!==1||world.renderer.pointLights.count!==1)
  throw Error("dynamic point light did not reach sole WebGL2 draw");
 const firstDraws=first.gpu.drawCalls;
+if(!world.renderer.meshes.has("fx/particles")||first.effects?.active<3)throw Error("native GPU impact effects missing");
 const stableSun=world.draw(performance.now()+325);
 if(stableSun.pointLights!==0||world.renderer.pointLights.count!==0)
  throw Error("stale explosion light leaked into next physics frame");
@@ -153,8 +161,21 @@ if(droneFrame.gameMode!=="drone"||!world.renderer.meshes.get("flight/airframe").
  throw Error("native drone FPV did not restore the same GPU airframe camera");
 if(world.renderer.gl!==initialNativeContext)throw Error("game modes silently created another GL context");
 world.gameplayState=null;
+world.renderer.upsert("proof/seat",{positions:new Float32Array([0,0,0,1,0,0,0,1,0]),material:{color:[.9,.5,.15,1],doubleSided:true}});
+world.sceneGraph.add("proof-car",{position:[9,7,1]});
+world.sceneGraph.add("proof-cockpit",{parent:"proof-car",meshId:"proof/seat",position:[1,0,1]});
 world.setCamera({eye:[33,-75,40],target:[0,0,3],fov:1,near:.1,far:700});
 world.draw(performance.now()+437);
+const proofSeat=world.renderer.meshes.get("proof/seat");
+if(!proofSeat||Math.abs(proofSeat.data.transforms[12]-10)>1e-5||Math.abs(proofSeat.data.transforms[14]-2)>1e-5)
+ throw Error("native scene graph child transform incorrect");
+world.sceneGraph.setTransform("proof-car",{position:[13,7,1]});
+world.draw(performance.now()+438);
+if(Math.abs(proofSeat.data.transforms[12]-14)>1e-5)throw Error("native GPU attachment failed moving with car");
+world.sceneGraph.remove("proof-car");
+if(world.renderer.meshes.has("proof/seat")||world.sceneGraph.meshOwners.size!==0)
+ throw Error("native hierarchy despawn leaked GPU buffers");
+world.draw(performance.now()+439);
 const gl=world.renderer.gl;
 gl.finish();
 const pixels=new Uint8Array(canvas.width*canvas.height*4);
@@ -189,5 +210,6 @@ globalThis.__nativeWorldProof={
  context:String(gl.getParameter(gl.RENDERER))
 };
 world.dispose();
+if(world.combatEvents.connected||!world.combatEvents.disposed)throw Error("native combat event listener leak");
 
 })().catch(error=>{globalThis.__nativeWorldProof={error:String(error?.stack||error)};});

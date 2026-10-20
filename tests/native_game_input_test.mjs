@@ -1,0 +1,47 @@
+import assert from "node:assert/strict";
+import {resolveNativeInput,NativeGameInput} from "../sim/native_game_input.mjs";
+let p=resolveNativeInput({mode:"foot",keys:new Set(["KeyW","KeyD","ShiftLeft","KeyE"]),clearance:2,yaw:0,pitch:0});
+assert.equal(p.controls.foot.forward,1);assert.equal(p.controls.foot.strafe,1);
+assert.equal(p.controls.foot.sprint,true);assert.equal(p.controls.car.steer,1);
+assert.ok(p.clearance>2);assert.equal(p.controls.arm,false);
+const pad={mapping:"standard",connected:true,axes:[-.6,.5,.4,-.5],buttons:Array.from({length:17},()=>({value:0}))};
+pad.buttons[7].value=1;pad.buttons[0].value=1;
+p=resolveNativeInput({mode:"drone",gamepad:pad});
+assert.ok(p.controls.roll<0&&p.controls.pitch>0&&p.controls.yaw>0);
+assert.equal(p.controls.foot.jump,true);assert.equal(p.controls.car.handbrake,true);
+assert.ok(p.controls.throttle>0.9);
+p=resolveNativeInput({mode:"foot",look:[60,-40]});
+assert.ok(p.yaw>.12&&p.pitch>.09);
+assert.equal(resolveNativeInput({look:[0,1e5]}).pitch,-1.42);
+assert.equal(resolveNativeInput({look:[0,-1e5]}).pitch,1.42);
+const win=new EventTarget(),doc=new EventTarget(),canvas=new EventTarget();
+canvas.getBoundingClientRect=()=>({left:0,top:0,width:500,height:400});
+canvas.setPointerCapture=()=>{};
+doc.hidden=false;doc.pointerLockElement=null;
+const events=[],runtime={mode:"drone",setMode(mode){this.mode=mode;events.push(["mode",mode]);},
+ setControls(c){this.controls=c;events.push(["controls",c]);},world:{flightCameraMode:"follow",
+ setFlightCameraMode(mode){this.flightCameraMode=mode;}}};
+const adapter=new NativeGameInput(runtime,{canvas,win,doc,navigator:{getGamepads:()=>[]}}); 
+function key(code,type="keydown"){const e=new Event(type,{cancelable:true});Object.defineProperty(e,"code",{value:code});win.dispatchEvent(e);return e;}
+assert.equal(key("Digit2").defaultPrevented,true);assert.equal(runtime.mode,"foot");
+key("KeyW");key("ShiftLeft");key("KeyR");key("KeyF");
+assert.equal(runtime.world.flightCameraMode,"fpv");
+p=adapter.sample();
+assert.equal(p.controls.arm,true);assert.equal(p.controls.foot.forward,1);
+assert.equal(p.controls.foot.sprint,true);
+doc.pointerLockElement=canvas;doc.dispatchEvent(new Event("pointerlockchange"));
+const move=new Event("mousemove");Object.defineProperty(move,"movementX",{value:20});
+Object.defineProperty(move,"movementY",{value:-10});win.dispatchEvent(move);
+p=adapter.sample();assert.ok(p.controls.foot.yaw>.04&&p.controls.foot.pitch>.02);
+win.dispatchEvent(new Event("blur"));p=adapter.sample();
+assert.equal(p.controls.foot.forward,0);assert.equal(p.controls.foot.sprint,false);
+const down=new Event("pointerdown",{cancelable:true});Object.assign(down,{pointerId:2,pointerType:"touch",clientX:100,clientY:100});
+canvas.dispatchEvent(down);
+const drag=new Event("pointermove",{cancelable:true});Object.assign(drag,{pointerId:2,pointerType:"touch",clientX:148,clientY:52});
+canvas.dispatchEvent(drag);p=adapter.sample();
+assert.ok(p.controls.foot.strafe>0.9&&p.controls.foot.forward>0.9);
+const up=new Event("pointerup");Object.assign(up,{pointerId:2});canvas.dispatchEvent(up);
+assert.equal(adapter.sample().controls.foot.strafe,0);
+adapter.dispose();assert.equal(adapter.sample(),null);
+const before=events.length;key("Digit3");assert.equal(events.length,before,"disposal removes all input listeners");
+console.log("native keyboard, responsive touchpad pointerlock, touch sticks and real Xbox axes use sole input controller");

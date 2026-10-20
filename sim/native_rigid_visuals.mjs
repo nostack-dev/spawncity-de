@@ -55,10 +55,11 @@ function validPose(pose){
  return pose&&finite3(pose.position)&&finite4(pose.rotation);
 }
 export class NativeRigidVisuals{
- constructor(renderer,physics,{maxBodies=1500}={}){
+ constructor(renderer,physics,{maxBodies=1500,hiddenBodyIds=[]}={}){
   if(!renderer?.upsert||!renderer?.updateInstances||!renderer?.remove||!physics?.bodies||!physics?.renderPose)
    throw Error("native rigid visuals require native renderer and authoritative Box3D bodies/poses");
-  this.renderer=renderer;this.physics=physics;this.maxBodies=maxBodies;this.active=new Set();this.instanceIds=new Map();this.disposed=false;
+  this.renderer=renderer;this.physics=physics;this.maxBodies=maxBodies;
+  this.hiddenBodyIds=new Set(Array.from(hiddenBodyIds,String));this.active=new Set();this.instanceIds=new Map();this.disposed=false;
   this.frame=0;this.snapshot={bodies:0,wheels:0,groups:0,skipped:0,triangles:0};
  }
  update(){
@@ -68,6 +69,10 @@ export class NativeRigidVisuals{
   const grouped=new Map(CATEGORIES.map(k=>[k,{transforms:[],tints:[],ids:[]}]));
   const wheels={transforms:[],tints:[],ids:[]};let count=0,skipped=0;
   for(const body of bodies.slice(0,this.maxBodies)){
+   // A first-person avatar is a real, authoritative Box3D collider, but
+   // rendering its torso *inside the local camera* hides the entire city.
+   // Skip only its visual mesh; never skip or replace its physics body.
+   if(this.hiddenBodyIds.has(String(body.id))){skipped++;continue;}
    if(!saneExtents(body.halfExtents)){skipped++;continue;}
    const pose=this.physics.renderPose(body.id);
    if(!validPose(pose)){skipped++;continue;}
