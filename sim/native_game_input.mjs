@@ -203,6 +203,12 @@ export class NativeGameInput{
  }
  sampleMain(){
   this.syncModeClasses();
+  if(globalThis.__arondightPlayerDamageModel?.dead){
+   this.runtime.setControls({arm:false,gameMode:true,groundClearance:this.clearance,throttle:0,roll:0,pitch:0,yaw:0,bodyPitch:0,
+    foot:{forward:0,strafe:0,yaw:this.yaw,pitch:this.pitch,sprint:false,jump:false},
+    car:{pedal:0,steer:0,handbrake:true},jet:{lift:0,yawIn:0,pitchIn:0,rollIn:0,brake:1}});
+   return {mode:this.runtime.mode,dead:true};
+  }
   const now=typeof performance!=="undefined"?performance.now():0;
   const dt=this.lastMs?clamp((now-this.lastMs)/1000,1/240,.1):1/60;
   this.lastMs=now;

@@ -3,6 +3,7 @@
 // Do not put this in the live Three pipeline until the exclusive native release
 // gate has passed for all five game modes on actual devices.
 import {fpsVerticalFovDegForAspect} from "./camera_pitch_contract.mjs";
+import {firstPersonDeathFall} from "./player_vitals_logic.mjs";
 import {rotateByQuaternion} from "./native_airframe_presentation.mjs";
 import {unobstructedNativeChaseEye} from "./native_camera_occlusion.mjs";
 export const NATIVE_GAMEPLAY_CAMERA_VERSION="box3d-mode-cameras-v1";
@@ -49,8 +50,13 @@ export function nativeGameplayCamera(state,{aspect=16/9,now=performance.now()}={
    throw Error("foot camera requires real __arondightWalkMode state");
   const eye=xyz(w.position);
   const head=state.look||{};
-  const yaw=w.yaw+finite(head.yawDeg,0)*RAD;
-  const pitch=clamp(w.pitch+finite(head.pitchDeg,0)*RAD,-1.45,1.45);
+  let yaw=w.yaw+finite(head.yawDeg,0)*RAD;
+  let pitch=clamp(w.pitch+finite(head.pitchDeg,0)*RAD,-1.45,1.45);
+  const fall=globalThis.__arondightPlayerDamageModel;
+  if(fall?.dead){
+   const down=firstPersonDeathFall(now-(Number(fall.deathStartedAt)||now));
+   eye[2]+=down.eyeHeightM-1.68;pitch=down.pitchOffsetRad;
+  }
   const forward=[Math.sin(yaw)*Math.cos(pitch),Math.cos(yaw)*Math.cos(pitch),Math.sin(pitch)];
   // Existing FPS contract specifies H-FOV=90 deg, converted for viewport.
   const vertical=fpsVerticalFovDegForAspect(aspect);

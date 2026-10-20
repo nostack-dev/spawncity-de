@@ -5,6 +5,8 @@ import Box3DFactory from "box3d.js/dist/box3d.inline.mjs";
 import FlightCoreFactory from "../generated/flight_core.mjs";
 import {NativeGameRuntime,NativeGameInput,fetchNativeOsm,NATIVE_DEMO_CITY} from "./native_engine.mjs";
 import {installNativeWeapons} from "./native_weapons.mjs";
+import {syncNativeViewmodel} from "./native_viewmodels.mjs";
+import {installNativeVitals} from "./native_vitals.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
@@ -114,8 +116,9 @@ async function launch(){
   });
   input=new NativeGameInput(game,{canvas});
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});
+  const vitals=installNativeVitals(game);
   game.beforeFrame=()=>input.sample();
-  game.afterFrame=(frame,now)=>{weapons.tick(now);updateTelemetry(game,now);};
+  game.afterFrame=(frame,now)=>{weapons.tick(now);syncNativeViewmodel(game);vitals.sync(now);updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
    button.addEventListener("click",()=>{
     globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);

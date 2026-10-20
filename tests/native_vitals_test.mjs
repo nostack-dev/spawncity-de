@@ -1,0 +1,17 @@
+import assert from "node:assert/strict";
+import {installNativeVitals} from "../sim/native_vitals.mjs";
+const modes=[];
+const game={mode:"drone",setMode(m){this.mode=m;modes.push(m);}};
+const vitals=installNativeVitals(game);
+const before=globalThis.__arondightPlayerDamageModel.hp;
+globalThis.__arondightPlayerDamageModel.damage(50);
+assert.ok(globalThis.__arondightPlayerDamageModel.hp<before&&globalThis.__arondightPlayerDamageModel.hp>0);
+globalThis.__arondightPlayerDamageModel.damage(200);
+assert.equal(globalThis.__arondightPlayerDamageModel.dead,true);
+assert.equal(modes.at(-1),"foot");
+globalThis.__arondightRequestReset();
+assert.equal(globalThis.__arondightPlayerDamageModel.dead,false);
+assert.equal(globalThis.__arondightPlayerDamageModel.hp,100);
+globalThis.__arondightDroneDamageModel.damage(200);
+assert.equal(globalThis.__arondightDroneDamageModel.destroyed,true);
+console.log("native vitals use the live health formula, death and the drone cooldown");

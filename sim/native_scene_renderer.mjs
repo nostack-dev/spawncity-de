@@ -448,8 +448,9 @@ export class NativeSceneRenderer{
   }
   const planes=extractFrustumPlanes(camera);
   const meshes=[...this.meshes.values()].filter(m=>m.visible&&(m.data.skin||m.material.frustumCulled===false||sphereVisible(planes,m.worldBounds.center,m.worldBounds.radius)));
-  const opaque=meshes.filter(m=>m.material.alphaMode!=="blend");
-  const transparent=meshes.filter(m=>m.material.alphaMode==="blend");
+  const opaque=meshes.filter(m=>m.material.alphaMode!=="blend"&&m.material.viewmodel!==true);
+  const viewmodel=meshes.filter(m=>m.material.viewmodel===true);
+  const transparent=meshes.filter(m=>m.material.alphaMode==="blend"&&m.material.viewmodel!==true);
   transparent.sort((a,b)=>{
    const x=a.data.transforms,y=b.data.transforms;
    return Math.hypot(y[12]-this.eye[0],y[13]-this.eye[1],y[14]-this.eye[2])-Math.hypot(x[12]-this.eye[0],x[13]-this.eye[1],x[14]-this.eye[2]);
@@ -470,6 +471,9 @@ export class NativeSceneRenderer{
    stats.drawCalls++;stats.instances+=d.count;stats.triangles+=(d.indices?d.indices.length:d.p.length/3)/3*d.count;
   };
   for(const m of opaque)draw(m);
+  // Same contract as viewmodel_pass.mjs: the weapon is drawn after a depth
+  // clear, so a wall against the camera cannot cut the gun.
+  if(viewmodel.length){gl.clear(gl.DEPTH_BUFFER_BIT);for(const m of viewmodel)draw(m);}
   if(transparent.length){gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);}
   for(const m of transparent)draw(m);
   gl.depthMask(true);gl.disable(gl.BLEND);gl.bindVertexArray(null);
