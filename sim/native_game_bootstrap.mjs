@@ -11,6 +11,8 @@ import {openQuitConfirm} from "./quit_confirm.mjs";
 import "./neon_ui_theme.mjs";
 import "./immersive_soundscape.mjs";
 import "./native_fire_audio.mjs";
+import "./sniper_scope.mjs";
+import "./native_ads.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
