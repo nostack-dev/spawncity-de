@@ -3,8 +3,10 @@ import {readFileSync} from "node:fs";
 import {auditRuntime} from "./renderer_acceptance_gate.mjs";
 
 // Three.js was explicitly deleted from the production dependency list.
-// Remaining legacy game source must prevent deployment until it is converted.
-// Never hide a missing import with an alias, fallback CDN, or a silent shim.
+// The legacy game may still publish. --gate fails closed only for a claimed
+// native cutover that lacks the 15 real-device proofs, or if Three.js is
+// bundled again. Never hide a missing import with an alias, fallback CDN,
+// or a silent shim.
 const deploy=readFileSync(".github/workflows/deploy.yml","utf8");
 const guard="node tests/renderer_acceptance_gate.mjs --gate";
 const original="Compile and validate exact Erin Catto Box3D for production";
@@ -24,5 +26,5 @@ console.log(JSON.stringify({
  productionThreeDependency:"deleted",
  remainingLegacyImports:audit.threeImportCount,
  nativeEngineReady:audit.nativeOnly,
- releasePolicy:"blocked-until-native-code-and-15-real-device-proofs"
+ releasePolicy:"legacy-may-publish; native-cutover-blocked-until-15-real-device-proofs"
 }));

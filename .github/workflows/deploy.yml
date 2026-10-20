@@ -41,10 +41,10 @@ jobs:
           node tests/no_three_production_dependency_test.mjs
 
       - name: Enforce exclusive native renderer before any expensive build or deploy
-        # Three.js has been explicitly deleted from production dependencies.
-        # The original game still imports Three.js. Fail before Emscripten,
-        # bundling, or gh-pages upload until the entire native engine and real
-        # hardware acceptance are ready. Never ship a broken half-conversion.
+        # The legacy game may publish. --gate fails before Emscripten, bundling
+        # or gh-pages upload when a native cutover is claimed without the 15
+        # real-device proofs, or if the deleted Three.js package returns.
+        # Never ship a hybrid renderer or a half-converted native game.
         run: node tests/renderer_acceptance_gate.mjs --gate
 
       - name: Check SpawnCity site config

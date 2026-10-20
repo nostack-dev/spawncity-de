@@ -1,7 +1,7 @@
 // Sealed SpawnCity engine. Gameplay migration imports ONLY this module.
 // The live Three.js game stays outside this graph until each system is ported.
-// This seal is not the production cutover: renderer_acceptance_gate.mjs --gate
-// still refuses to publish a half-migrated game.
+// This seal is not the production cutover. --gate lets the legacy game publish
+// and rejects a native cutover until the 15 real-device proofs exist.
 export const NATIVE_ENGINE_VERSION="spawncity-native-engine-v1";
 
 export {NativeSceneRenderer,NATIVE_SCENE_RENDERER_VERSION} from "./native_scene_renderer.mjs";

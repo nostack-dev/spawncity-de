@@ -23,9 +23,10 @@ That seal is the engine. It is not the game cutover. The live
 so they can be ported one system at a time onto the exports of `sim/native_engine.mjs`
 (renderer, scene graph, camera, pick, lights, instancing, particles, loop).
 Do not add a Three shim, a second canvas, or a `?render=` fallback to make a
-partial port look shipped. `renderer_acceptance_gate.mjs --gate` remains the
-only production release, and it stays red until those modules are gone and
-the 15 real-device comparisons exist.
+partial port look shipped. `renderer_acceptance_gate.mjs --gate` allows this
+legacy game to publish. It fails only when that game has stopped importing
+Three and a native cutover is claimed without the 15 real-device comparisons,
+or if the Three.js package is bundled again.
 
 ## Historical implementation log
 
