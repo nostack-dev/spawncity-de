@@ -4,6 +4,7 @@
 import Box3DFactory from "box3d.js/dist/box3d.inline.mjs";
 import FlightCoreFactory from "../generated/flight_core.mjs";
 import {NativeGameRuntime,NativeGameInput,fetchNativeOsm,NATIVE_DEMO_CITY} from "./native_engine.mjs";
+import {installNativeWeapons} from "./native_weapons.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
@@ -31,9 +32,9 @@ function updateTelemetry(game,now){
  const pos=actor?.position??game.flight.position();
  const velocity=actor?.velocity??game.flight.linear();
  const spd=Math.hypot(...velocity),gpu=game.lastDraw?.gpu;
- telemetry.textContent=game.mode.toUpperCase()+" · "+friendly(spd)+" m/s · "+
-  "Z "+friendly(pos[2])+" m · "+game.simulatedTicks+" ticks · "+game.rigidSteps+" rigid · "+
-  (gpu?.drawCalls??"—")+" draws · backlog "+friendly(game.backlogMs)+" ms · dropped "+friendly(game.discontinuityMs)+" ms";
+ telemetry.textContent=game.mode.toUpperCase()+" · "+(session?.weapons?.weapon||"")+" · "+
+  friendly(spd)+" m/s · Z "+friendly(pos[2])+" m · "+(session?.weapons?.fps??"—")+" fps · "+
+  (gpu?.drawCalls??"—")+" draws · backlog "+friendly(game.backlogMs)+" ms";
  setModePressed(game.mode);
  const arm=$("armButton");
  if(arm&&session?.input)arm.setAttribute("aria-pressed",String(session.input.arm));
@@ -108,12 +109,20 @@ async function launch(){
   canvas.tabIndex=0;viewport.append(canvas);
   report("Initializing one native GPU and original Flight Core…");
   game=new NativeGameRuntime(canvas,{
-   b3,flightCoreFactory:FlightCoreFactory,
+   b3,flightCoreFactory:FlightCoreFactory,frameBudgetMs:4,
    onError:error=>{console.error("native game",error);report("Native engine halted: "+error.message,true);}
   });
   input=new NativeGameInput(game,{canvas});
+  const weapons=installNativeWeapons(game,{armed:()=>input.arm});
   game.beforeFrame=()=>input.sample();
-  game.afterFrame=(frame,now)=>updateTelemetry(game,now);
+  game.afterFrame=(frame,now)=>{weapons.tick(now);updateTelemetry(game,now);};
+  for(const button of document.querySelectorAll("[data-drone-weapon]")){
+   button.addEventListener("click",()=>{
+    globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);
+    for(const node of document.querySelectorAll("[data-drone-weapon]"))
+     node.setAttribute("aria-pressed",String(node===button));
+   });
+  }
   for(const node of document.querySelectorAll("[data-mode]")){
    node.addEventListener("click",()=>{
     try{game.setMode(node.dataset.mode);input.sample();setModePressed(game.mode);}
@@ -142,7 +151,7 @@ async function launch(){
   });
   await game.start();
   const worldSource=$("worldSource")?.value==="gps"?"gps":"demo";
-  session={game,input,canvas,worldSource};
+  session={game,input,canvas,worldSource,weapons};
   // Chromium-only diagnostic snapshot for *rendered* scene validation.
   // Nothing is exposed to users; test observations come from actual
   // Box3D actors and WebGL2 draw state, never from fabricated fixtures.
@@ -198,5 +207,5 @@ document.addEventListener("visibilitychange",()=>{
 window.addEventListener("pagehide",()=>{
  activeOsm?.abort();osmEpoch++;
  if(!session)return;
- const {game,input}=session;session=null;input.dispose();void game.dispose();
+ const {game,input,weapons}=session;session=null;weapons?.dispose();input.dispose();void game.dispose();
 });

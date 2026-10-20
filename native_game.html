@@ -37,7 +37,12 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
 #osmAttribution{position:fixed;bottom:max(5px,env(safe-area-inset-bottom));left:8px;
  z-index:4;font:10px system-ui,sans-serif;color:#d3e4f6;text-decoration:none;
  text-shadow:0 1px 4px #001a;max-width:180px}
-body.desktop-input #help{display:none}
+#cross{position:fixed;left:50%;top:50%;width:14px;height:14px;transform:translate(-50%,-50%);pointer-events:none;z-index:7}
+#cross::before,#cross::after{content:"";position:absolute;background:#ffffffd0}
+#cross::before{left:6px;top:0;width:2px;height:14px}#cross::after{left:0;top:6px;width:14px;height:2px}
+#weaponBar{display:flex;gap:4px}
+#weaponBar button[aria-pressed="true"]{background:#214a68;border-color:#69caff}
+body.on-foot-mode #weaponBar,body.player-driving #weaponBar,body.jet-mode #weaponBar{display:none}
 @media(pointer:coarse){#help{bottom:95px;white-space:normal;width:85vw}
 #toolbar{top:max(8px,env(safe-area-inset-top));bottom:auto;padding:7px;gap:4px}#toolbar button{padding:9px 10px;font-size:11px}#hud{font-size:10px}}
 @media(max-width:370px){#toolbar button{padding:8px 6px}#welcome{padding:16px}}
@@ -45,10 +50,16 @@ body.desktop-input #help{display:none}
 </head>
 <body>
 <div id="viewport" aria-label="Native WebGL2 game viewport"></div>
+<div id="cross" aria-hidden="true"></div>
 <div id="hud" aria-live="polite"><strong>SPAWNCITY</strong> <span>WEBGL2</span><div id="telemetry">READY</div><div id="status">Real Box3D · 1 kHz Flight Core</div></div>
 <div id="sticks" aria-hidden="true"><div class="joystick" id="stickLeft">MOVE</div><div class="joystick" id="stickRight">LOOK</div></div>
-<div id="help">WASD fly · SPACE / SHIFT up / down · MOUSE turn · RMB look · R arm · C camera · V on foot</div>
+<div id="help">WASD fly · MOUSE turn · LMB fire · R arm · 1–3 / Q weapon · V on foot</div>
 <div id="toolbar" role="toolbar" aria-label="Game mode and camera">
+<div id="weaponBar" role="group" aria-label="Weapon">
+<button type="button" data-drone-weapon="gun">GUN</button>
+<button type="button" data-drone-weapon="missile">ROCKETS</button>
+<button type="button" data-drone-weapon="guided">GUIDED</button>
+</div>
 <button data-mode="drone" aria-pressed="true">DRONE</button><button data-mode="foot" aria-pressed="false">FOOT</button>
 <button data-mode="car" aria-pressed="false">CAR</button><button data-mode="jet" aria-pressed="false">JET</button>
 <button id="armButton" aria-pressed="false">ARM</button><button id="cameraButton">CAMERA</button><button id="cityButton" title="Reload real OpenStreetMap city">CITY</button>
