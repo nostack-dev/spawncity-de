@@ -3,9 +3,10 @@
 // simulation or Three.js. Draw calls are per body class, not per vehicle.
 // This module does not render by itself: it populates NativeSceneRenderer.
 import {fromTRS} from "./native_render_math.mjs";
-export const NATIVE_RIGID_VISUALS_VERSION="box3d-native-instanced-visuals-v2-models";
+import {ORIGINAL_SEDAN,ORIGINAL_BUS,ORIGINAL_WHEEL} from "./native_original_vehicles.mjs";
+export const NATIVE_RIGID_VISUALS_VERSION="box3d-native-instanced-visuals-v3-original-car";
 const CATEGORIES=["car","bus","drone","jet","prop","human"];
-const RGB={car:[.64,.77,.9,1],bus:[.95,.73,.36,1],drone:[.25,.48,.63,1],jet:[1,1,1,1],prop:[.7,.69,.63,1],human:[1,1,1,1],wheel:[1,1,1,1]};
+const RGB={car:[1,1,1,1],bus:[1,1,1,1],drone:[.25,.48,.63,1],jet:[1,1,1,1],prop:[.7,.69,.63,1],human:[1,1,1,1],wheel:[1,1,1,1]};
 const NAME={car:"box3d/car",bus:"box3d/bus",drone:"box3d/drone",jet:"box3d/jet",prop:"box3d/prop",human:"box3d/human",wheel:"box3d/wheels"};
 const nextId=s=>String(s||"").toLowerCase();
 export function box3dVisualCategory(record){
@@ -104,8 +105,11 @@ function jetGeometry(){
  prism([-.55,-6.4,-.35],[.55,-5.2,.25],dark);
  return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c),uvs:new Float32Array(uv)};
 }
-const GEOMETRIES=Object.fromEntries(CATEGORIES.map(kind=>[kind,kind==="jet"?jetGeometry():cubeGeometry(kind)]));
-const WHEEL=cubeGeometry("wheel");
+const GEOMETRIES=Object.fromEntries(CATEGORIES.map(kind=>[kind,kind==="jet"?jetGeometry():kind==="car"?ORIGINAL_SEDAN:kind==="bus"?ORIGINAL_BUS:cubeGeometry(kind)]));
+const WHEEL=ORIGINAL_WHEEL;
+// Original meshes are already in metres. Stretching them to the collider
+// turned the sedan into a slab and left the cabin open.
+const REAL_SIZE=new Set(["car","bus","jet"]);
 const finite3=values=>Array.isArray(values)&&values.length===3&&values.every(Number.isFinite);
 const finite4=values=>Array.isArray(values)&&values.length===4&&values.every(Number.isFinite);
 const saneExtents=h=>finite3(h)&&h.every(v=>v>.01&&v<300);
@@ -139,7 +143,7 @@ export class NativeRigidVisuals{
    const half=body.halfExtents;
    // Cars and people fill their Box3D box. The jet mesh is already in metres
    // in the flight-model frame, so it is not stretched to the hull's stand-in box.
-   const visualScale=kind==="jet"?[1,1,1]:half.map(v=>2*v);
+   const visualScale=REAL_SIZE.has(kind)?[1,1,1]:half.map(v=>2*v);
    group.transforms.push(...fromTRS(pose.position,pose.rotation,visualScale));
    const color=RGB[kind];group.tints.push(...color);group.ids.push(String(body.id));
    count++;
@@ -147,8 +151,9 @@ export class NativeRigidVisuals{
     if(!validPose(wheel))continue;
     // Radius can be read from the current pose when provided; never move a
     // wheel independently of Box3D's authoritative joint/axle transforms.
-    const r=Math.max(.1,Math.min(1,Number(wheel.radius)||.32));
-    wheels.transforms.push(...fromTRS(wheel.position,wheel.rotation,[r*2,r*.55,r*2]));
+    const r=Math.max(.1,Math.min(1,Number(wheel.radius)||.34));
+    const s=r/.34;
+    wheels.transforms.push(...fromTRS(wheel.position,wheel.rotation,[s,s,s]));
     wheels.tints.push(...RGB.wheel);wheels.ids.push(String(body.id));
    }
   }
@@ -162,7 +167,7 @@ export class NativeRigidVisuals{
    }
    const instances={transforms:new Float32Array(batch.transforms),tints:new Float32Array(batch.tints)};
    if(this.active.has(name))this.renderer.updateInstances(name,instances);
-   else{this.renderer.upsert(name,{...geometry,instances,material:{doubleSided:true}});this.active.add(name);}
+   else{this.renderer.upsert(name,{...geometry,instances,material:{doubleSided:false,alphaMode:"opaque"}});this.active.add(name);}
    // Only commit a new collision-target index AFTER the GPU accepted that
    // exact instance order. A failed upload must not make shots hit another car.
    this.instanceIds.set(name,batch.ids);
