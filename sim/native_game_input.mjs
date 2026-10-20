@@ -7,7 +7,7 @@ import "./foot_touch_controller.mjs";
 import "./pad_actions.mjs";
 import {applyGameStick,stepGroundClearanceTarget,clearanceRateMps,clearanceLeadM,MIN_GAME_CLEARANCE_M,MAX_GAME_CLEARANCE_M} from "./control_semantics.mjs";
 import {shapeFirstPersonMove,loadFirstPersonControlSettings,firstPersonLookDelta,firstPersonLookAxes,firstPersonLookSensitivity,buildFirstPersonLookProfile} from "./first_person_control_settings.mjs";
-import {FPS_CONTROL_PROFILE,FPS_PITCH_LIMIT_RAD,wrapFpsAngleRad,fpsTouchLookDelta,shapeFpsStick,fpsStickVelocity} from "./fps_control_math.mjs";
+import {FPS_CONTROL_PROFILE,FPS_PITCH_LIMIT_RAD,wrapFpsAngleRad,fpsTouchLookDelta,shapeFpsStick,fpsStickVelocity,integrateFpsLookVelocity} from "./fps_control_math.mjs";
 import {findXboxGamepad,sampleXboxGamepad} from "./xbox_gamepad.mjs";
 import {loadVehicleControlSettings} from "./vehicle_control_settings.mjs";
 import {installNativeFlightTouch,readNativeFlightTouch} from "./native_flight_touch.mjs";
@@ -62,6 +62,7 @@ export class NativeGameInput{
   this.main=Boolean(globalThis.__arondightDesktopInput)&&this.win===globalThis.window;
   this.prevArm=false;this.prevCam=false;this.heightHeld=false;this.mouseStick={x:0,y:0};this.lastMs=0;
   this.touchMove={x:0,y:0};this.touchSprint=false;this.jumpHeld=false;this.stickOwner=null;this.vehicleFire=false;
+  this.lookVel={yaw:0,pitch:0};
   if(this.main){
    installNativeFlightTouch();
    import("./xbox_control_mode.mjs");
@@ -272,6 +273,20 @@ export class NativeGameInput{
    base.foot.forward=forward;base.foot.strafe=strafe;
    base.foot.sprint=held("ShiftLeft")||held("ShiftRight")||this.touchSprint||(pad?Math.max(0,Number(pad.buttons?.[10]?.value)||(pad.buttons?.[10]?.pressed?1:0))>.5:false);
    base.foot.jump=held("Space")||this.jumpHeld||(pad?Math.max(0,Number(pad.buttons?.[0]?.value)||(pad.buttons?.[0]?.pressed?1:0))>.5:false);
+   if(pad){
+    const axes=firstPersonLookAxes(pad.axes?.[2],pad.axes?.[3],fps);
+    const profile=buildFirstPersonLookProfile(FPS_CONTROL_PROFILE,fps);
+    const stickLook=shapeFpsStick(axes.x,axes.y,profile);
+    const desired=fpsStickVelocity(stickLook,profile);
+    const adsZ=Math.max(1,Number(globalThis.__arondightAds?.zoom)||1);
+    const sens=firstPersonLookSensitivity(fps);
+    desired.yaw*=sens.yaw/adsZ;desired.pitch*=sens.pitch/adsZ;
+    const yawStep=integrateFpsLookVelocity(this.lookVel.yaw,desired.yaw,dt);
+    const pitchStep=integrateFpsLookVelocity(this.lookVel.pitch,desired.pitch,dt);
+    this.lookVel.yaw=yawStep.velocity;this.lookVel.pitch=pitchStep.velocity;
+    this.yaw=wrapFpsAngleRad(this.yaw+yawStep.angleDelta);
+    this.pitch=clamp(this.pitch+pitchStep.angleDelta,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
+   }else this.lookVel.yaw=this.lookVel.pitch=0;
    base.foot.yaw=this.yaw;base.foot.pitch=this.pitch;
   }else if(mode==="car"){
    // gta_runtime_v1.updateVehicle, written into the engine drive instead of a second car.
@@ -279,7 +294,7 @@ export class NativeGameInput{
    const pad=findXboxGamepad(this.navigator?.getGamepads?.());
    let steer=(held("KeyA")?-1:0)+(held("KeyD")?1:0)+(this.stickOwner==="car"?sticks.look.x:0);
    let gas=Math.max(held("KeyW")?1:0,this.stickOwner==="car"?Math.max(0,-sticks.move.y):0),brake=Math.max(held("KeyS")?1:0,this.vehicleFire&&this.stickOwner==="car"?1:0);
-   if(pad){steer+=clamp(pad.axes?.[0],-1,1);gas=Math.max(gas,clamp(pad.buttons?.[7]?.value||0,0,1));brake=Math.max(brake,clamp(pad.buttons?.[6]?.value||0,0,1));}
+   if(pad){steer+=clamp(pad.axes?.[0],-1,1);gas=Math.max(gas,clamp(pad.buttons?.[7]?.value||0,0,1),Math.max(0,-(pad.axes?.[1]||0)));brake=Math.max(brake,clamp(pad.buttons?.[6]?.value||0,0,1),Math.max(0,pad.axes?.[1]||0));}
    const scale=car.throttleSensitivityPercent/100,turn=car.steeringSensitivityPercent/100;
    base.car.pedal=clamp((gas-brake)*scale,-1,1);
    base.car.steer=clamp(steer*turn,-1,1);
@@ -297,6 +312,12 @@ export class NativeGameInput{
     this.mouseStick.y+=(clamp(d.y/dt/730,-1,1)-this.mouseStick.y)*a;
     rollIn+=this.mouseStick.x;pitchIn-=this.mouseStick.y;
    }else this.mouseStick.x=this.mouseStick.y=0;
+   const jetPad=findXboxGamepad(this.navigator?.getGamepads?.());
+   if(jetPad){
+    const ax=a=>Math.abs(a)<.12?0:a;
+    lift+=-ax(jetPad.axes[1]||0);yawIn+=ax(jetPad.axes[0]||0);
+    rollIn+=ax(jetPad.axes[2]||0);pitchIn+=ax(jetPad.axes[3]||0);
+   }
    base.jet={lift:clamp(lift,-1,1),yawIn:clamp(yawIn,-1,1),pitchIn:clamp(pitchIn,-1,1),rollIn:clamp(rollIn,-1,1),brake:0};
   }
   this.runtime.setControls(base);

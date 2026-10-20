@@ -10,6 +10,7 @@ import {installNativeVitals} from "./native_vitals.mjs";
 import {installNativeWanted} from "./native_wanted.mjs";
 import {openQuitConfirm} from "./quit_confirm.mjs";
 import "./neon_ui_theme.mjs";
+import "./mobile_gameplay_ui.mjs";
 import "./immersive_soundscape.mjs";
 import "./native_fire_audio.mjs";
 import "./sniper_scope.mjs";

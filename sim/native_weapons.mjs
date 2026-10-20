@@ -3,6 +3,7 @@
 // Nothing here builds a second world or imports Three.js.
 import {bulletImpulse} from "./ballistics.mjs";
 import {fromTRS} from "./native_render_math.mjs";
+import {findXboxGamepad} from "./xbox_gamepad.mjs";
 import {ORIGINAL_MISSILE,ORIGINAL_GUIDED,ORIGINAL_GRENADE} from "./native_actor_meshes.mjs";
 
 export const NATIVE_WEAPONS_VERSION="live-rates-box3d-ray-v1";
@@ -149,8 +150,12 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
       frames++;
       if(now-fpsWindow>=500){fps=Math.round(frames*1000/(now-fpsWindow));frames=0;fpsWindow=now;}
       const sample=globalThis.__arondightDesktopDroneInput;
-      if(game.mode==="drone"&&(sample?.fire||state.touchFire))fireDrone(now);
-      if(game.mode==="foot"&&state.held&&state.foot==="smg")foot.fireAt({});
+      const pad=findXboxGamepad(typeof navigator==="undefined"?null:navigator.getGamepads?.());
+      const rt=pad?Math.max(0,Number(pad.buttons?.[7]?.value)||(pad.buttons?.[7]?.pressed?1:0))>.5:false;
+      if(game.mode==="drone"&&(sample?.fire||state.touchFire||rt))fireDrone(now);
+      if(game.mode==="foot"&&(state.held||rt)&&state.foot==="smg")foot.fireAt({});
+      if(game.mode==="foot"&&rt&&!state.padFire&&state.foot!=="smg")foot.fireAt({});
+      state.padFire=rt;
       if(game.mode==="jet"&&state.jetHeld&&now>=state.nextDrone){if(shootHitscan(now,650,"5.56"))state.nextDrone=now+92;}
       const dt=Math.min(.05,1/60);
       for(let i=rounds.length-1;i>=0;i--){
