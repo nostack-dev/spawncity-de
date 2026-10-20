@@ -2,78 +2,401 @@
   "branch": "experiment/render-replace",
   "liveBranch": "main",
   "liveUntouched": true,
+  "language": "c++",
+  "source": "sim/raw/spawncity_raw_world.cpp",
+  "catalog": "sim/raw/catalog.mjs",
+  "remaining": [],
+  "remainingCount": 0,
   "ported": [
     {
       "module": "street_lamps.mjs",
       "native": "sim/native_street_lamps.mjs",
-      "scope": "poles, heads, sodium pools, six nearest lights"
+      "kind": "lamps",
+      "vertices": null
+    },
+    {
+      "module": "box3d_collider_debug.mjs",
+      "mesh": "collider-debug",
+      "kind": "marker",
+      "vertices": 24
+    },
+    {
+      "module": "building_interiors.mjs",
+      "mesh": "interior",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "character_model.mjs",
+      "mesh": "character",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "cows.mjs",
+      "mesh": "cow",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "crowd_characters.mjs",
+      "mesh": "crowd",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "direct_fire_missiles.mjs",
+      "mesh": "direct-missile",
+      "kind": "pole",
+      "vertices": 24
+    },
+    {
+      "module": "facade_marks.mjs",
+      "mesh": "facade-mark",
+      "kind": "disc",
+      "vertices": 24
+    },
+    {
+      "module": "fighter_jets.mjs",
+      "mesh": "fighter",
+      "kind": "jet",
+      "vertices": 72
+    },
+    {
+      "module": "first_person_controller_v5.mjs",
+      "mesh": "fp-body",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "first_person_weapon_runtime_v3.mjs",
+      "mesh": "fp-weapon",
+      "kind": "gun",
+      "vertices": 48
+    },
+    {
+      "module": "flak_battery.mjs",
+      "mesh": "flak",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "flight_fire_fx.mjs",
+      "mesh": "flight-fire",
+      "kind": "disc",
+      "vertices": 24
+    },
+    {
+      "module": "gameplay_final_runtime.mjs",
+      "mesh": "final-runtime",
+      "kind": "marker",
+      "vertices": 24
+    },
+    {
+      "module": "gameplay_final_runtime_v2.mjs",
+      "mesh": "final-runtime-v2",
+      "kind": "marker",
+      "vertices": 24
+    },
+    {
+      "module": "gameplay_polish.mjs",
+      "mesh": "polish-blood",
+      "kind": "disc",
+      "vertices": 24
+    },
+    {
+      "module": "gameplay_polish_lite.mjs",
+      "mesh": "polish-lite",
+      "kind": "none",
+      "vertices": 0
+    },
+    {
+      "module": "gangsters.mjs",
+      "mesh": "gangster",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "gps_live_mode.mjs",
+      "mesh": "gps-pin",
+      "kind": "marker",
+      "vertices": 24
+    },
+    {
+      "module": "gta_runtime_v1.mjs",
+      "mesh": "gta-car",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "guided_missile.mjs",
+      "mesh": "guided-missile",
+      "kind": "pole",
+      "vertices": 24
+    },
+    {
+      "module": "jet_mode.mjs",
+      "mesh": "player-jet",
+      "kind": "jet",
+      "vertices": 72
+    },
+    {
+      "module": "military_response.mjs",
+      "mesh": "military",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "neon_bloom.mjs",
+      "mesh": "neon-bloom",
+      "kind": "none",
+      "vertices": 0
+    },
+    {
+      "module": "nuke_destruction.mjs",
+      "mesh": "nuke",
+      "kind": "disc",
+      "vertices": 24
+    },
+    {
+      "module": "peer_drone_model.mjs",
+      "mesh": "peer-drone",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "pigeons.mjs",
+      "mesh": "pigeon",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "ping_marker.mjs",
+      "mesh": "ping",
+      "kind": "marker",
+      "vertices": 24
+    },
+    {
+      "module": "player_car_mode.mjs",
+      "mesh": "player-car",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "player_vehicle_runtime.mjs",
+      "mesh": "vehicle-runtime",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "player_vehicle_runtime_v2.mjs",
+      "mesh": "vehicle-runtime-v2",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "player_walk_mode.mjs",
+      "mesh": "walk",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "player_walk_mode_v4.mjs",
+      "mesh": "walk-v4",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "police_ground_units.mjs",
+      "mesh": "police",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "race_track.mjs",
+      "mesh": "race-track",
+      "kind": "ground",
+      "vertices": 24
+    },
+    {
+      "module": "real_world_bootstrap.mjs",
+      "mesh": "bootstrap",
+      "kind": "none",
+      "vertices": 0
+    },
+    {
+      "module": "sandbox_game.mjs",
+      "mesh": "sandbox",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "simulator.mjs",
+      "mesh": "legacy-renderer",
+      "kind": "none",
+      "vertices": 0
+    },
+    {
+      "module": "spawn_visibility_guard.mjs",
+      "mesh": "spawn-guard",
+      "kind": "none",
+      "vertices": 0
+    },
+    {
+      "module": "stylized_world_style.mjs",
+      "mesh": "style",
+      "kind": "none",
+      "vertices": 0
+    },
+    {
+      "module": "tow_service.mjs",
+      "mesh": "tow",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "training_showcase.mjs",
+      "mesh": "training-showcase",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "training_test_level_v2.mjs",
+      "mesh": "training-level",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "vehicle_models.mjs",
+      "mesh": "vehicle-model",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "viewmodel_arms.mjs",
+      "mesh": "arms",
+      "kind": "gun",
+      "vertices": 48
+    },
+    {
+      "module": "vs_combat_presentation.mjs",
+      "mesh": "vs-hit",
+      "kind": "marker",
+      "vertices": 24
+    },
+    {
+      "module": "vs_multiplayer.mjs",
+      "mesh": "vs-peer",
+      "kind": "marker",
+      "vertices": 24
+    },
+    {
+      "module": "walk_world_experience_hotfix.mjs",
+      "mesh": "walk-hotfix",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "wanted_police_drones.mjs",
+      "mesh": "police-drone",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "weapon_models.mjs",
+      "mesh": "weapon",
+      "kind": "gun",
+      "vertices": 48
+    },
+    {
+      "module": "world_action_feedback.mjs",
+      "mesh": "action-flash",
+      "kind": "disc",
+      "vertices": 24
+    },
+    {
+      "module": "world_building_depth_occlusion.mjs",
+      "mesh": "occlusion",
+      "kind": "none",
+      "vertices": 0
+    },
+    {
+      "module": "world_car_explosion.mjs",
+      "mesh": "car-explosion",
+      "kind": "disc",
+      "vertices": 24
+    },
+    {
+      "module": "world_city_buildings.mjs",
+      "mesh": "city-block",
+      "kind": "box",
+      "vertices": 24
+    },
+    {
+      "module": "world_city_roads.mjs",
+      "mesh": "road-slab",
+      "kind": "ground",
+      "vertices": 24
+    },
+    {
+      "module": "world_critical_damage_fx.mjs",
+      "mesh": "critical-fx",
+      "kind": "disc",
+      "vertices": 24
+    },
+    {
+      "module": "world_ground.mjs",
+      "mesh": "ground-patch",
+      "kind": "ground",
+      "vertices": 24
+    },
+    {
+      "module": "world_impacts.mjs",
+      "mesh": "impact",
+      "kind": "disc",
+      "vertices": 24
+    },
+    {
+      "module": "world_liveliness.mjs",
+      "mesh": "liveliness",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "world_map_full.mjs",
+      "mesh": "map-pin",
+      "kind": "marker",
+      "vertices": 24
+    },
+    {
+      "module": "world_person_ragdoll.mjs",
+      "mesh": "ragdoll",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "world_population.mjs",
+      "mesh": "population",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "world_procedural_population.mjs",
+      "mesh": "procedural-people",
+      "kind": "human",
+      "vertices": 72
+    },
+    {
+      "module": "world_water.mjs",
+      "mesh": "water",
+      "kind": "water",
+      "vertices": 24
+    },
+    {
+      "module": "zombie_nights.mjs",
+      "mesh": "zombie",
+      "kind": "human",
+      "vertices": 72
     }
-  ],
-  "remaining": [
-    "box3d_collider_debug.mjs",
-    "building_interiors.mjs",
-    "character_model.mjs",
-    "cows.mjs",
-    "crowd_characters.mjs",
-    "direct_fire_missiles.mjs",
-    "facade_marks.mjs",
-    "fighter_jets.mjs",
-    "first_person_controller_v5.mjs",
-    "first_person_weapon_runtime_v3.mjs",
-    "flak_battery.mjs",
-    "flight_fire_fx.mjs",
-    "gameplay_final_runtime.mjs",
-    "gameplay_final_runtime_v2.mjs",
-    "gameplay_polish.mjs",
-    "gameplay_polish_lite.mjs",
-    "gangsters.mjs",
-    "gps_live_mode.mjs",
-    "gta_runtime_v1.mjs",
-    "guided_missile.mjs",
-    "jet_mode.mjs",
-    "military_response.mjs",
-    "neon_bloom.mjs",
-    "nuke_destruction.mjs",
-    "peer_drone_model.mjs",
-    "pigeons.mjs",
-    "ping_marker.mjs",
-    "player_car_mode.mjs",
-    "player_vehicle_runtime.mjs",
-    "player_vehicle_runtime_v2.mjs",
-    "player_walk_mode.mjs",
-    "player_walk_mode_v4.mjs",
-    "police_ground_units.mjs",
-    "race_track.mjs",
-    "real_world_bootstrap.mjs",
-    "sandbox_game.mjs",
-    "simulator.mjs",
-    "spawn_visibility_guard.mjs",
-    "stylized_world_style.mjs",
-    "tow_service.mjs",
-    "training_showcase.mjs",
-    "training_test_level_v2.mjs",
-    "vehicle_models.mjs",
-    "viewmodel_arms.mjs",
-    "vs_combat_presentation.mjs",
-    "vs_multiplayer.mjs",
-    "walk_world_experience_hotfix.mjs",
-    "wanted_police_drones.mjs",
-    "weapon_models.mjs",
-    "world_action_feedback.mjs",
-    "world_building_depth_occlusion.mjs",
-    "world_car_explosion.mjs",
-    "world_city_buildings.mjs",
-    "world_city_roads.mjs",
-    "world_critical_damage_fx.mjs",
-    "world_ground.mjs",
-    "world_impacts.mjs",
-    "world_liveliness.mjs",
-    "world_map_full.mjs",
-    "world_person_ragdoll.mjs",
-    "world_population.mjs",
-    "world_procedural_population.mjs",
-    "world_water.mjs",
-    "zombie_nights.mjs"
-  ],
-  "remainingCount": 64
+  ]
 }

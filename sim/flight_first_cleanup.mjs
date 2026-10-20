@@ -1,21 +1,12 @@
 import {normalizedPointer,endPointerDrag} from "./control_semantics.mjs";
-import "./direct_fire_missiles.mjs";
 import "./proximity_voice.mjs";
 import "./drone_weapon_modes.mjs";
-import "./nuke_destruction.mjs";
 import "./player_shield.mjs";
 import "./game_reset.mjs";
 import "./game_exit_button.mjs";
-import "./world_city_buildings.mjs";
-import "./building_interiors.mjs";
-import "./world_city_roads.mjs";
-import "./world_water.mjs";
-import "./world_ground.mjs";
-import "./training_test_level_v2.mjs";
 import "./world_organic_hit_audio.mjs";
 import "./world_sync.mjs";
 import "./music_player.mjs";
-import "./spawn_visibility_guard.mjs";
 
 let installed=false;
 const active=new Map();

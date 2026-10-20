@@ -65,17 +65,10 @@ while(stack.length){
 const inside=new Set([...seen].map(file=>relative(root,file)));
 for(const banned of ["simulator.mjs","real_world_bootstrap.mjs","drone_simulator.html"])
  assert.equal(inside.has(banned),false,banned+" must stay outside the sealed engine");
-const legacyRoot=resolve("legacy-three/sim");
 const threeRe=/(?:from\s*["']three(?:\/[^"']*)?["']|import\s*["']three(?:\/[^"']*)?["'])/;
-const legacy=[];
-for(const name of readdirSync(legacyRoot)){
- if(!name.endsWith(".mjs"))continue;
- const src=readFileSync(join(legacyRoot,name),"utf8");
- if(!threeRe.test(src))continue;
- legacy.push(name);
- assert.equal(inside.has(name),false,"legacy Three module leaked into the engine: "+name);
-}
 assert.equal(readdirSync(root).filter(name=>name.endsWith(".mjs")).some(name=>threeRe.test(readFileSync(join(root,name),"utf8"))),false,"sim/ must stay Three-free on the replace branch");
+assert.equal(existsSync(resolve("legacy-three/sim")),false,"ported Three specs are deleted once the raw C++ world owns them");
+assert.ok(inside.has("native_raw_world.mjs"),"the sealed engine must draw the raw C++ catalog");
 assert.ok(inside.has("native_scene_renderer.mjs"));
 assert.ok(inside.has("native_world_presenter.mjs"));
 assert.ok(inside.has("native_game_runtime.mjs"));
@@ -101,13 +94,13 @@ const boot=readFileSync(join(root,"native_game_bootstrap.mjs"),"utf8");
 assert.match(boot,/from "\.\/native_engine\.mjs"/);
 assert.doesNotMatch(boot,/from "\.\/native_game_runtime\.mjs"|from "\.\/native_game_input\.mjs"|from "\.\/native_osm_source\.mjs"/);
 const audit=auditRuntime();
-assert.equal(audit.threeImportCount,0,"the replace branch keeps Three only under legacy-three/");
+assert.equal(audit.threeImportCount,0,"the replace branch keeps no Three modules in sim/");
 assert.equal(audit.nativeOnly,true,"sim/ itself no longer imports Three");
-assert.equal(legacy.length,64,"one module is ported; 64 Three specs remain");
+assert.equal(audit.threeRendererConstructors,0,"the legacy WebGLRenderer is gone from sim/");
 console.log(JSON.stringify({
  engine:"sealed",
  contract:"spawncity-native-engine-v1",
  closure:inside.size,
- legacyThreeModules:legacy.length,
+ legacyThreeModules:0,
  productionCutover:"blocked"
 }));

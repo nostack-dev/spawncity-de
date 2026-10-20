@@ -17,6 +17,7 @@ import {nativeGameplayCamera,nativeLiveGameplayState} from "./native_gameplay_ca
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {NativeRoadStream} from "./native_road_stream.mjs";
 import {NativeStreetLamps} from "./native_street_lamps.mjs";
+import {installRawWorld} from "./native_raw_world.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeAirframePresentation} from "./native_airframe_presentation.mjs";
 import {NativePeerVisuals} from "./native_peer_visuals.mjs";
@@ -121,6 +122,7 @@ export class NativeWorldPresenter{
   if(this.running)return false;
   if(typeof requestFrame!=="function")throw Error("browser animation frame required");
   this.running=true;this.requestFrame=requestFrame;this.onError=onError;
+  if(this.renderer?.upsert)installRawWorld(this.renderer);
   const epoch=++this.frameEpoch;
   const frame=now=>{
    if(!this.running||this.disposed||epoch!==this.frameEpoch)return;
