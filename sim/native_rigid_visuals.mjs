@@ -3,15 +3,16 @@
 // simulation or Three.js. Draw calls are per body class, not per vehicle.
 // This module does not render by itself: it populates NativeSceneRenderer.
 import {fromTRS} from "./native_render_math.mjs";
-export const NATIVE_RIGID_VISUALS_VERSION="box3d-native-instanced-visuals-v1";
-const CATEGORIES=["car","bus","drone","jet","prop"];
-const RGB={car:[.64,.77,.9,1],bus:[.95,.73,.36,1],drone:[.25,.48,.63,1],jet:[.72,.78,.82,1],prop:[.7,.69,.63,1],wheel:[.09,.11,.14,1]};
-const NAME={car:"box3d/car",bus:"box3d/bus",drone:"box3d/drone",jet:"box3d/jet",prop:"box3d/prop",wheel:"box3d/wheels"};
+export const NATIVE_RIGID_VISUALS_VERSION="box3d-native-instanced-visuals-v2-models";
+const CATEGORIES=["car","bus","drone","jet","prop","human"];
+const RGB={car:[.64,.77,.9,1],bus:[.95,.73,.36,1],drone:[.25,.48,.63,1],jet:[1,1,1,1],prop:[.7,.69,.63,1],human:[1,1,1,1],wheel:[1,1,1,1]};
+const NAME={car:"box3d/car",bus:"box3d/bus",drone:"box3d/drone",jet:"box3d/jet",prop:"box3d/prop",human:"box3d/human",wheel:"box3d/wheels"};
 const nextId=s=>String(s||"").toLowerCase();
 export function box3dVisualCategory(record){
  const kind=nextId(record?.kind),id=nextId(record?.id);
  if(/bus|coach/.test(kind)||/bus/.test(id))return "bus";
  if(/jet|aircraft|fighter|plane|vtol/.test(kind)||/jet|fighter/.test(id))return "jet";
+ if(/human|person|pedestrian|zombie|walker|crowd/.test(kind)||/player-foot|person/.test(id))return "human";
  if(record?.drone||/drone|quad|uav/.test(kind)||/police.drone/.test(id))return "drone";
  if(/car|taxi|truck|vehicle|police|motor/.test(kind)||/vehicle|car|truck/.test(id))return "car";
  return "prop";
@@ -32,30 +33,79 @@ function cubeGeometry(kind){
   add([x,y,z],[X,y,z],[X,Y,z],[x,Y,z],color,[0,0,-1]);
  };
  prism([-.5,-.5,-.5],[.5,.5,.5],base);
- if(kind==="car"||kind==="bus"){
-  const glass=[.55,.74,.8,1],lamp=[.95,.97,.9,1],tail=[.72,.12,.08,1];
-  prism([-.28,-.32,.5],[.16,.32,kind==="bus"?.78:.66],glass);
-  prism([.46,-.42,-.08],[.5,.42,.08],lamp);
-  prism([-.5,-.36,.02],[-.46,.36,.16],tail);
+ if(kind==="car"){
+  const paint=[1,1,1],glass=[.35,.55,.62],trim=[.22,.24,.27],lamp=[1.7,1.6,1.15],tail=[1.5,.12,.1];
+  prism([-.5,-.46,-.42],[.5,.46,.42],paint);
+  prism([-.22,-.38,.38],[.24,.38,1.15],glass);
+  prism([-.16,-.34,1.12],[.1,.34,1.28],paint);
+  prism([.42,-.4,-.05],[.5,.4,.22],lamp);
+  prism([-.5,-.34,.02],[-.44,.34,.28],tail);
+  prism([.46,-.48,-.2],[.5,.48,.05],trim);
+  prism([-.5,-.48,-.2],[-.46,.48,.05],trim);
+ }else if(kind==="bus"){
+  const paint=[1,1,1],glass=[.28,.48,.58],trim=[.16,.17,.19];
+  prism([-.5,-.48,-.48],[.5,.48,.55],paint);
+  prism([-.42,-.46,.48],[.38,.46,1.15],paint);
+  prism([.28,-.44,.5],[.48,.44,1.02],glass);
+  prism([-.36,-.44,.62],[.22,.44,.98],glass);
+  prism([.46,-.36,-.1],[.5,.36,.18], [1.6,1.55,1.1]);
+  prism([-.5,-.3,.05],[-.46,.3,.28],[1.4,.1,.08]);
+  prism([-.5,-.5,-.35],[.5,.5,-.22],trim);
  }else if(kind==="drone"){
-  const accent=[.12,.14,.16,1],rotor=[.2,.22,.24,1];
-  prism([-.9,-.08,-.22],[.9,.08,-.02],accent);
-  prism([-.08,-.9,-.22],[.08,.9,-.02],accent);
-  prism([-.9,-.22,-.08],[-.62,.22,.02],rotor);
-  prism([.62,-.22,-.08],[.9,.22,.02],rotor);
-  prism([-.22,-.9,-.08],[.22,-.62,.02],rotor);
-  prism([-.22,.62,-.08],[.22,.9,.02],rotor);
- }else if(kind==="jet"){
-  const metal=[.78,.82,.86,1],canopy=[.45,.62,.7,1];
-  prism([-.15,-.92,-.2],[.15,.72,.16],metal);
-  prism([-.72,-.18,-.08],[.72,.22,.02],metal);
-  prism([-.04,.55,.05],[.04,.92,.38],metal);
-  prism([-.12,.18,.16],[.12,.48,.42],canopy);
+  const carbon=[.55,.6,.66],accent=[.7,1.4,1.6],dark=[.2,.22,.26],nose=[1.6,.35,.4];
+  prism([-.22,-.16,-.28],[.22,.16,.18],carbon);
+  prism([-.16,-.12,.16],[.2,.12,.42],accent);
+  prism([-.5,-.06,-.12],[.5,.06,.02],carbon);
+  prism([-.06,-.5,-.12],[.06,.5,.02],carbon);
+  for(const s of[-1,1])for(const t of[-1,1])prism([s*.32-.12,t*.32-.12,.02],[s*.32+.12,t*.32+.12,.28],dark);
+  prism([-.48,-.08,-.08],[-.28,.08,.2],nose);
+ }else if(kind==="human"){
+  const shirt=[.29,.32,.22],pants=[.24,.23,.2],skin=[.75,.54,.4],boot=[.1,.1,.09];
+  prism([-.22,-.16,-.08],[.22,.16,.42],shirt);
+  prism([-.16,-.14,.4],[.16,.14,.72],skin);
+  prism([-.18,-.16,.55],[.18,.16,.78],[.22,.25,.16]);
+  prism([-.42,-.1,-.02],[-.22,.1,.4],shirt);
+  prism([.22,-.1,-.02],[.42,.1,.4],shirt);
+  prism([-.2,-.12,-.5],[-.04,.12,-.06],pants);
+  prism([.04,-.12,-.5],[.2,.12,-.06],pants);
+  prism([-.2,-.16,-.5],[-.02,.16,-.4],boot);
+  prism([.02,-.16,-.5],[.2,.16,-.4],boot);
+ }else if(kind==="wheel"){
+  prism([-.5,-.5,-.5],[.5,.5,.5],[.12,.13,.15]);
+  prism([-.28,-.55,-.28],[.28,.55,.28],[.72,.74,.78]);
+ }else if(kind==="prop"){
+  prism([-.5,-.5,-.5],[.5,.5,.5],base);
  }
  return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c),uvs:new Float32Array(uv)};
 }
-const GEOMETRIES=Object.fromEntries(CATEGORIES.map(kind=>[kind,cubeGeometry(kind)]));
-const WHEEL=cubeGeometry("prop");
+function jetGeometry(){
+ // Metres, body frame of the flight model: +Y nose, +X right wing, +Z up.
+ const p=[],n=[],c=[],uv=[];
+ const add=(a,b,d,e,color,normal)=>{
+  const vertices=[a,b,d,a,d,e],uvs=[[0,0],[1,0],[1,1],[0,0],[1,1],[0,1]];
+  vertices.forEach((v,i)=>{p.push(...v);n.push(...normal);c.push(color[0],color[1],color[2]);uv.push(...uvs[i]);});
+ };
+ const prism=(lo,hi,color)=>{
+  const [x,y,z]=lo,[X,Y,Z]=hi;
+  add([x,y,z],[x,Y,z],[x,Y,Z],[x,y,Z],color,[-1,0,0]);
+  add([X,Y,z],[X,y,z],[X,y,Z],[X,Y,Z],color,[1,0,0]);
+  add([X,y,z],[x,y,z],[x,y,Z],[X,y,Z],color,[0,-1,0]);
+  add([x,Y,z],[X,Y,z],[X,Y,Z],[x,Y,Z],color,[0,1,0]);
+  add([x,Y,Z],[X,Y,Z],[X,y,Z],[x,y,Z],color,[0,0,1]);
+  add([x,y,z],[X,y,z],[X,Y,z],[x,Y,z],color,[0,0,-1]);
+ };
+ const metal=[.78,.82,.86],glass=[.4,.62,.72],dark=[.16,.18,.2];
+ prism([-.72,-7.2,-.65],[.72,5.2,.6],metal);
+ prism([-.2,5.2,-.22],[.2,8.9,.25],metal);
+ prism([-6,-4.1,-.12],[6,1.5,.16],metal);
+ prism([-2.4,-6.7,.02],[2.4,-5.1,.2],metal);
+ prism([-.07,-6.9,.15],[.07,-5.3,2.35],metal);
+ prism([-.36,1.5,.45],[.36,4.3,1.12],glass);
+ prism([-.55,-6.4,-.35],[.55,-5.2,.25],dark);
+ return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c),uvs:new Float32Array(uv)};
+}
+const GEOMETRIES=Object.fromEntries(CATEGORIES.map(kind=>[kind,kind==="jet"?jetGeometry():cubeGeometry(kind)]));
+const WHEEL=cubeGeometry("wheel");
 const finite3=values=>Array.isArray(values)&&values.length===3&&values.every(Number.isFinite);
 const finite4=values=>Array.isArray(values)&&values.length===4&&values.every(Number.isFinite);
 const saneExtents=h=>finite3(h)&&h.every(v=>v>.01&&v<300);
@@ -87,8 +137,10 @@ export class NativeRigidVisuals{
    const kind=box3dVisualCategory(body);
    const group=grouped.get(kind);
    const half=body.halfExtents;
-   // Box3D stores half-extents, whereas native unit geometry is ±0.5.
-   group.transforms.push(...fromTRS(pose.position,pose.rotation,half.map(v=>2*v)));
+   // Cars and people fill their Box3D box. The jet mesh is already in metres
+   // in the flight-model frame, so it is not stretched to the hull's stand-in box.
+   const visualScale=kind==="jet"?[1,1,1]:half.map(v=>2*v);
+   group.transforms.push(...fromTRS(pose.position,pose.rotation,visualScale));
    const color=RGB[kind];group.tints.push(...color);group.ids.push(String(body.id));
    count++;
    if(Array.isArray(pose.wheels))for(const wheel of pose.wheels){
