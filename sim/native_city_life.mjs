@@ -3,12 +3,13 @@
 import {buildTrafficRoute} from "./world_traffic_routes.mjs";
 import {createPedestrianNetwork,seedRouteAgents,stepAgent,frighten} from "./pedestrian_agents.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
+import {NativeStreetLamps} from "./native_street_lamps.mjs";
 import {ORIGINAL_SEDAN} from "./native_original_vehicles.mjs";
 import {fromTRS} from "./native_render_math.mjs";
 import {NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
 
 const PERSON_CAP=100,CAR_CAP=36,CAR_SPEED=8;
-let net=null,people=[],cars=[],visuals=null,last=0,drawnCars=false;
+let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawnCars=false,routes=[];
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
 function playerPos(){
   const w=globalThis.__arondightWalkMode,p=w?.position;
@@ -18,7 +19,7 @@ function playerPos(){
 }
 export function installNativeCityLife(game,snapshot){
   const origin=snapshot?.origin||NATIVE_DEMO_CITY.origin;
-  const routes=[];
+  routes=[];
   for(const road of snapshot?.roads||[]){
     const path=road.geometry?.coordinates;
     const route=buildTrafficRoute(path,{originLon:origin.lon,originLat:origin.lat,roadClass:road.properties?.class||"road"});
@@ -27,6 +28,9 @@ export function installNativeCityLife(game,snapshot){
   if(!routes.length)return {people:0,cars:0};
   net=createPedestrianNetwork();
   net.sync(routes);
+  lamps=new NativeStreetLamps(game.world.renderer,{heightAt:()=>0});
+  const lampRoads=routes.map(route=>({cls:route.roadClass,pts:route.points,w:6}));
+  const lampCount=lamps.setRoads(lampRoads);
   people=[];
   for(const route of routes){
     if(people.length>=PERSON_CAP)break;
@@ -40,9 +44,10 @@ export function installNativeCityLife(game,snapshot){
   last=performance.now();
   globalThis.__arondightProceduralPopulation={
     people:()=>people,
+    roads:()=>routes,
     knockdown(id){const a=people.find(p=>p.id===id);if(!a||!a.alive)return null;a.alive=false;a.knocked=true;globalThis.__arondightWantedSystem?.reportCrime?.({id:`person-${id}`,kind:"person-hit",severity:1});return "down";}
   };
-  return {people:people.length,cars:cars.length,routes:routes.length};
+  return {people:people.length,cars:cars.length,routes:routes.length,lamps:lampCount};
 }
 function pointOn(route,s){
   const seg=route.segments.find(g=>s>=g.start&&s<=g.start+g.d)||route.segments.at(-1);

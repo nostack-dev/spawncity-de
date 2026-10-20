@@ -24,6 +24,7 @@ import {mountAudioSettings} from "./audio_settings.mjs";
 import {installNativeModeOverlay} from "./native_mode_overlay.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 import {installNativeCityLife,tickNativeCityLife} from "./native_city_life.mjs";
+import {installNativePolice,tickNativePolice,hitNativeCops} from "./native_police_ground.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
 const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("gameMenu"),
@@ -101,6 +102,7 @@ async function loadRealWorld(game,{source="demo"}={}){
   const shown=await game.updateOsmFeatures(result);
   if(shown?.cancelled||epoch!==osmEpoch)return;
   const life=installNativeCityLife(game,result);
+  installNativePolice();
   // Authoritative Box3D has chosen the real mapped footpath; give the ONE
   // existing desktop/touch/gamepad input owner the same initial heading.
   // Never override a user's own pointer/mouse look after they have turned.
@@ -112,7 +114,7 @@ async function loadRealWorld(game,{source="demo"}={}){
    throw Error("OSM produced no collision-safe city buildings");
   report(label+" · "+result.buildings.length+" real OSM buildings · "+
     result.roads.length+" roads · "+shown.collision.prismCount+" Box3D colliders · "+
-    (life?.people||0)+" people · "+(life?.cars||0)+" cars");
+    (life?.people||0)+" people · "+(life?.cars||0)+" cars · "+(life?.lamps||0)+" lamps");
  }catch(error){
   if(!game.closed&&epoch===osmEpoch&&!controller.signal.aborted){
    // A failed external OSM service must be visible and retryable. Never
@@ -150,7 +152,7 @@ async function launch(){
   const vitals=installNativeVitals(game);
   const wanted=installNativeWanted(game);
   game.beforeFrame=()=>input.sample();
-  game.afterFrame=(frame,now)=>{weapons.tick(now);syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);updateTelemetry(game,now);};
+  game.afterFrame=(frame,now)=>{weapons.tick(now);syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
    button.addEventListener("click",()=>{
     globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);
