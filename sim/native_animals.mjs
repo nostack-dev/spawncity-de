@@ -10,6 +10,7 @@
 import {worldOption,WORLD_OPTIONS_EVENT} from "./world_options.mjs";
 import {playAnimal} from "./animal_audio.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
+import {syncInstanced} from "./native_instanced.mjs";
 export const NATIVE_ANIMALS_VERSION="native-dogs-cats-black-cat-v1";
 const MOBILE=/(?:android|iphone|ipad|ipod|macintosh.*mobile)/i.test(globalThis.navigator?.userAgent||"");
 const COUNT=MOBILE?12:20,TORSO_UP=.11,GROUND_OFF=.36,ENTRY_M=110;
@@ -106,12 +107,11 @@ export function tickNativeAnimals(now=performance.now()){
         a.gait+=spd*dt/(.55*sc);a.pose={x:px,y:py,z:gz+TORSO_UP*sc,yaw,sc};M=poseMatrices(px,py,gz,yaw,sc,Math.min(spd,6),a.gait);}}
     if(!M)continue;bodies.push(M.body);heads.push(M.head);for(const l of M.legs)legs.push(l);for(let k=0;k<2;k++)tb.push(col);for(let k=0;k<4;k++)tl.push(col);
   }
-  if(!bodies.length){if(drawn){for(const id of ["animals/body","animals/head","animals/legs"])r.remove(id);drawn=false;}return;}
+  if(!bodies.length){if(drawn){for(const [id,g] of [["animals/body",BODY],["animals/head",HEAD],["animals/legs",LEG]])syncInstanced(r,id,g,null);drawn=false;}return;}
   const pack=list=>{const o=new Float32Array(list.length*16);list.forEach((m,i)=>o.set(m,i*16));return o;},tints=list=>{const o=new Float32Array(list.length*4);list.forEach((c,i)=>o.set([...c,1],i*4));return o;};
   const bt=tints(tb.filter((_,k)=>k%2===0)),lt=tints(tl);
-  r.upsert("animals/body",{...BODY,instances:{transforms:pack(bodies),tints:bt},material:{roughness:.85,frustumCulled:false}});
-  r.upsert("animals/head",{...HEAD,instances:{transforms:pack(heads),tints:bt},material:{roughness:.85,frustumCulled:false}});
-  r.upsert("animals/legs",{...LEG,instances:{transforms:pack(legs),tints:lt},material:{roughness:.85,frustumCulled:false}});drawn=true;
+  const mat={material:{roughness:.85,frustumCulled:false}};
+  syncInstanced(r,"animals/body",BODY,pack(bodies),{tints:bt,...mat});syncInstanced(r,"animals/head",HEAD,pack(heads),{tints:bt,...mat});syncInstanced(r,"animals/legs",LEG,pack(legs),{tints:lt,...mat});drawn=true;
   setData("ambientAnimals",String(bodies.length));
 }
 export function installNativeAnimals(runtime,snapshot){

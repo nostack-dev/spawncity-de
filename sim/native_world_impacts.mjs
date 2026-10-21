@@ -14,6 +14,7 @@
 // with distance / zoom so they never fall below a few pixels.
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {getSharedCombatAudioContext,playCombatAudio} from "./combat_audio_bank.mjs";
+import {syncInstanced} from "./native_instanced.mjs";
 export const NATIVE_WORLD_IMPACTS_VERSION="terrain-draped-decals+chips+tree-damage-v2-native";
 const DECALS=420,CHIPS=220,TREE_HP=12,SCORCHES=40,SG=10;
 const COLORS={building:[0xcfc6b4,0xa89f90],ground:[0x6b5a44,0x7a9a52],tree:[0x4f9a3a,0x6b4a32],vehicle:[0xffd27a,0xfff2c4],glass:[0xe4f0f6,0xa9c6d6],actor:[0x8a1a1a,0x5a1010],water:[0x9fd0ff,0xffffff]};
@@ -222,10 +223,10 @@ function playPersonGroan(){const st=fxSettings(),ctx=getSharedCombatAudioContext
 export function spawnBlood(point){if(!point)return;const now=performance.now(),far=visibilityScale(point,4,.06);
   for(let i=0;i<(far>1.5?12:6);i++){const b=blood[bloodCursor++%BLOOD],a=Math.random()*Math.PI*2,sp=.45+Math.random()*1.1;b.until=now+450+Math.random()*250;b.p=[point[0],point[1],point[2]+.05];b.v=[Math.cos(a)*sp,Math.sin(a)*sp,.3+Math.random()*.9];b.c=[.42+Math.random()*.18,.01,.01];b.s=.1*Math.min(6,far)*.6;}
   const v=globalThis.document?.getElementById?.("viewport");if(v)v.dataset.worldBloodFx=String((Number(v.dataset.worldBloodFx)||0)+1);}
-function drawBlood(r,now,dt){const live=blood.filter(b=>b.until>now);if(!live.length){if(bloodShown){r.remove("impacts/blood");bloodShown=false;}return;}
+function drawBlood(r,now,dt){const live=blood.filter(b=>b.until>now);if(!live.length){if(bloodShown){syncInstanced(r,"impacts/blood",CUBE,null);bloodShown=false;}return;}
   const tr=new Float32Array(live.length*16),ti=new Float32Array(live.length*4);
   live.forEach((b,i)=>{b.v[2]-=3.5*dt;for(let k=0;k<3;k++)b.p[k]+=b.v[k]*dt;b.p[2]=Math.max(ground(b.p[0],b.p[1])+.015,b.p[2]);const s=Math.max(.01,b.s);tr.set([s,0,0,0,0,s,0,0,0,0,s,0,...b.p,1],i*16);ti.set([...b.c,.86],i*4);});
-  r.upsert("impacts/blood",{...CUBE,instances:{transforms:tr,tints:ti},material:{unlit:true,castShadow:false,alphaMode:"blend",color:[1,1,1,1]}});bloodShown=true;}
+  syncInstanced(r,"impacts/blood",CUBE,tr,{tints:ti,material:{unlit:true,castShadow:false,alphaMode:"blend",color:[1,1,1,1]}});bloodShown=true;}
 // ------------------------------------------------------------------ per frame
 const DISC=circleGeo(),CRACK=crackGeo(),CUBE=cubeGeo(),TRUNK=trunkGeo(),CROWN=crownGeo();
 let chipsShown=false,decalsShown=false,cracksShown=false;
@@ -235,11 +236,11 @@ export function tickNativeWorldImpacts(now=performance.now()){
   const live=[];for(const c of chips){if(c.life<=0)continue;c.life-=dt;if(c.life<=0)continue;c.v[2]-=9.81*dt;for(let k=0;k<3;k++)c.p[k]+=c.v[k]*dt;const g=ground(c.p[0],c.p[1]);
     if(c.p[2]<g+c.size*.5){c.p[2]=g+c.size*.5;c.v=c.v.map(x=>x*.35);c.v[2]=Math.abs(c.v[2])*.3;}c.angle+=c.spin*dt;live.push(c);}
   if(live.length){const tr=new Float32Array(live.length*16),ti=new Float32Array(live.length*4);live.forEach((c,i)=>{tr.set(axisAngle(c.axis,c.angle,Math.max(.01,c.size*Math.min(1,c.life*3)),c.p),i*16);ti.set([...c.c,1],i*4);});
-    r.upsert("impacts/chips",{...CUBE,instances:{transforms:tr,tints:ti},material:{castShadow:false,roughness:.9}});chipsShown=true;}
-  else if(chipsShown){r.remove("impacts/chips");chipsShown=false;}
+    syncInstanced(r,"impacts/chips",CUBE,tr,{tints:ti,material:{castShadow:false,roughness:.9}});chipsShown=true;}
+  else if(chipsShown){syncInstanced(r,"impacts/chips",CUBE,null);chipsShown=false;}
   if(decalsDirty){decalsDirty=false;const list=decals.filter(Boolean),tr=new Float32Array(list.length*16),ti=new Float32Array(list.length*4);
     list.forEach((dc,i)=>{const m=dc.ground?basis(groundNormal(dc.x,dc.y),dc.spin,dc.size,[dc.x,dc.y,ground(dc.x,dc.y)+.03]):dc.m;tr.set(m,i*16);ti.set([...dc.c,.86],i*4);});
-    if(list.length){r.upsert("impacts/decals",{...DISC,instances:{transforms:tr,tints:ti},material:{unlit:true,doubleSided:true,castShadow:false,alphaMode:"blend",color:[1,1,1,1]}});decalsShown=true;}else if(decalsShown){r.remove("impacts/decals");decalsShown=false;}}
+    syncInstanced(r,"impacts/decals",DISC,list.length?tr:null,{tints:ti,material:{unlit:true,doubleSided:true,castShadow:false,alphaMode:"blend",color:[1,1,1,1]}});decalsShown=list.length>0;}
   if(cracksDirty){cracksDirty=false;const list=cracks.filter(Boolean),tr=new Float32Array(list.length*16);list.forEach((c,i)=>tr.set(c.m,i*16));
     if(list.length){r.upsert("impacts/cracks",{...CRACK,instances:{transforms:tr},material:{unlit:true,doubleSided:true,castShadow:false,alphaMode:"blend",color:[.9,.95,1,.85]}});cracksShown=true;}else if(cracksShown){r.remove("impacts/cracks");cracksShown=false;}}
   drawScorches(r);drawBlood(r,now,dt);stepTrees(dt);

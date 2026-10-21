@@ -13,6 +13,7 @@ import {getSharedCombatAudioContext,playCombatAudio} from "./combat_audio_bank.m
 import {AUDIO_SETTINGS_EVENT,loadAudioSettings,normalizeAudioSettings} from "./audio_settings.mjs";
 import {addTrauma} from "./camera_shake.mjs";
 import {worldOption,WORLD_OPTIONS_EVENT} from "./world_options.mjs";
+import {syncInstanced} from "./native_instanced.mjs";
 
 export const SANDBOX_GAME_VERSION="sandbox-chaos-loop-v1-native";
 const TYPES={
@@ -135,17 +136,15 @@ function draw(){
   const want=new Set();
   for(const type of Object.keys(TYPES)){
     const list=enemies.filter(e=>e.type===type);
-    for(const part of ["lit","neon"]){const id=`sandbox/${type}/${part}`;
-      if(!list.length){if(drawn.has(id)){r.remove(id);drawn.delete(id);}continue;}
+    for(const part of ["lit","neon"]){const id=`sandbox/${type}/${part}`,geo=enemyGeometry(type)[part];
+      if(!list.length){if(drawn.has(id)){syncInstanced(r,id,geo,null);drawn.delete(id);}continue;}
       const tr=new Float32Array(list.length*16);list.forEach((e,i)=>tr.set(rootMatrix(e.x,e.y,e.z,e.yaw,e.tilt||0,e.t.scale),i*16));
-      want.add(id);
-      if(drawn.has(id)&&drawn.get?.(id)===list.length){}
-      try{r.upsert(id,{...enemyGeometry(type)[part],instances:{transforms:tr},material:part==="neon"?{unlit:true,castShadow:false}:{castShadow:true,roughness:.8}});drawn.add(id);}catch(err){console.warn("sandbox draw",err);}
+      try{syncInstanced(r,id,geo,tr,{material:part==="neon"?{unlit:true,castShadow:false}:{castShadow:true,roughness:.8}});drawn.add(id);}catch(err){console.warn("sandbox draw",err);}
     }
   }
   const rid="sandbox/rockets";
-  if(rockets.length){const tr=new Float32Array(rockets.length*16);rockets.forEach((k,i)=>tr.set([1,0,0,0,0,1,0,0,0,0,1,0,k.p.x,k.p.y,k.p.z,1],i*16));r.upsert(rid,{...rocketGeometry(),instances:{transforms:tr},material:{unlit:true,castShadow:false}});drawn.add(rid);}
-  else if(drawn.has(rid)){r.remove(rid);drawn.delete(rid);}
+  if(rockets.length){const tr=new Float32Array(rockets.length*16);rockets.forEach((k,i)=>tr.set([1,0,0,0,0,1,0,0,0,0,1,0,k.p.x,k.p.y,k.p.z,1],i*16));syncInstanced(r,rid,rocketGeometry(),tr,{material:{unlit:true,castShadow:false}});drawn.add(rid);}
+  else if(drawn.has(rid)){syncInstanced(r,rid,rocketGeometry(),null);drawn.delete(rid);}
   drawTracers(r);
 }
 

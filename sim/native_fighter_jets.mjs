@@ -12,6 +12,7 @@
 import {addTrauma} from "./camera_shake.mjs";
 import {getSharedCombatAudioContext,playCombatAudio} from "./combat_audio_bank.mjs";
 import {ORIGINAL_JET} from "./native_actor_meshes.mjs";
+import {syncInstanced,packMatrices} from "./native_instanced.mjs";
 export const FIGHTER_JETS_VERSION="low-pass-jets+air-strike-v1-native";
 const SPEED=255,SOUND=343,ALT_MIN=55,ALT_MAX=85,SPAN=2600,AMBIENT_MIN_S=75,AMBIENT_MAX_S=150,STRIKE_COOLDOWN_MS=30000,BOMB_RADIUS=17,BOMB_DAMAGE=170,STICK=10,STICK_LEN=130;
 const RUN_COLOR=0x3fa9ff,RUN_LEN=STICK_LEN+40,CHEVRONS=9,BEAM_H=420;
@@ -130,7 +131,7 @@ function mountButton(){
 function renderButton(now=performance.now()){const b=document.getElementById("airStrikeButton");if(!b)return;{const down=playerDown();if(b.disabled!==down)b.disabled=down;if(down&&targeting)setTargeting(false);}const k=Math.min(1,(now-lastStrike)/STRIKE_COOLDOWN_MS);const r=k>=1?"1":"0";if(b.dataset.ready!==r)b.dataset.ready=r;b.style.setProperty("--cool",`${Math.round(k*100)}%`);}
 // ------------------------------------------------------------ draw
 const shown=new Set();
-function put(r,id,geo,transforms,material){if(!transforms.length){if(shown.has(id)){r.remove(id);shown.delete(id);}return;}const tr=new Float32Array(transforms.length*16);transforms.forEach((m,i)=>tr.set(m,i*16));r.upsert(id,{...geo,instances:{transforms:tr},material:{castShadow:false,frustumCulled:false,...material}});shown.add(id);}
+function put(r,id,geo,transforms,material){if(!transforms.length){if(shown.has(id)){syncInstanced(r,id,geo,null);shown.delete(id);}return;}syncInstanced(r,id,geo,packMatrices(transforms),{material:{castShadow:false,frustumCulled:false,...material}});shown.add(id);}
 const beamCache={};function beamGeos(c){return beamCache[c]??={tube:TUBE(c),disc:DISC(c),ball:BALL(c)};}
 function beamParts(list,p,k,now,color,opacity){const gz=ground(p[0],p[1]),len=Math.max(.01,BEAM_H*k),top=gz+BEAM_H;const pulse=.75+.25*Math.sin(now*.018);
   list.push({c:color,kind:"tube",m:TS(p[0],p[1],top,.9,.9,len),a:opacity*.45*pulse},{c:color,kind:"tube",m:TS(p[0],p[1],top,.22,.22,len),a:Math.min(1,opacity*1.6)});
@@ -154,11 +155,11 @@ function draw(now){
   if(targeting&&aimNow&&!placed)beamParts(beams,aimNow,1,now,0xff5a3a,.22);
   if(laserShown&&placed){const k=Math.min(1,(now-placedAt)/420);beamParts(beams,placed,1-(1-k)**3,now,myStrikeColor(),.7);if(!targeting&&now-placedAt>3600)laserShown=false;}
   const groups={};for(const b of beams){const key=`${b.kind}:${b.c}`;(groups[key]??=[]).push(b);}
-  for(const id of [...shown])if(id.startsWith("jets/beam:")&&!groups[id.slice(10)]){r.remove(id);shown.delete(id);}
+  for(const id of [...shown])if(id.startsWith("jets/beam:")&&!groups[id.slice(10)]){syncInstanced(r,id,null,null);shown.delete(id);}
   for(const [key,list] of Object.entries(groups)){const [kind,c]=key.split(":"),geo=beamGeos(Number(c))[kind],tr=new Float32Array(list.length*16),ti=new Float32Array(list.length*4);
-    list.forEach((b,i)=>{tr.set(b.m,i*16);ti.set([1,1,1,b.a],i*4);});r.upsert("jets/beam:"+key,{...geo,instances:{transforms:tr,tints:ti},material:{unlit:true,alphaMode:"blend",doubleSided:true,castShadow:false,frustumCulled:false,color:[1,1,1,1]}});shown.add("jets/beam:"+key);}
-  if(chev.length){const tr=new Float32Array(chev.length*16),ti=new Float32Array(chev.length*4);chev.forEach((m,i)=>{tr.set(m,i*16);ti.set([1,1,1,m.alpha],i*4);});r.upsert("jets/run",{...CHEV,instances:{transforms:tr,tints:ti},material:{unlit:true,alphaMode:"blend",doubleSided:true,castShadow:false,frustumCulled:false,color:[1,1,1,1]}});shown.add("jets/run");}
-  else if(shown.has("jets/run")){r.remove("jets/run");shown.delete("jets/run");}
+    list.forEach((b,i)=>{tr.set(b.m,i*16);ti.set([1,1,1,b.a],i*4);});syncInstanced(r,"jets/beam:"+key,geo,tr,{tints:ti,material:{unlit:true,alphaMode:"blend",doubleSided:true,castShadow:false,frustumCulled:false,color:[1,1,1,1]}});shown.add("jets/beam:"+key);}
+  if(chev.length){const tr=new Float32Array(chev.length*16),ti=new Float32Array(chev.length*4);chev.forEach((m,i)=>{tr.set(m,i*16);ti.set([1,1,1,m.alpha],i*4);});syncInstanced(r,"jets/run",CHEV,tr,{tints:ti,material:{unlit:true,alphaMode:"blend",doubleSided:true,castShadow:false,frustumCulled:false,color:[1,1,1,1]}});shown.add("jets/run");}
+  else if(shown.has("jets/run")){syncInstanced(r,"jets/run",CHEV,null);shown.delete("jets/run");}
 }
 // ------------------------------------------------------------ loop
 let lastUi=0;
