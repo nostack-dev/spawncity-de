@@ -56,6 +56,7 @@ import {installNativeCombat,tickNativeCombat} from "./native_combat.mjs";
 import {installNativeVehicleEntry,tickNativeVehicleEntry} from "./native_vehicle_entry.mjs";
 import {applyNativeDayNight} from "./native_day_night.mjs";
 import {installNativeGroundAreas} from "./native_ground_areas.mjs";
+import {buildNativeTrainingSnapshot,installNativeTrainingProps,removeNativeTrainingProps,NATIVE_TRAINING_ORIGIN} from "./native_training_world.mjs";
 import {installNativeJetHud,tickNativeJetHud} from "./native_jet_hud.mjs";
 import {HybridMotorSound} from "./motor_sound.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
@@ -188,8 +189,9 @@ async function resolveStartOrigin(){
  if(!cachedFix)await readPermission();
  const fix=cachedFix||(permissionState==="denied"?null:await requestLocation({reason:"start",force:true}));
  if(fix)return {origin:fix,label:"your GPS location",source:"gps"};
- report(permissionState==="denied"?deniedHint():"GPS unavailable · switching to real Konstanz demo");
- return {origin:NATIVE_DEMO_CITY.origin,label:NATIVE_DEMO_CITY.name,source:"demo"};
+ // Production: no GPS fix and no chosen place starts the training world.
+ report(permissionState==="denied"?deniedHint():"GPS unavailable · training world");
+ return {origin:NATIVE_TRAINING_ORIGIN,label:"Training",source:"training"};
 }
 async function loadRealWorld(game){
  const epoch=++osmEpoch;
@@ -201,11 +203,13 @@ async function loadRealWorld(game){
  if(game.closed||epoch!==osmEpoch)return;
  report("Loading "+label+" · real OpenStreetMap buildings and roads…");
  try{
-  const demo=origin.lon===NATIVE_DEMO_CITY.origin.lon&&origin.lat===NATIVE_DEMO_CITY.origin.lat;
-  const result=await fetchNativeOsm(origin,{
+  const training=resolved.source==="training";
+  const demo=!training&&origin.lon===NATIVE_DEMO_CITY.origin.lon&&origin.lat===NATIVE_DEMO_CITY.origin.lat;
+  const result=training?buildNativeTrainingSnapshot(origin):await fetchNativeOsm(origin,{
    signal:controller.signal,
    snapshotUrl:demo?"./osm/demo-konstanz.json":null
   });
+  if(training)installNativeTrainingProps(game);else{removeNativeTrainingProps(game);const v=document.getElementById("viewport");if(v)v.dataset.worldMode="real";}
   if(game.closed||epoch!==osmEpoch)return;
   const shown=await game.updateOsmFeatures(result);
   if(shown?.cancelled||epoch!==osmEpoch)return false;
