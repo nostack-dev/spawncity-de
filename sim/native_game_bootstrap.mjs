@@ -12,6 +12,8 @@ import {openQuitConfirm} from "./quit_confirm.mjs";
 import "./neon_ui_theme.mjs";
 import "./mobile_gameplay_ui.mjs";
 import "./immersive_soundscape.mjs";
+import "./jetpack_audio.mjs";
+import "./headshot_feedback.mjs";
 import "./native_fire_audio.mjs";
 import "./sniper_scope.mjs";
 import "./native_ads.mjs";
