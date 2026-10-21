@@ -56,6 +56,7 @@ import {installGpsLive} from "./native_gps_live.mjs";
 import {installSpeedLines} from "./native_speed_lines.mjs";
 import {installNativeCameraGuard} from "./native_camera_guard.mjs";
 import {installNativeSandbox,tickNativeSandbox} from "./native_sandbox.mjs";
+import {installNativeWorldImpacts,installNativeTrees,tickNativeWorldImpacts} from "./native_world_impacts.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {installNativeCombat,tickNativeCombat} from "./native_combat.mjs";
 import {installNativeVehicleEntry,tickNativeVehicleEntry} from "./native_vehicle_entry.mjs";
@@ -237,6 +238,7 @@ async function loadRealWorld(game){
   setNativeHudSources({people:nativePeople,cops:nativeCops});
   installNativePolice();
   try{installNativeGroundAreas(game,result);}catch(error){console.warn("ground areas",error);}
+  try{installNativeTrees(result);}catch(error){console.warn("trees",error);}
   const life2=installNativeWorldLife(game,result);
   installNativeThreats();
   installNativePlaces(game,result);
@@ -315,6 +317,7 @@ async function prepareEngine(){
   installSpeedLines(game);
   installNativeCameraGuard(game);
   installNativeSandbox(game);
+  installNativeWorldImpacts(game);
   installNativeCombat();
   try{installNativeModeOverlay();}catch(error){console.warn("overlay",error);}
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});
@@ -326,7 +329,7 @@ async function prepareEngine(){
   game.beforeFrame=()=>{applyNativeDayNight(game.world?.renderer);return input.sample();};
   const motor=new HybridMotorSound(viewport);
   addEventListener("pointerdown",()=>motor.ensure(),{once:true});
-  game.afterFrame=(frame,now)=>{weapons.tick(now);tickNativeSandbox(now);tickNativeVehicleEntry();tickNativeJetHud();syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
+  game.afterFrame=(frame,now)=>{weapons.tick(now);tickNativeSandbox(now);tickNativeWorldImpacts(now);tickNativeVehicleEntry();tickNativeJetHud();syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
    button.addEventListener("click",()=>{
     globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);

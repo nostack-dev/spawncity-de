@@ -12,6 +12,7 @@ import {markFacade} from "./native_session.mjs";
 import {addGlassCrack,addWallSoot,addWallBreach} from "./native_combat.mjs";
 import {hitNativeThreats} from "./native_threats.mjs";
 import {hitNativeSandbox,damageNativeSandboxEnemy} from "./native_sandbox.mjs";
+import {nativeBulletImpact} from "./native_world_impacts.mjs";
 import {createNativeOrdnance} from "./native_ordnance.mjs";
 import {createNativeFootFire} from "./native_foot_fire.mjs";
 import {takeNativeCarBooms} from "./native_city_life.mjs";
@@ -91,11 +92,10 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     const person=hitNativePeople(ray.origin,ray.direction,range)||hitNativeCops(ray.origin,ray.direction,range)||hitNativeCows(ray.origin,ray.direction,range)||hitNativeThreats(ray.origin,ray.direction,range)||hitNativeSandbox(ray.origin,ray.direction,range);
     if(person?.kind==="enemy")damageNativeSandboxEnemy(person.id,1);
     const end=person?.point||hit?.point||add(ray.origin,ray.direction,Math.min(range,80));
-    if(person?.point||hit?.point){
-      const point=person?.point||hit.point;
-      markNativeImpact(point);markFacade(point);
-      addGlassCrack(point);addWallSoot(point);if(Math.random()<.2)addWallBreach(point);
-    }
+    // production world_impacts: hole decal + chips in the surface colour,
+    // cracked glass, trees shake / fall, shots into nothing still hit the ground
+    if(person?.point)nativeBulletImpact(ray,{point:person.point,surface:"actor"});
+    else nativeBulletImpact(ray,hit&&hit.id!==selfId(game.mode)?{point:hit.point,normal:hit.normal,id:hit.id,surface:hit.kind&&hit.kind!=="terrain"?"vehicle":null}:null,{maxDistance:range});
     tracer(ray.origin,end,game.mode,game.mode==="foot"?state.foot:state.drone);
     ordnance.shotLine(ray.origin,end);
     if(hit&&hit.id!==selfId(game.mode))impact(hit,kind,ray.direction);

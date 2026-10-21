@@ -7,6 +7,7 @@ import {bulletImpulse} from "./ballistics.mjs";
 import {nativePeople,applyPersonDamage,nativeTraffic,applyVehicleShot} from "./native_city_life.mjs";
 import {liveNativeCops,applyCopDamage,scanReadyCruisers,applyCruiserDamage} from "./native_police_ground.mjs";
 import {liveNativeSandboxEnemies,damageNativeSandboxEnemy} from "./native_sandbox.mjs";
+import {nativeBulletImpact} from "./native_world_impacts.mjs";
 import {listNativeThreats,applyThreatDamage} from "./native_threats.mjs";
 import {applyCowDamage} from "./native_world_life.mjs";
 import {markNativeImpact} from "./native_world_life.mjs";
@@ -73,18 +74,23 @@ export function firstPrismMeters(prisms,origin,dir,range){
     const ring=prism?.points;
     if(!Array.isArray(ring)||ring.length<3)continue;
     const base=Number(prism.base)||0,top=Number(prism.top)||0;
-    let hitT=null;
+    let hitT=null,hitEdge=null;
     for(let i=0;i<ring.length;i++){
       const a=ring[i],b=ring[(i+1)%ring.length];
       const t=edgeT(x0,y0,x1,y1,Number(a?.[0]),Number(a?.[1]),Number(b?.[0]),Number(b?.[1]));
       if(t===null||t<=.001||t>1)continue;
       const z=z0+(z1-z0)*t;
       if(z<base-.08||z>top+.12)continue;
-      if(hitT===null||t<hitT)hitT=t;
+      if(hitT===null||t<hitT){hitT=t;hitEdge=[Number(a[0]),Number(a[1]),Number(b[0]),Number(b[1])];}
     }
     if(hitT===null)continue;
     const dist=hitT*range;
-    if(!best||dist<best.t)best={t:dist,point:[x0+dir[0]*dist,y0+dir[1]*dist,z0+dir[2]*dist],kind:"wall"};
+    if(!best||dist<best.t){
+      // wall normal (facing the shooter) and the facade coordinates of the hit
+      const [ax,ay,bx,by]=hitEdge,ex=bx-ax,ey=by-ay,el=Math.hypot(ex,ey)||1;let nx=ey/el,ny=-ex/el;if(nx*dir[0]+ny*dir[1]>0){nx=-nx;ny=-ny;}
+      const point=[x0+dir[0]*dist,y0+dir[1]*dist,z0+dir[2]*dist];
+      best={t:dist,point,kind:"wall",normal:[nx,ny,0],surface:"building",wallU:Math.hypot(point[0]-ax,point[1]-ay),wallV:point[2]-base};
+    }
   }
   return best;
 }
@@ -199,10 +205,9 @@ function wound(hit,weapon,dir){
   if(hit.kind==="cruiser")return applyCruiserDamage(hit.unit,vehicleShotDamage("cruiser",hit.engine,weapon));
   return null;
 }
-function markWall(point){
-  if(!point)return;
-  markNativeImpact(point);markFacade(point);addGlassCrack(point);addWallSoot(point);
-  if(Math.random()<.2)addWallBreach(point);
+function markWall(hit,ray){
+  if(!hit?.point)return;
+  nativeBulletImpact(ray,hit);
 }
 
 export function createNativeFootFire(game,{aim,tracer,schedule=null}={}){
@@ -212,7 +217,7 @@ export function createNativeFootFire(game,{aim,tracer,schedule=null}={}){
   function wallAt(origin,dir,range){
     const self={foot:"player-foot",car:"player-car",jet:"player-jet"}[game.mode]||"";
     const rigid=game.rigids?.raycast?.(origin,dir,range);
-    let best=rigid&&rigid.id!==self?{t:rigid.distanceM,point:rigid.point,id:rigid.id,kind:rigid.kind||"rigid"}:null;
+    let best=rigid&&rigid.id!==self?{t:rigid.distanceM,point:rigid.point,id:rigid.id,kind:rigid.kind||"rigid",normal:rigid.normal,surface:rigid.kind&&rigid.kind!=="terrain"?"vehicle":null}:null;
     const prism=firstPrismMeters(game.rigids?.buildingSnapshot?.prisms,origin,dir,range);
     if(prism&&(!best||prism.t<best.t))best=prism;
     return best;
@@ -230,9 +235,9 @@ export function createNativeFootFire(game,{aim,tracer,schedule=null}={}){
     for(const hit of marched.hits){
       const wait=delayOf(hit);
       later(()=>{
-        if(hit.stop){markWall(hit.point);if(hit.id)game.rigids?.applyImpulse?.(hit.id,bulletImpulse(ray.direction,kind),{point:hit.point});return;}
+        if(hit.stop){markWall(hit,ray);if(hit.id)game.rigids?.applyImpulse?.(hit.id,bulletImpulse(ray.direction,kind),{point:hit.point});return;}
         wound(hit,weapon,ray.direction);
-        if(hit.point)markNativeImpact(hit.point);
+        if(hit.point)nativeBulletImpact(ray,{point:hit.point,surface:/car|bus|cruiser|drone/.test(hit.kind)?"vehicle":"actor"});
       },wait);
     }
     const tail=marched.end;
