@@ -56,7 +56,7 @@ export class NativeGameInput{
    throw Error("native input needs real game, canvas and DOM");
   this.runtime=runtime;this.canvas=canvas;this.win=win;this.doc=doc;this.navigator=navigator;
   this.keys=new Set();this.look=[0,0];this.yaw=0;this.pitch=0;this.clearance=2;
-  this.arm=false;this.closed=false;this.pointers=new Map();
+  this.arm=true;this.closed=false;this.pointers=new Map();
   this.touch={left:{x:0,y:0},right:{x:0,y:0}};
   this.handlers=[];this.root=stickRoot;this.pointerLocked=false;
   this.main=Boolean(globalThis.__arondightDesktopInput)&&this.win===globalThis.window;
@@ -113,9 +113,9 @@ export class NativeGameInput{
     if(this.closed||e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
     if(e.target?.closest?.("input,textarea,select,[contenteditable=true]"))return;
     const mode=runtime.mode;
-    if(mode==="drone")return;
     const move=new Set(["KeyW","KeyA","KeyS","KeyD","Space","ShiftLeft","ShiftRight","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
-    if(move.has(e.code)){this.keys.add(e.code);e.preventDefault?.();return;}
+    if(move.has(e.code)){this.keys.add(e.code);if(mode!=="drone")e.preventDefault?.();return;}
+    if(mode==="drone")return;
     if(e.code==="KeyV"&&mode==="foot"){try{runtime.setMode("drone");}catch{}e.preventDefault?.();return;}
     if(e.code==="KeyF"||e.code==="KeyE"){
      try{runtime.setMode(mode==="foot"?"car":"foot");}catch{}
@@ -259,6 +259,11 @@ export class NativeGameInput{
     if(d.camera&&!this.prevCam)this.cycleCamera();
     this.prevArm=Boolean(d.arm);this.prevCam=Boolean(d.camera);
     base.arm=this.arm;
+   }else{
+    applyGameStick(base,"left",{x:(held("KeyD")?1:0)-(held("KeyA")?1:0),y:(held("KeyS")?1:0)-(held("KeyW")?1:0)});
+    applyGameStick(base,"right",{x:(held("ArrowRight")?1:0)-(held("ArrowLeft")?1:0),y:(held("ArrowDown")?1:0)-(held("ArrowUp")?1:0)});
+    this.steerHeight((held("Space")?1:0)-(held("ShiftLeft")||held("ShiftRight")?1:0));
+    base.groundClearance=this.clearance;base.arm=this.arm;
    }
   }else if(mode==="foot"){
    // player_walk_mode_v4.update: keys plus the shaped first-person stick.

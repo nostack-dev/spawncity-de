@@ -142,8 +142,8 @@ async function launch(){
   const b3=await Box3DFactory();
   const canvas=document.createElement("canvas");
   canvas.id="nativeCanvas";canvas.setAttribute("aria-label","SpawnCity WebGL2 game");
-  canvas.tabIndex=0;viewport.append(canvas);
-  canvas.addEventListener("click",()=>{if(document.pointerLockElement!==viewport)viewport.requestPointerLock?.();});
+  canvas.tabIndex=0;viewport.append(canvas);canvas.focus();
+  canvas.addEventListener("pointerdown",()=>{canvas.focus();if(document.pointerLockElement!==viewport)viewport.requestPointerLock?.();});
   report("Initializing one native GPU and original Flight Core…");
   game=new NativeGameRuntime(canvas,{
    b3,flightCoreFactory:FlightCoreFactory,
@@ -244,10 +244,12 @@ async function launch(){
    };
   };
   menu.hidden=true;
+  globalThis.__arondightQuietUnlockUntil=performance.now()+4000;
   document.body.classList.add("solo-flight");
   document.documentElement.dataset.engine="native-webgl2";
   viewport.dataset.renderer="native-webgl2-only";
   setModePressed("drone");
+  $("armButton")?.setAttribute("aria-pressed","true");
   report("Native WebGL2 · real 1 kHz Flight Core running");
   void loadRealWorld(game,{source:worldSource});
  }catch(error){
