@@ -20,7 +20,11 @@ font:600 12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;text-shadow:0 
 .gm-title{display:flex;gap:10px;justify-content:center;font:900 italic 56px/1 Inter,system-ui,sans-serif;letter-spacing:.04em;color:#f4f7f8}
 .gm-title span:last-child{color:#ffb02e}
 .gm-sub{margin:4px 0 10px;font:700 12px/1 Inter,system-ui,sans-serif;letter-spacing:.32em;color:#b9c3cc}
+#gameMenuBg{position:absolute;inset:0;width:100%;height:100%;display:block}
 #gameMenuStart{position:relative;z-index:30;pointer-events:auto;margin-top:8px;min-width:min(64vw,300px);padding:15px 28px;font:700 18px/1 Inter,system-ui,sans-serif;letter-spacing:.32em;text-transform:uppercase;color:#16120c;background:linear-gradient(180deg,#ffb02e,#ff7a1a);border:0;border-radius:4px;cursor:pointer;clip-path:polygon(4% 0,100% 0,96% 100%,0 100%)}
+#soundSwitch,#musicSwitch{position:fixed;z-index:30;top:max(10px,env(safe-area-inset-top));width:40px;height:36px;background:rgba(10,13,18,.56);border:1px solid rgba(255,255,255,.16);border-radius:6px;color:#fff;cursor:pointer}
+#soundSwitch{right:max(10px,env(safe-area-inset-right))}
+#musicSwitch{right:calc(max(10px,env(safe-area-inset-right)) + 46px)}
 #gameMenuStart:disabled{opacity:.7;cursor:default}
 #gameMenuStatus{margin-top:8px;font:600 12px/1.3 Inter,system-ui,sans-serif;color:#b4c5d5}
 #worldSource{display:block;width:min(64vw,300px);margin:8px auto 2px;padding:10px 12px;border-radius:8px;border:1px solid #ffffff33;background:#12161c;color:#eef0f2;font:600 13px Inter,system-ui,sans-serif}
@@ -69,16 +73,19 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
 <a id="osmAttribution" href="https://www.openstreetmap.org/copyright"
  target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
 <div id="gameMenu" role="dialog" aria-label="Start game">
+<canvas id="gameMenuBg" aria-hidden="true"></canvas>
 <div class="gm-center" id="welcome">
 <div class="gm-title" aria-label="SpawnCity"><span>SPAWN</span><span>CITY</span></div>
 <div class="gm-sub">DRONE · CARS · ZOMBIES</div>
+<button id="gameMenuStart" type="button">START</button>
+<div id="gameMenuStatus" role="status">READY</div>
 <select id="worldSource" aria-label="Choose the source of real OpenStreetMap buildings">
 <option value="demo">Real OSM demo: Konstanz · no GPS</option>
 <option value="gps">My location · request GPS permission</option>
 </select>
-<button id="gameMenuStart" type="button">START</button>
-<div id="gameMenuStatus" role="status">READY</div>
 </div></div>
+<button id="soundSwitch" type="button" data-on="1" aria-label="Sound">SND</button>
+<button id="musicSwitch" type="button" data-on="1" aria-label="Music">MUS</button>
 <script type="module" src="./sim/native_game_bootstrap.mjs"></script>
 </body>
 </html>

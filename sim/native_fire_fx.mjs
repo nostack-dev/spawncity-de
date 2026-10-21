@@ -2,7 +2,7 @@
 // opaque, fromTRS. Moving tracer from the live runtime: 240 m/s, 9 m tail.
 import {fromTRS} from "./native_render_math.mjs";
 
-const SPEED=240,TAIL=9,HOLD_MS=130,FLASH_MS=70;
+const SPEED=210,TAIL=9,HOLD_MS=130,FLASH_MS=70;
 const IDS={core:"fx/tracer-core",halo:"fx/tracer-halo",flash:"fx/muzzle",decal:"fx/decals"};
 const shots=[];
 const drawn={};

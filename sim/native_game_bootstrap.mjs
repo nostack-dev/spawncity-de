@@ -17,10 +17,14 @@ import "./sniper_scope.mjs";
 import "./native_ads.mjs";
 import "./native_mode_overlay.mjs";
 import "./world_options_menu.mjs";
+import "./gameplay_final_ui_dock.mjs";
+import "./edge_hud_layout.mjs";
+import "./drone_weapon_modes.mjs";
+import "./mp_fun_hud.mjs";
 import "./changelog_menu.mjs";
 import "./player_settings_sections.mjs";
 import {mountPlayerControlSettings} from "./control_settings.mjs";
-import {mountAudioSettings} from "./audio_settings.mjs";
+import {mountAudioSettings,loadAudioSettings,saveAudioSettings} from "./audio_settings.mjs";
 import {installNativeModeOverlay} from "./native_mode_overlay.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
 import {installNativeHudMap,tickNativeHudMap,setNativeHudSources} from "./native_hud_map.mjs";
@@ -266,6 +270,11 @@ async function launch(){
  }finally{launching=false;}
 }
 startButton.disabled=false;
+const sound=$("soundSwitch"),music=$("musicSwitch");
+const paintAudio=()=>{const s=loadAudioSettings();if(sound)sound.dataset.on=s.soundEnabled?"1":"0";if(music)music.dataset.on=s.musicEnabled?"1":"0";};
+paintAudio();
+sound?.addEventListener("click",()=>{const s=loadAudioSettings();saveAudioSettings({...s,soundEnabled:!s.soundEnabled});paintAudio();});
+music?.addEventListener("click",()=>{const s=loadAudioSettings();saveAudioSettings({...s,musicEnabled:!s.musicEnabled});paintAudio();});
 startButton.addEventListener("click",launch);
 startButton.addEventListener("pointerdown",event=>{if(event.button===0)launch();});
 addEventListener("keydown",event=>{
