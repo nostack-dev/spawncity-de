@@ -99,7 +99,7 @@ export function tickNativeWorldLife(game,now=performance.now()){
   paint(renderer,"life/marks",MARK,marks.slice(-40));
   const raw=installNativeWorldLife.water;
   if(raw?.length&&raw.length%16===0&&!drawn.water){
-    renderer.upsert("life/water",{...WATER,instances:{transforms:raw instanceof Float32Array?raw:new Float32Array(raw)},material:{color:[.2,.55,.7,1],doubleSided:true}});
+    renderer.upsert("life/water",{...WATER,instances:{transforms:raw instanceof Float32Array?raw:new Float32Array(raw)},material:{color:[.184,.373,.525,1],doubleSided:true}});
     drawn.water=true;
   }
 }
