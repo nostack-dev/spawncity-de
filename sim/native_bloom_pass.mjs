@@ -90,7 +90,9 @@ export class NativeBloomPass{
     this.bind(0,r.main.t);this.bind(1,r.main.hdr);this.bind(2,r.a1.t);this.bind(3,r.a2.t);
     this.draw(this.prog.combine,null,u=>{gl.uniform1i(u.tScene,0);gl.uniform1i(u.tHdr,1);gl.uniform1i(u.tB1,2);gl.uniform1i(u.tB2,3);
       gl.uniform1f(u.uS1,this.bloomOn?STRENGTH_NEAR:0);gl.uniform1f(u.uS2,this.bloomOn?STRENGTH_WIDE:0);gl.uniform1f(u.uExposure,exposure);});
-    gl.activeTexture(gl.TEXTURE0);gl.bindVertexArray(null);gl.depthMask(true);
+    // unbind: a sampler left on a target texture is a feedback loop next frame
+    for(let i=3;i>=0;i--){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,null);}
+    gl.bindVertexArray(null);gl.depthMask(true);
   }
   dispose({contextLost=false}={}){if(!contextLost)this.free();this.res=null;this.prog=null;this.w=this.h=0;}
 }
