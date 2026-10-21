@@ -12,7 +12,7 @@ import {findXboxGamepad,sampleXboxGamepad} from "./xbox_gamepad.mjs";
 import {loadVehicleControlSettings} from "./vehicle_control_settings.mjs";
 import {installNativeFlightTouch,readNativeFlightTouch} from "./native_flight_touch.mjs";
 import {claimSticks,releaseSticks,sticks} from "./shared_sticks.mjs";
-export const NATIVE_GAME_INPUT_VERSION="native-game-input-v1";
+export const NATIVE_GAME_INPUT_VERSION="native-game-input-v2-prod-vehicles";
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,Number(x)||0));
 const deadzone=(v,d=.12)=>Math.abs(v)<=d?0:Math.sign(v)*Math.min(1,(Math.abs(v)-d)/(1-d));
 const key=(keys,...names)=>names.some(name=>keys.has(name));
@@ -121,9 +121,10 @@ export class NativeGameInput{
     const mode=runtime.mode;
     const move=new Set(["KeyW","KeyA","KeyS","KeyD","Space","ShiftLeft","ShiftRight","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
     if(move.has(e.code)){this.keys.add(e.code);e.preventDefault?.();return;}
-    if(e.code==="KeyV"){try{runtime.setMode(mode==="foot"?"drone":"foot");}catch{}e.preventDefault?.();return;}
-    if(e.code==="KeyF"){try{runtime.setMode(mode==="car"?"foot":"car");}catch{}e.preventDefault?.();return;}
-    if(e.code==="KeyJ"){try{runtime.setMode(mode==="jet"?"drone":"jet");}catch{}e.preventDefault?.();return;}
+    // Production: V switches drone <-> on foot; in a car or jet it does
+    // nothing. Vehicles are entered and left with E (F = E, Xbox X) next to
+    // them (native_vehicle_entry.mjs), never by a mode key from anywhere.
+    if(e.code==="KeyV"){if(mode==="foot"||mode==="drone"){try{runtime.setMode(mode==="foot"?"drone":"foot");}catch{}}e.preventDefault?.();return;}
     if(e.code==="KeyC"){this.cycleCamera();e.preventDefault?.();}
    });
    listen(win,"keyup",e=>this.keys.delete(e.code));
@@ -242,7 +243,8 @@ export class NativeGameInput{
   const desktop=Boolean(this.doc.body?.classList.contains("desktop-input"));
   if(!desktop&&(mode==="car"||mode==="jet")){
    if(this.stickOwner!==mode){
-    claimSticks({name:mode,labels:mode==="jet"?{move:"STEIGEN / SCHUB",look:"KNÜPPEL",fire:"KANONE"}:{move:"GAS",look:"LENKEN",fire:"BRAKE"},onFire:v=>{this.vehicleFire=Boolean(v);}});
+    // Same shared-stick claims as production player_car_mode / jet_mode.
+    claimSticks(mode==="jet"?{name:"jet",labels:{move:"STEIGEN / SCHUB",look:"KNÜPPEL",fire:"KANONE"},onFire:v=>{this.vehicleFire=Boolean(v);}}:{name:"car",labels:{move:"LENKEN / GAS",look:"UMSCHAUEN"}});
     this.stickOwner=mode;
    }
   }else if(this.stickOwner){releaseSticks();this.stickOwner=null;this.vehicleFire=false;}
@@ -318,16 +320,21 @@ export class NativeGameInput{
    }else this.lookVel.yaw=this.lookVel.pitch=0;
    base.foot.yaw=this.yaw;base.foot.pitch=this.pitch;
   }else if(mode==="car"){
-   // gta_runtime_v1.updateVehicle, written into the engine drive instead of a second car.
+   // player_car_mode.mjs controls(): A/D + left stick X steer, W/S + left
+   // stick Y + RT/LT pedal, Space / B / HANDBREMSE handbrake, scaled by the
+   // vehicle control settings. The right stick only looks around.
    const car=loadVehicleControlSettings();
    const pad=findXboxGamepad(this.navigator?.getGamepads?.());
-   let steer=(held("KeyA")?-1:0)+(held("KeyD")?1:0)+(this.stickOwner==="car"?sticks.look.x:0);
-   let gas=Math.max(held("KeyW")?1:0,this.stickOwner==="car"?Math.max(0,-sticks.move.y):0),brake=Math.max(held("KeyS")?1:0,this.vehicleFire&&this.stickOwner==="car"?1:0);
-   if(pad){steer+=clamp(pad.axes?.[0],-1,1);gas=Math.max(gas,clamp(pad.buttons?.[7]?.value||0,0,1),Math.max(0,-(pad.axes?.[1]||0)));brake=Math.max(brake,clamp(pad.buttons?.[6]?.value||0,0,1),Math.max(0,pad.axes?.[1]||0));}
-   const scale=car.throttleSensitivityPercent/100,turn=car.steeringSensitivityPercent/100;
-   base.car.pedal=clamp((gas-brake)*scale,-1,1);
-   base.car.steer=clamp(steer*turn,-1,1);
-   base.car.handbrake=held("Space");
+   const own=this.stickOwner==="car";
+   const axis=(v,d=.12)=>{const n=Number(v)||0;return Math.abs(n)<=d?0:n;};
+   const button=i=>Math.max(0,Number(pad?.buttons?.[i]?.value)||(pad?.buttons?.[i]?.pressed?1:0));
+   let steer=(held("KeyD")?1:0)-(held("KeyA")?1:0)+(own?sticks.move.x:0);
+   let pedal=(held("KeyW")?1:0)-(held("KeyS")?1:0)-(own?sticks.move.y:0);
+   let handbrake=held("Space");
+   if(pad){steer+=axis(pad.axes?.[0]);pedal+=button(7)-button(6);handbrake=handbrake||button(1)>.55;}
+   base.car.pedal=clamp(clamp(pedal,-1,1)*car.throttleSensitivityPercent/100,-1,1);
+   base.car.steer=clamp(clamp(steer,-1,1)*car.steeringSensitivityPercent/100,-1,1);
+   base.car.handbrake=handbrake;
   }else if(mode==="jet"){
    let lift=(held("KeyW")?1:0)-(held("KeyS")?1:0)-(this.stickOwner==="jet"?sticks.move.y:0);
    let yawIn=(held("KeyD")?1:0)-(held("KeyA")?1:0)+(this.stickOwner==="jet"?sticks.move.x:0);

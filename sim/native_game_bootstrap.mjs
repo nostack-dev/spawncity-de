@@ -41,6 +41,7 @@ import {installNativeThreats,tickNativeThreats} from "./native_threats.mjs";
 import {installNativePlaces,tickNativePlaces} from "./native_places.mjs";
 import {installNativeSession,tickNativeSession} from "./native_session.mjs";
 import {installNativeCombat,tickNativeCombat} from "./native_combat.mjs";
+import {installNativeVehicleEntry,tickNativeVehicleEntry} from "./native_vehicle_entry.mjs";
 import {HybridMotorSound} from "./motor_sound.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
 const $=id=>document.getElementById(id);
@@ -265,6 +266,7 @@ async function prepareEngine(){
    onError:error=>{console.error("native game",error);if(!game.running)report("Native engine halted: "+error.message,true);}
   });
   input=new NativeGameInput(game,{canvas});
+  installNativeVehicleEntry(game,{input});
   installNativeSession(game);
   installNativeCombat();
   try{installNativeModeOverlay();}catch(error){console.warn("overlay",error);}
@@ -277,7 +279,7 @@ async function prepareEngine(){
   game.beforeFrame=()=>input.sample();
   const motor=new HybridMotorSound(viewport);
   addEventListener("pointerdown",()=>motor.ensure(),{once:true});
-  game.afterFrame=(frame,now)=>{weapons.tick(now);syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
+  game.afterFrame=(frame,now)=>{weapons.tick(now);tickNativeVehicleEntry();syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
    button.addEventListener("click",()=>{
     globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);
