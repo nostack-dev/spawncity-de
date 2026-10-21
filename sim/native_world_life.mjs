@@ -59,9 +59,19 @@ export function installNativeWorldLife(game,snapshot){
   globalThis.__arondightCows={list:()=>cows.filter(cow=>cow.alive).map(cow=>({id:cow.id,x:cow.x,y:cow.y,z:.8,dead:!cow.alive,hidden:false,liveBody:cow.id}))};
   return {cows:cows.length,flocks:flocks.length,water:water.length/16};
 }
+function pack(data){
+  if(!data?.length)return null;
+  if(data[0]?.length===16){
+    const out=new Float32Array(data.length*16);
+    for(let i=0;i<data.length;i++)if(data[i]?.length===16)out.set(data[i],i*16);
+    return out;
+  }
+  if(data.length%16)return null;
+  return data instanceof Float32Array?data:new Float32Array(data);
+}
 function paint(renderer,id,geo,data){
-  if(!data.length){if(drawn[id]){renderer.remove(id);drawn[id]=false;}return;}
-  const transforms=new Float32Array(data);
+  const transforms=pack(data);
+  if(!transforms){if(drawn[id]){renderer.remove(id);drawn[id]=false;}return;}
   if(drawn[id])renderer.updateInstances(id,{transforms});
   else{renderer.upsert(id,{...geo,instances:{transforms},material:{doubleSided:true,castShadow:false}});drawn[id]=true;}
 }
@@ -81,13 +91,17 @@ export function tickNativeWorldLife(game,now=performance.now()){
     if(fl.state==="air"){fl.x+=(p.x-fl.x)*.01;fl.y+=(p.y-fl.y)*.01;if(Math.hypot(fl.x-p.x,fl.y-p.y)<12)fl.state="ground";}
     for(const b of fl.birds)birdData.push(...fromTRS([fl.x+b.ox,fl.y+b.oy,fl.state==="air"?6:.2],[0,0,0,1],[1,1,1]));
   }
-  const pingData=pings.filter(m=>now-m.born<6000).map(m=>fromTRS([m.x,m.y,1],[0,0,0,1],[1,1,1])).flat();
+  const pingData=pings.filter(m=>now-m.born<6000).map(m=>fromTRS([m.x,m.y,1],[0,0,0,1],[1,1,1]));
   pings=pings.filter(m=>now-m.born<6000);
   paint(renderer,"life/cows",COW,cowData);
   paint(renderer,"life/pigeons",BIRD,birdData);
   paint(renderer,"life/ping",PING,pingData);
-  paint(renderer,"life/marks",MARK,marks.slice(-40).flat());
-  if(installNativeWorldLife.water&&!drawn.water){renderer.upsert("life/water",{...WATER,instances:{transforms:new Float32Array(installNativeWorldLife.water)},material:{color:[.2,.55,.7,1],doubleSided:true}});drawn.water=true;}
+  paint(renderer,"life/marks",MARK,marks.slice(-40));
+  const raw=installNativeWorldLife.water;
+  if(raw?.length&&raw.length%16===0&&!drawn.water){
+    renderer.upsert("life/water",{...WATER,instances:{transforms:raw instanceof Float32Array?raw:new Float32Array(raw)},material:{color:[.2,.55,.7,1],doubleSided:true}});
+    drawn.water=true;
+  }
 }
 export function markNativeImpact(point){
   if(!point)return;

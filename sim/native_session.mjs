@@ -16,7 +16,9 @@ function puck(){
 const PUCK=puck(),CRACK={positions:new Float32Array([-.2,0,.01,.2,0,.01,0,.02,.4]),normals:new Float32Array([0,0,1,0,0,1,0,0,1]),colors:new Float32Array([.9,.95,1,.9,.95,1,.9,.95,1])};
 function paint(renderer,id,geo,data){
   if(!data.length){if(drawn[id]){renderer.remove(id);drawn[id]=false;}return;}
-  const transforms=new Float32Array(data);
+  const transforms=new Float32Array(data.length*(data[0]?.length===16?16:1));
+  if(data[0]?.length===16){for(let i=0;i<data.length;i++)transforms.set(data[i],i*16);}
+  else transforms.set(data);
   if(drawn[id])renderer.updateInstances(id,{transforms});
   else{renderer.upsert(id,{...geo,instances:{transforms},material:{doubleSided:true,castShadow:false}});drawn[id]=true;}
 }
@@ -50,7 +52,7 @@ export function tickNativeSession(game){
   if(finder&&pose)finder.setPose({p:pose,q:[0,0,0,1],v:game.flight.linear?.()||[0,0,0],t:performance.now()});
   peers?.update();
   if(gps?.on)paint(renderer,"session/gps",PUCK,[...fromTRS([gps.x,gps.y,0],[0,0,Math.sin((gps.heading||0)*.5),Math.cos((gps.heading||0)*.5)],[1,1,1])]);
-  paint(renderer,"session/facade",CRACK,marks.slice(-30).flat());
+  paint(renderer,"session/facade",CRACK,marks.slice(-30));
 }
 export function markFacade(point){
   if(!point)return;

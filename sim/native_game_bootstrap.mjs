@@ -191,7 +191,7 @@ async function prepareEngine(){
   report("Initializing one native GPU and original Flight Core…");
   game=new NativeGameRuntime(canvas,{
    b3,flightCoreFactory:FlightCoreFactory,
-   onError:error=>{console.error("native game",error);report("Native engine halted: "+error.message,true);}
+   onError:error=>{console.error("native game",error);if(!game.running)report("Native engine halted: "+error.message,true);}
   });
   input=new NativeGameInput(game,{canvas});
   installNativeSession(game);

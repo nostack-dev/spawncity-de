@@ -7,13 +7,13 @@ export function extractFrustumPlanes(m){
   for(const [axis,sign] of [[0,1],[0,-1],[1,1],[1,-1],[2,1],[2,-1]]){
     const a=m[3]+sign*m[axis],b=m[7]+sign*m[4+axis],c=m[11]+sign*m[8+axis],d=m[15]+sign*m[12+axis];
     const len=Math.hypot(a,b,c);
-    if(!(len>1e-12))throw Error("degenerate frustum");
+    if(!(len>1e-12)){planes.push([0,0,sign,1e6]);continue;}
     planes.push([a/len,b/len,c/len,d/len]);
   }
   return planes;
 }
 export function sphereVisible(planes,center,radius){
-  if(!Array.isArray(planes)||planes.length!==6||center?.length!==3||!(radius>=0))throw Error("invalid frustum sphere");
+  if(!Array.isArray(planes)||planes.length!==6||center?.length!==3||!(radius>=0)||!center.every(Number.isFinite))return true;
   return planes.every(p=>p[0]*center[0]+p[1]*center[1]+p[2]*center[2]+p[3]>=-radius);
 }
 export function geometryBoundingSphere(positions){

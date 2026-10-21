@@ -11,10 +11,14 @@ let health=100,lastHurt=-Infinity;
 const quad=(color)=>({positions:new Float32Array([-.5,-.02,0,.5,-.02,0,.5,.02,.4,-.5,-.02,0,.5,.02,.4,-.5,.02,.4]),normals:new Float32Array(Array(18).fill(0).map((_,i)=>i%3===2?1:0)),colors:new Float32Array(color)});
 const CRACK=quad([.9,.95,1,.9,.95,1,.9,.95,1,.9,.95,1,.9,.95,1,.9,.95,1]);
 const SOOT=quad([.15,.13,.1,.15,.13,.1,.15,.13,.1,.15,.13,.1,.15,.13,.1,.15,.13,.1]);
+function pack(list){
+  const src=list.slice(-40),out=new Float32Array(src.length*16);
+  for(let i=0;i<src.length;i++)if(src[i]?.length===16)out.set(src[i],i*16);
+  return out;
+}
 function paint(renderer,id,geo,list){
   if(!list.length){renderer.remove(id);return;}
-  const transforms=new Float32Array(list.slice(-40).flat());
-  renderer.upsert(id,{...geo,instances:{transforms},material:{doubleSided:true,castShadow:false}});
+  renderer.upsert(id,{...geo,instances:{transforms:pack(list)},material:{doubleSided:true,castShadow:false}});
 }
 export function addGlassCrack(point,size=.16){
   if(!point)return false;

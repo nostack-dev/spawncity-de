@@ -144,20 +144,28 @@ function typed(name,data,n){
 function castsShadow(m){
  return m.material?.castShadow!==false&&m.material?.alphaMode!=="blend"&&m.material?.alphaMode!=="mask";
 }
+function asMatrices(data){
+ if(data instanceof Float32Array&&data.length&&data.length%16===0)return data;
+ if(data?.length&&data[0]?.length===16){
+  const out=new Float32Array(data.length*16);
+  for(let i=0;i<data.length;i++)if(data[i]?.length===16)out.set(data[i],i*16);
+  return out;
+ }
+ if(data?.length&&data.length%16===0)return new Float32Array(data);
+ return null;
+}
 function instances(input){
- const transforms=input?.transforms??identity4();
- typed("transforms",transforms,16);
+ const transforms=asMatrices(input?.transforms)??identity4();
  if(!transforms.length)throw Error("empty instances");
  const count=transforms.length/16;
  const tints=input?.tints??new Float32Array(count*4).fill(1);
- typed("tints",tints,4);
- if(tints.length!==count*4)throw Error("tint count mismatch");
+ const tintBuf=tints instanceof Float32Array&&tints.length===count*4?tints:new Float32Array(count*4).fill(1);
  const normals=new Float32Array(count*9);
  for(let k=0;k<count;k++){
    const mat=transforms.subarray(k*16,k*16+16),normal=normalMatrix3(mat);
    normals.set(normal,k*9);
  }
- return {transforms,tints,normals,count};
+ return {transforms,tints:tintBuf,normals,count};
 }
 function validate(input){
  const p=typed("positions",input.positions,3),count=p.length/3;
@@ -447,7 +455,12 @@ export class NativeSceneRenderer{
    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this.shadow.depth);gl.activeTexture(gl.TEXTURE0);
   }
   const planes=extractFrustumPlanes(camera);
-  const meshes=[...this.meshes.values()].filter(m=>m.visible&&(m.data.skin||m.material.frustumCulled===false||sphereVisible(planes,m.worldBounds.center,m.worldBounds.radius)));
+  const meshes=[...this.meshes.values()].filter(m=>{
+    if(!m.visible)return false;
+    if(m.data.skin||m.material.frustumCulled===false)return true;
+    const b=m.worldBounds;if(!b?.center||!(b.radius>=0))return true;
+    return sphereVisible(planes,b.center,b.radius);
+  });
   const opaque=meshes.filter(m=>m.material.alphaMode!=="blend"&&m.material.viewmodel!==true);
   const viewmodel=meshes.filter(m=>m.material.viewmodel===true);
   const transparent=meshes.filter(m=>m.material.alphaMode==="blend"&&m.material.viewmodel!==true);
