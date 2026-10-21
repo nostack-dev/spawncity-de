@@ -59,6 +59,7 @@ import {installNativeSandbox,tickNativeSandbox} from "./native_sandbox.mjs";
 import {installNativeWorldImpacts,installNativeTrees,tickNativeWorldImpacts} from "./native_world_impacts.mjs";
 import {installNativeSceneLighting,tickNativeSceneLighting} from "./native_scene_lighting.mjs";
 import "./car_radio.mjs";
+import {installNativeAnimals,tickNativeAnimals} from "./native_animals.mjs";
 import "./police_sirens.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {installNativeCombat,tickNativeCombat} from "./native_combat.mjs";
@@ -243,6 +244,7 @@ async function loadRealWorld(game){
   installNativePolice();
   try{installNativeGroundAreas(game,result);}catch(error){console.warn("ground areas",error);}
   try{installNativeTrees(result);}catch(error){console.warn("trees",error);}
+  try{installNativeAnimals(game,result);}catch(error){console.warn("animals",error);}
   const life2=installNativeWorldLife(game,result);
   installNativeThreats();
   installNativePlaces(game,result);
@@ -336,7 +338,7 @@ async function prepareEngine(){
   game.beforeFrame=()=>{applyNativeDayNight(game.world?.renderer);return input.sample();};
   const motor=new HybridMotorSound(viewport);
   addEventListener("pointerdown",()=>motor.ensure(),{once:true});
-  game.afterFrame=(frame,now)=>{weapons.tick(now);tickNativeSandbox(now);tickNativeWorldImpacts(now);tickNativeSceneLighting(now);tickNativeVehicleEntry();tickNativeJetHud();syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
+  game.afterFrame=(frame,now)=>{weapons.tick(now);tickNativeSandbox(now);tickNativeWorldImpacts(now);tickNativeSceneLighting(now);tickNativeAnimals(now);tickNativeVehicleEntry();tickNativeJetHud();syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
    button.addEventListener("click",()=>{
     globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);
