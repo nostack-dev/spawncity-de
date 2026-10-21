@@ -17,7 +17,7 @@ import {pagesOrigin} from "./site_config.mjs";
 export const MUSIC_PLAYER_VERSION="menu-only-music-v3";
 // Resolved against the page (the deployed build inlines this module into
 // drone_simulator.html, so import.meta.url would not point into sim/).
-export const DEFAULT_MUSIC_TRACK=new URL("./sim/audio/8_bits_only.m4a",globalThis.document?.baseURI||`${pagesOrigin()}/`).href;
+export const DEFAULT_MUSIC_TRACK=new URL("/sim/audio/8_bits_only.m4a",pagesOrigin()+"/").href;
 // Music sits clearly under the effects: 100% on the slider is ~45% of full
 // scale, and the default slider value is 32%.
 const MUSIC_HEADROOM=.45,FADE_S=.9;
