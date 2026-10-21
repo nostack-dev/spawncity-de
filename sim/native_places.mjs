@@ -3,12 +3,19 @@
 import {ORIGINAL_SEDAN} from "./native_original_vehicles.mjs";
 import {fromTRS} from "./native_render_math.mjs";
 
-const DOOR_W=1.8,DOORS_R=95,RACE_LAPS=3;
+const GROUND_STOREY=4,MAX_LEVELS=12;
+function levelsFor(height){
+  const top=Math.max(3,Number(height)||8),levels=[1];
+  let z=GROUND_STOREY;
+  while(z+2.7<=top-.05&&levels.length<MAX_LEVELS){levels.push(z);z+=3;}
+  return levels;
+}
 const SPAWN_MIN=170,SPAWN_MAX=320,HOOK_M=7.5,TOW_SPEED=9,DRIVE_SPEED=14;
 const EARTH=6378137;
 const toMeters=(lon0,lat0,lon,lat)=>[(lon-lon0)*Math.PI/180*EARTH*Math.max(.01,Math.cos(lat0*Math.PI/180)),(lat-lat0)*Math.PI/180*EARTH];
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
 let doors=[],race=null,truck=null,inside=null,drawn={};
+const DOOR_W=1.8,DOORS_R=95,RACE_LAPS=3;
 function player(){const p=globalThis.__arondightWalkMode?.position;return p?[p.x,p.y]:[0,0];}
 function paint(renderer,id,geo,data){
   if(!data.length){if(drawn[id]){renderer.remove(id);drawn[id]=false;}return;}
@@ -37,7 +44,8 @@ export function installNativePlaces(game,snapshot){
     if(!best)continue;
     const mid=[(best.a[0]+best.c[0])/2,(best.a[1]+best.c[1])/2];
     const cx=pts.reduce((s,q)=>s+q[0],0)/pts.length,cy=pts.reduce((s,q)=>s+q[1],0)/pts.length;
-    doors.push({x:mid[0],y:mid[1],yaw:Math.atan2(best.dy,best.dx),in:[cx,cy]});
+    const height=Number(b.properties?.height)||8;
+    doors.push({x:mid[0],y:mid[1],yaw:Math.atan2(best.dy,best.dx),in:[cx,cy],levels:levelsFor(height),ring:pts});
     if(doors.length>=80)break;
   }
   const routes=globalThis.__arondightProceduralPopulation?.roads?.()||[];
@@ -53,8 +61,8 @@ export function installNativePlaces(game,snapshot){
     const door=doors.find(d=>Math.hypot(d.x-p[0],d.y-p[1])<2.4);
     if(!door)return;
     inside={x:p[0],y:p[1]};
-    door.floor=(door.floor||0)+1;
-    const z=[1,4.2,7.4][Math.min(door.floor,2)];
+    door.floor=Math.min((door.floor||0)+1,door.levels.length-1);
+    const z=door.levels[door.floor];
     game.rigids.setPose("player-foot",{position:[door.in[0],door.in[1],z]});
   });
   return {doors:doors.length,race:Boolean(race)};
