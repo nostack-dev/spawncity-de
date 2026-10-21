@@ -32,7 +32,24 @@ function facing(dir){
   const s=Math.sqrt((1+dot)*2),inv=1/s;
   return [c[0]*inv,c[1]*inv,c[2]*inv,s*.5];
 }
-const ORDNANCE={missile:ORIGINAL_MISSILE,guided:ORIGINAL_GUIDED,grenade:ORIGINAL_GRENADE};
+// Production jet_mode ordnance looks: rocket = 1.4 m white-hot body
+// (0xfff0c0, unlit) with an orange exhaust; bomb = 0.25 m x 1.4 m capsule in
+// olive drab 0x3b4135. Both point along local -Z like the other rounds.
+function tube(r,len,seg,color,z0=0){
+  const p=[],n=[],c=[];const push=(v,nn)=>{p.push(...v);n.push(...nn);c.push(...color);};
+  for(let i=0;i<seg;i++){const a0=i/seg*Math.PI*2,a1=(i+1)/seg*Math.PI*2,x0=Math.cos(a0),y0=Math.sin(a0),x1=Math.cos(a1),y1=Math.sin(a1);
+    const zA=z0-len/2,zB=z0+len/2;
+    push([x0*r,y0*r,zB],[x0,y0,0]);push([x1*r,y1*r,zA],[x1,y1,0]);push([x0*r,y0*r,zA],[x0,y0,0]);
+    push([x0*r,y0*r,zB],[x0,y0,0]);push([x1*r,y1*r,zB],[x1,y1,0]);push([x1*r,y1*r,zA],[x1,y1,0]);
+    push([0,0,zA-r],[0,0,-1]);push([x0*r,y0*r,zA],[x0,y0,-.5]);push([x1*r,y1*r,zA],[x1,y1,-.5]);
+    push([0,0,zB+r],[0,0,1]);push([x1*r,y1*r,zB],[x1,y1,.5]);push([x0*r,y0*r,zB],[x0,y0,.5]);}
+  return {positions:new Float32Array(p),normals:new Float32Array(n),colors:new Float32Array(c)};
+}
+function merge(...parts){const cat=k=>{const a=new Float32Array(parts.reduce((s,m)=>s+m[k].length,0));let o=0;for(const m of parts){a.set(m[k],o);o+=m[k].length;}return a;};return {positions:cat("positions"),normals:cat("normals"),colors:cat("colors")};}
+const JET_ROCKET=merge(tube(.08,1.4,6,[1,.941,.753]),tube(.25,.3,6,[1,.627,.251],.8));
+const JET_BOMB=tube(.25,1.4,8,[.231,.255,.208]);
+const ORDNANCE={missile:ORIGINAL_MISSILE,guided:ORIGINAL_GUIDED,grenade:ORIGINAL_GRENADE,jetRocket:JET_ROCKET,bomb:JET_BOMB};
+const ORDNANCE_MATERIAL={jetRocket:{unlit:true},bomb:{roughness:.6}};
 function selfId(mode){return {foot:"player-foot",car:"player-car",jet:"player-jet"}[mode]||"";}
 
 export function installNativeWeapons(game,{armed=()=>false}={}){
@@ -185,7 +202,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
   function paintRounds(){
     const renderer=game.world?.renderer;
     if(!renderer?.upsert)return;
-    const batches={missile:[],guided:[],grenade:[]};
+    const batches={missile:[],guided:[],grenade:[],jetRocket:[],bomb:[]};
     for(const p of ordnance.projectiles){
       const kind=batches[p.mesh]?p.mesh:"missile";
       const dir=Math.hypot(p.vel?.[0]||0,p.vel?.[1]||0,p.vel?.[2]||0)>.05?p.vel:[0,1,0];
@@ -196,7 +213,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
       if(!data.length){if(drawn.has(kind)){renderer.remove(id);drawn.delete(kind);}continue;}
       const transforms=new Float32Array(data);
       if(drawn.has(kind))renderer.updateInstances(id,{transforms});
-      else{renderer.upsert(id,{...ORDNANCE[kind],instances:{transforms},material:{color:[1,1,1,1],doubleSided:true,castShadow:false,frustumCulled:false}});drawn.add(kind);}
+      else{renderer.upsert(id,{...ORDNANCE[kind],instances:{transforms},material:{color:[1,1,1,1],doubleSided:true,castShadow:false,frustumCulled:false,...(ORDNANCE_MATERIAL[kind]||{})}});drawn.add(kind);}
     }
   }
   return {

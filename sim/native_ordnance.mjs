@@ -279,11 +279,11 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
     if(kind==="rocket"){
       if(now-lastJetRocket<JET_ROCKET_RECHARGE_MS)return false;lastJetRocket=now;jetRocketSide=-jetRocketSide;
       const pos=add(add(add(pose.position,right,jetRocketSide*3.2),fwd,2),up,-.6);
-      return push({kind:"jet-rocket",mesh:"missile",pos,vel:add(vel,fwd,JET_ROCKET_MPS),born:now,fuseAt:Infinity,source:"jet"});
+      return push({kind:"jet-rocket",mesh:"jetRocket",pos,vel:add(vel,fwd,JET_ROCKET_MPS),born:now,fuseAt:Infinity,source:"jet"});
     }
     if(kind==="bomb"){
       if(now-lastJetBomb<JET_BOMB_GAP_MS)return false;lastJetBomb=now;
-      return push({kind:"bomb",mesh:"grenade",pos:add(pose.position,up,-1.6),vel:vel.slice(),born:now,fuseAt:Infinity,source:"jet"});
+      return push({kind:"bomb",mesh:"bomb",pos:add(pose.position,up,-1.6),vel:vel.slice(),born:now,fuseAt:Infinity,source:"jet"});
     }
     return false;
   }
