@@ -104,7 +104,12 @@ export class NativeGameInput{
      this.pitch=clamp(this.pitch-(s.invertLookVertical?-1:1)*(Number(dy)||0)*.0026*v,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
      return {yaw:this.yaw,pitch:this.pitch};
     },
-    setPose:({yaw,pitch}={})=>{
+    setPose:({x,y,yaw,pitch}={})=>{
+     // GPS live walks the player to the filtered fix (production setPose x/y).
+     if(Number.isFinite(x)&&Number.isFinite(y)&&runtime.rigids?.setPose){
+      let z=0;try{const h=Number(runtime.world?.terrain?.heightAt?.(x,y));if(Number.isFinite(h))z=h;}catch{}
+      try{runtime.rigids.setPose("player-foot",{position:[x,y,z+.97]});}catch{}
+     }
      if(Number.isFinite(yaw))this.yaw=wrapFpsAngleRad(yaw);
      if(Number.isFinite(pitch))this.pitch=clamp(pitch,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
      return {yaw:this.yaw,pitch:this.pitch};
@@ -113,6 +118,8 @@ export class NativeGameInput{
      const p=runtime.rigids?.pose?.("player-foot")?.position;
      return p?{x:p[0],y:p[1],z:p[2]}:null;
     }};
+   for(const k of ["yaw","pitch"])Object.defineProperty(this.walk,k,{get:()=>this[k],enumerable:true});
+   Object.defineProperty(this.walk,"dead",{get:()=>Boolean(globalThis.__arondightPlayerDamageModel?.dead),enumerable:true});
    globalThis.__arondightWalkMode=this.walk;
    globalThis.__arondightRealWorld||={lookYawDeg:0,lookPitchDeg:0,lookSnapping:false,renderLookHud(){}};
    this.syncModeClasses();

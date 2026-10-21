@@ -52,6 +52,8 @@ import {installNativeWorldLife,tickNativeWorldLife} from "./native_world_life.mj
 import {installNativeThreats,tickNativeThreats} from "./native_threats.mjs";
 import {installNativePlaces,tickNativePlaces} from "./native_places.mjs";
 import {installNativeSession,tickNativeSession} from "./native_session.mjs";
+import {installGpsLive} from "./native_gps_live.mjs";
+import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {installNativeCombat,tickNativeCombat} from "./native_combat.mjs";
 import {installNativeVehicleEntry,tickNativeVehicleEntry} from "./native_vehicle_entry.mjs";
 import {applyNativeDayNight} from "./native_day_night.mjs";
@@ -193,11 +195,24 @@ async function resolveStartOrigin(){
  report(permissionState==="denied"?deniedHint():"GPS unavailable · training world");
  return {origin:NATIVE_TRAINING_ORIGIN,label:"Training",source:"training"};
 }
+// World bridge for GPS live (production __arondightRealWorld contract):
+// active / loading / origin / projectLngLat and activate() at a GPS fix.
+let worldOrigin=null,worldSource="",worldLoading=false,forcedOrigin=null;
+globalThis.__nativeWorldBridge={
+ get active(){return Boolean(worldOrigin)&&worldSource!=="training";},
+ get loading(){return worldLoading;},
+ get originLon(){return worldOrigin?.lon;},get originLat(){return worldOrigin?.lat;},
+ projectLngLat(lon,lat){return worldOrigin?nativeOsmProjector(worldOrigin).project(lon,lat):null;},
+ async activate({coords}={}){if(!session?.game||!coords)return false;forcedOrigin={lon:coords.longitude,lat:coords.latitude};cachedFix=forcedOrigin;return loadRealWorld(session.game);},
+ deactivate(){worldOrigin=null;}
+};
 async function loadRealWorld(game){
  const epoch=++osmEpoch;
  activeOsm?.abort();
  const controller=new AbortController();activeOsm=controller;
- const resolved=await resolveStartOrigin();
+ worldLoading=true;
+ const resolved=forcedOrigin?{origin:forcedOrigin,label:"your GPS location",source:"gps"}:await resolveStartOrigin();
+ forcedOrigin=null;
  if(game.closed)return false;
  const origin=resolved.origin,label=resolved.label;
  if(game.closed||epoch!==osmEpoch)return;
@@ -213,6 +228,7 @@ async function loadRealWorld(game){
   if(game.closed||epoch!==osmEpoch)return;
   const shown=await game.updateOsmFeatures(result);
   if(shown?.cancelled||epoch!==osmEpoch)return false;
+  worldOrigin={lon:Number(origin.lon),lat:Number(origin.lat)};worldSource=resolved.source;
   const life=installNativeCityLife(game,result);
   installNativeHudMap(game,result);
   setNativeHudSources({people:nativePeople,cops:nativeCops});
@@ -242,7 +258,7 @@ async function loadRealWorld(game){
    report("OSM connection failed · tap CITY to retry real map",true);
   }
   return false;
- }finally{if(epoch===osmEpoch)activeOsm=null;}
+ }finally{if(epoch===osmEpoch){activeOsm=null;worldLoading=false;}}
 }
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function startupMode(){try{const mode=new URLSearchParams(location.search).get("start");return mode==="drone"?"drone":"foot";}catch{return"foot";}}
@@ -292,6 +308,7 @@ async function prepareEngine(){
   installNativeVehicleEntry(game,{input});
   installNativeJetHud(game,{input});
   installNativeSession(game);
+  installGpsLive(game);
   installNativeCombat();
   try{installNativeModeOverlay();}catch(error){console.warn("overlay",error);}
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});

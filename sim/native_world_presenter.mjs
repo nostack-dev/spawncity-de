@@ -161,6 +161,9 @@ export class NativeWorldPresenter{
    else if(flightFrame)this.camera={eye:flightFrame.eye,target:flightFrame.target,up:flightFrame.up,
       fov:flightFrame.fov,near:flightFrame.near,far:flightFrame.far};
    else throw Error("native drone mode requires live flight presentation");
+   // GPS live FOLLOW / MAP views (native_gps_live.mjs) replace the camera.
+   const override=globalThis.__nativeCameraOverride?.(this.camera,selected.mode);
+   if(override)this.camera=override;
    // Avoid drawing the quad body/rotors during on-foot, car, jet or spectator
    // modes. Keep one WebGL2 context and keep the actual physics ticking.
    if(this.airframe){
