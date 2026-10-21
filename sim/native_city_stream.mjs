@@ -53,12 +53,12 @@ export class NativeCityStream{
     for(const part of chunks){
       if(this.closed||generation!==this.generation)return {cancelled:true,generation};
       const id=keyForChunk(part);
-      const hash=hashFloatArrays([part.positions,part.normals,part.colors,part.uvs]);
+      const hash=hashFloatArrays([part.positions,part.normals,part.colors,part.uvs,...(part.facade?[part.facade]:[])]);
       next.set(id,hash);
       if(this.chunkHashes.get(id)===hash)continue;
       const packed=this.compactGpuMeshes?packCityMesh(part):null;
       const mesh=packed?.mesh||part;
-      this.renderer.upsert(id,{positions:mesh.positions,normals:mesh.normals,colors:mesh.colors,uvs:mesh.uvs,indices:mesh.indices,material:drawOptions});
+      this.renderer.upsert(id,{positions:mesh.positions,normals:mesh.normals,colors:mesh.colors,uvs:mesh.uvs,...(mesh.facade?{facade:mesh.facade}:{}),indices:mesh.indices,material:drawOptions});
       bytesUploaded+=(packed?.bytesAfter??(part.positions.byteLength+part.normals.byteLength+part.colors.byteLength+part.uvs.byteLength));
       bytesSaved+=packed?(packed.bytesBefore-packed.bytesAfter):0;
       this.chunkHashes.set(id,hash);

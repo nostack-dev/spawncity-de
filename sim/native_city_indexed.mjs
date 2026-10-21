@@ -10,11 +10,12 @@ export function packCityMesh(mesh,{minSaving=0}={}){
   const count=positions.length/3;
   if(!count||positions.length%9||colors.length!==positions.length||normals.length!==positions.length||uvs.length!==count*2)throw Error("invalid city triangles");
   if(mesh.indices)throw Error("do not re-index existing indexed geometry");
-  const rawBytes=positions.byteLength+colors.byteLength+normals.byteLength+uvs.byteLength;
-  const fields=[positions,normals,colors,uvs];
+  const facade=mesh.facade instanceof Float32Array&&mesh.facade.length===count*4?mesh.facade:null;
+  const rawBytes=positions.byteLength+colors.byteLength+normals.byteLength+uvs.byteLength+(facade?.byteLength||0);
+  const fields=facade?[positions,normals,colors,uvs,facade]:[positions,normals,colors,uvs];
   const bitFields=fields.map(x=>new Uint32Array(x.buffer,x.byteOffset,x.length));
-  const stride=[3,3,3,2];
-  const unique=[[],[],[],[]],mapping=new Map(),indices=new Uint32Array(count);
+  const stride=[3,3,3,2,4];
+  const unique=fields.map(()=>[]),mapping=new Map(),indices=new Uint32Array(count);
   for(let i=0;i<count;i++){
     const key=bitFields.map((bits,j)=>Array.from(bits.subarray(i*stride[j],(i+1)*stride[j])).join(",")).join("|");
     let index=mapping.get(key);
@@ -25,9 +26,9 @@ export function packCityMesh(mesh,{minSaving=0}={}){
     indices[i]=index;
   }
   const indexBuffer=mapping.size<=65535?new Uint16Array(indices):indices;
-  const [p,n,c,uv]=unique.map(a=>new Float32Array(a));
-  const indexedBytes=p.byteLength+n.byteLength+c.byteLength+uv.byteLength+indexBuffer.byteLength;
+  const [p,n,c,uv,fac]=unique.map(a=>new Float32Array(a));
+  const indexedBytes=p.byteLength+n.byteLength+c.byteLength+uv.byteLength+(fac?.byteLength||0)+indexBuffer.byteLength;
   const saving=rawBytes-indexedBytes;
-  const output=saving>minSaving?{...mesh,positions:p,normals:n,colors:c,uvs:uv,indices:indexBuffer}:mesh;
+  const output=saving>minSaving?{...mesh,positions:p,normals:n,colors:c,uvs:uv,...(fac?{facade:fac}:{}),indices:indexBuffer}:mesh;
   return {mesh:output,indexed:output!==mesh,uniqueVertices:mapping.size,sourceVertices:count,bytesBefore:rawBytes,bytesAfter:output===mesh?rawBytes:indexedBytes};
 }

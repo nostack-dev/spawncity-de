@@ -2,7 +2,7 @@
 // by Box3D collision. No Three.js mesh/material, no MapLibre GPU pass.
 // Polygon roofing (concave + holes) uses in-repo ISC Earcut v3.0.2.
 import earcut,{deviation as earcutDeviation} from "./vendor/earcut.mjs";
-export const NATIVE_CITY_GEOMETRY_VERSION="osm-city-chunks-webgl2-v1";
+export const NATIVE_CITY_GEOMETRY_VERSION="osm-city-chunks-webgl2-v2-production-facades";
 const WALLS=[[.788,.749,.682],[.725,.659,.549],[.557,.329,.263],[.612,.604,.580],[.847,.824,.769],[.659,.486,.373],[.490,.522,.565],[.796,.718,.604]];
 const ROOFS=[[.290,.298,.314],[.231,.239,.251],[.431,.263,.204],[.333,.345,.361]];
 const area=ring=>ring.reduce((s,p,i)=>{const q=ring[(i+1)%ring.length];return s+p[0]*q[1]-q[0]*p[1];},0)*.5;
@@ -17,13 +17,20 @@ function cleanRing(input){
  if(ring.length>2&&Math.hypot(ring[0][0]-ring.at(-1)[0],ring[0][1]-ring.at(-1)[1])<.015)ring.pop();
  return ring.length>=3&&Math.abs(area(ring))>.08?ring:[];
 }
+// Per-vertex facade record, the production world_city_buildings.mjs "aWall"
+// contract: (wall length, building height, per-building seed, storey height).
+// Length > 0 marks a wall, -1 a roof, -2 the cornice trim. u (metres along the
+// wall) and z (metres above the building base) travel in the UVs.
+let facadeRecord=[0,0,0,3.3];
 function appendTriangle(batch,a,b,c,normal,color,uvA,uvB,uvC){
  const pairs=[[a,uvA],[b,uvB],[c,uvC]];
  for(const [point,uv]of pairs){
-  batch.p.push(...point);batch.n.push(...normal);batch.col.push(...color);batch.uv.push(...uv);
+  batch.p.push(...point);batch.n.push(...normal);batch.col.push(...color);batch.uv.push(...uv);batch.fac.push(...facadeRecord);
  }
 }
-export function* nativeCityChunkSteps(footprints,{chunkSize=320,maxBuildings=2600,buildingsPerStep=24,damageTop=null}={}){
+const TRIM=[.957,.937,.894];
+const lerp3=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
+export function* nativeCityChunkSteps(footprints,{chunkSize=320,maxBuildings=2600,buildingsPerStep=24,damageTop=null,cornice=true}={}){
  if(!(chunkSize>=20)||!(buildingsPerStep>=1)||!(maxBuildings>0))throw Error("invalid city geometry budget");
  const chunks=new Map(),skipped=[];let built=0,processed=0,triangles=0;
  for(const fp of(Array.isArray(footprints)?footprints:[]).slice(0,maxBuildings)){
@@ -48,8 +55,11 @@ export function* nativeCityChunkSteps(footprints,{chunkSize=320,maxBuildings=260
    if(!reject){
     const center=fp.center||outer[0],x=Math.floor(center[0]/chunkSize),y=Math.floor(center[1]/chunkSize),key=x+","+y;
     let batch=chunks.get(key);
-    if(!batch){batch={key,p:[],n:[],col:[],uv:[],buildings:0,triangles:0};chunks.set(key,batch);}
+    if(!batch){batch={key,p:[],n:[],col:[],uv:[],fac:[],buildings:0,triangles:0};chunks.set(key,batch);}
     const h=hash(fp.key||key),wallColor=WALLS[h%WALLS.length],roofColor=ROOFS[(h>>>8)%ROOFS.length];
+    // Same seed and storey height as production facadeParams(key).
+    const seed=(h%997)/997,floorH=3.1+.5*(((h>>>12)%1000)/1000),trim=lerp3(wallColor,TRIM,.45);
+    facadeRecord=[-1,wallHeight,seed,floorH];
     // All roof faces point up even when the source polygon's ring orientation
     // is reversed. A courtyard is a real hole, never roofed over.
     for(let i=0;i<tri.length;i+=3){
@@ -66,29 +76,20 @@ export function* nativeCityChunkSteps(footprints,{chunkSize=320,maxBuildings=260
      const a=ring[i],b=ring[(i+1)%ring.length],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
      if(len<.02)continue;
      const normal=[dy/len,-dx/len,0],a0=[a[0],a[1],base],b0=[b[0],b[1],base],a1=[a[0],a[1],top],b1=[b[0],b[1],top];
+     facadeRecord=[len,wallHeight,seed,floorH];
      appendTriangle(batch,a0,b0,b1,normal,wallColor,[0,0],[len,0],[len,wallHeight]);
      appendTriangle(batch,a0,b1,a1,normal,wallColor,[0,0],[len,wallHeight],[0,wallHeight]);
-     // Real window grid, not a shader hint. One dark pane per floor cell,
-     // slightly proud of the wall so it reads at the live camera distance.
-     if(wallHeight>2.6&&len>2.2){
-      const pitch=3.1,floorH=3.3,push=.04;
-      const nWin=Math.max(1,Math.floor((len-.7)/pitch));
-      const margin=(len-nWin*pitch)*.5;
-      const floors=Math.max(1,Math.floor((wallHeight-.8)/floorH));
-      const glass=[.13,.17,.22],frame=[.22,.2,.18];
-      const lift=(u,z)=>[a[0]+dx/len*u+normal[0]*push,a[1]+dy/len*u+normal[1]*push,z];
-      for(let f=0;f<floors;f++){
-       const z0=base+.9+f*floorH,z1=Math.min(top-.2,z0+1.55);
-       if(z1-z0<.45)continue;
-       for(let w=0;w<nWin;w++){
-        const u0=margin+w*pitch+.22,u1=u0+pitch-.44;
-        if(u1-u0<.35)continue;
-        const p0=lift(u0,z0),p1=lift(u1,z0),p2=lift(u1,z1),p3=lift(u0,z1);
-        appendTriangle(batch,p0,p1,p2,normal,glass,[0,0],[1,0],[1,1]);
-        appendTriangle(batch,p0,p2,p3,normal,glass,[0,0],[1,1],[0,1]);
-        batch.triangles+=2;triangles+=2;
-       }
-      }
+     // Cornice: the production outset trim band and lip along every wall top.
+     if(cornice&&len>1.2&&wallHeight>3.5){
+      const o=.24,ax=a[0]+normal[0]*o,ay=a[1]+normal[1]*o,bx=b[0]+normal[0]*o,by=b[1]+normal[1]*o,z0=top-.55,z1=top;
+      facadeRecord=[-2,wallHeight,seed,floorH];
+      appendTriangle(batch,[ax,ay,z0],[bx,by,z0],[bx,by,z1],normal,trim,[0,0],[len,0],[len,1]);
+      appendTriangle(batch,[ax,ay,z0],[bx,by,z1],[ax,ay,z1],normal,trim,[0,0],[len,1],[0,1]);
+      appendTriangle(batch,[a[0],a[1],z1],[ax,ay,z1],[bx,by,z1],[0,0,1],trim,[0,0],[0,0],[0,0]);
+      appendTriangle(batch,[a[0],a[1],z1],[bx,by,z1],[b[0],b[1],z1],[0,0,1],trim,[0,0],[0,0],[0,0]);
+      appendTriangle(batch,[ax,ay,z0],[a[0],a[1],z0],[b[0],b[1],z0],[0,0,-1],trim,[0,0],[0,0],[0,0]);
+      appendTriangle(batch,[ax,ay,z0],[b[0],b[1],z0],[bx,by,z0],[0,0,-1],trim,[0,0],[0,0],[0,0]);
+      batch.triangles+=6;triangles+=6;
      }
      batch.triangles+=2;triangles+=2;
     }
@@ -101,7 +102,7 @@ export function* nativeCityChunkSteps(footprints,{chunkSize=320,maxBuildings=260
  const out=[...chunks.values()].map(batch=>({
   id:"city:"+batch.key,buildings:batch.buildings,triangles:batch.triangles,
   positions:new Float32Array(batch.p),normals:new Float32Array(batch.n),
-  colors:new Float32Array(batch.col),uvs:new Float32Array(batch.uv)
+  colors:new Float32Array(batch.col),uvs:new Float32Array(batch.uv),facade:new Float32Array(batch.fac)
  }));
  return {version:NATIVE_CITY_GEOMETRY_VERSION,chunks:out,processed,built,skipped,triangles};
 }

@@ -9,7 +9,7 @@ import {screenRay,pickNativeMeshes} from "./native_scene_picking.mjs";
 import {nativeBuildBvh} from "./native_scene_bvh.mjs";
 import {NativeSunShadowMap} from "./native_sun_shadow.mjs";
 import {NativeSkyPass} from "./native_sky_pass.mjs";
-export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-sun-shadows-v6";
+export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-sun-shadows-v7-production-facades";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
 "layout(location=0) in vec3 aPosition;",
@@ -26,11 +26,12 @@ const VERT="#version 300 es\n"+[
 "layout(location=11) in vec3 iNormal2;",
 "layout(location=12) in vec4 aJoints;",
 "layout(location=13) in vec4 aWeights;",
+"layout(location=14) in vec4 aFacade;",
 "uniform int uSkinEnabled,uPaint;",
 "uniform mat4 uBones[32];",
 "uniform mat4 uViewProjection;",
 "out vec3 vWorld,vNormal,vColor;",
-"out vec2 vUV,vWallUV;out float vOpacity;",
+"out vec2 vUV,vWallUV;out float vOpacity;out vec4 vFacade;",
 "void main(){",
 "  mat4 model=mat4(iModel0,iModel1,iModel2,iModel3);",
 "  vec4 local=vec4(aPosition,1.0);",
@@ -47,12 +48,13 @@ const VERT="#version 300 es\n"+[
 "  vColor=uPaint==1&&aColor.b>aColor.r*2.0&&aColor.b>.08?iTint.rgb:aColor*iTint.rgb;vOpacity=iTint.a;vUV=aUV;",
 "  float wallSpan=abs(aNormal.x)>0.5?length(iModel1.xyz):length(iModel0.xyz);",
 "  vWallUV=vec2(aUV.x*wallSpan,aUV.y*length(iModel2.xyz));",
+"  vFacade=aFacade;",
 "  gl_Position=uViewProjection*p;",
 "}"].join("\n");
 const FRAG="#version 300 es\n"+[
 "precision highp float;",
 "precision highp sampler2DShadow;",
-"in vec3 vWorld,vNormal,vColor;in vec2 vUV,vWallUV;in float vOpacity;",
+"in vec3 vWorld,vNormal,vColor;in vec2 vUV,vWallUV;in float vOpacity;in vec4 vFacade;",
 "uniform vec4 uMaterial;",
 "uniform vec3 uSunDirection,uSunColor,uSkyColor,uGroundColor,uEye,uFogColor;",
 "uniform float uFogDensity,uExposure,uAlphaCutoff;",
@@ -65,13 +67,14 @@ const FRAG="#version 300 es\n"+[
 "uniform int uPointLightCount;",
 "uniform vec4 uPointPosRange[6],uPointColorIntensity[6];",
 "out vec4 outColor;",
+"float fh(float n){return fract(sin(n*127.1)*43758.5453);}",
 "void main(){",
 "  vec4 texel=uHasTexture==1?texture(uTexture,vUV):vec4(1.0);",
 "  float alpha=clamp(vOpacity*uMaterial.a*texel.a,0.0,1.0);",
 "  if(alpha<uAlphaCutoff)discard;",
 "  vec3 base=max(vec3(0.0),vColor*uMaterial.rgb*texel.rgb);",
 "  vec3 n=normalize(vNormal),sun=normalize(uSunDirection);",
-"  if(uFacade==1&&abs(n.z)<0.6){",
+"  if(uFacade==1&&vFacade.x==0.0&&abs(n.z)<0.6){",
 "    float floorH=3.2;",
 "    float floorIndex=floor(max(vWallUV.y,0.0)/floorH);",
 "    float yIn=fract(max(vWallUV.y,0.0)/floorH);",
@@ -110,6 +113,48 @@ const FRAG="#version 300 es\n"+[
 "    float variation=.97+.03*sin(vWorld.x*.027)*cos(vWorld.y*.031);",
 "    base=base*variation+vec3(.045,.05,.04)*major*distanceFade*.45;",
 "  }",
+"  // Production facades (world_city_buildings.mjs FACADE_GLSL): ground-floor",
+"  // shop band with storefront glass and awnings, framed windows with sills,",
+"  // glass curtain walls on towers, pilasters, grime near the ground.",
+"  float facGlass=0.0;",
+"  if(vFacade.x>0.0&&abs(n.z)<0.5){",
+"    float sdq=floor(vFacade.z*997.0+0.5)/997.0;",
+"    float u=vUV.x,len=vFacade.x,z=vUV.y,H=vFacade.y,floorH=vFacade.w;",
+"    vec3 glassC=vec3(0.2,0.26,0.32);",
+"    float aa=clamp(1.6-fwidth(u)*1.2,0.0,1.0);",
+"    float pil=1.0-step(0.38,u)*step(u,len-0.38);",
+"    float tower=step(26.0,H);",
+"    float pitch=mix(2.7,3.7,fh(sdq*7.0));",
+"    float nWin=max(1.0,floor((len-0.8)/pitch)),margin=(len-nWin*pitch)*0.5;",
+"    float lu=(u-margin)/pitch,fu=fract(lu),inRow=step(0.0,lu)*step(lu,nWin);",
+"    float gl=0.0;",
+"    if(z<4.0&&len>3.0){",
+"      float sp=4.4,ns=max(1.0,floor(len/sp)),sm=(len-ns*sp)*0.5,su=fract((u-sm)/sp),inS=step(0.0,u-sm)*step(u-sm,ns*sp);",
+"      float win=inS*step(.08,su)*step(su,.92)*step(.35,z)*step(z,3.0);",
+"      float frame=inS*step(.05,su)*step(su,.95)*step(.25,z)*step(z,3.1)-win;",
+"      base=mix(base*0.9,vec3(0.12,0.12,0.13),frame*aa);gl=win*aa;",
+"      float k=fh(sdq*11.0);vec3 awn=k<.25?vec3(0.45,0.09,0.07):k<.5?vec3(0.08,0.24,0.15):k<.75?vec3(0.08,0.15,0.32):vec3(0.5,0.36,0.08);",
+"      float aw=step(3.15,z)*step(z,3.75)*aa;base=mix(base,awn*mix(1.0,1.15,step(0.5,fract(u*1.4))),aw);",
+"      base=mix(base,base*0.78,step(3.75,z)*step(z,4.0));",
+"    }else if(tower>0.5){",
+"      float fz=fract((z-4.0)/floorH),mull=step(.95,fract(u/1.6)),spandrel=step(.8,fz);",
+"      gl=(1.0-spandrel)*(1.0-mull)*aa*(1.0-pil);base=mix(base,base*0.85,spandrel*aa);",
+"    }else{",
+"      float fz=fract((z-4.0)/floorH);",
+"      float ww=mix(.38,.6,fh(sdq*5.0)),wh=mix(.42,.6,fh(sdq*9.0)),inTop=step(z,H-1.2);",
+"      float win=inRow*inTop*step(.5-ww*.5,fu)*step(fu,.5+ww*.5)*step(.3,fz)*step(fz,.3+wh);",
+"      float frame=inRow*inTop*step(.5-ww*.5-.05,fu)*step(fu,.5+ww*.5+.05)*step(.25,fz)*step(fz,.35+wh)-win;",
+"      float sill=inRow*inTop*step(.5-ww*.5-.09,fu)*step(fu,.5+ww*.5+.09)*step(.2,fz)*step(fz,.25);",
+"      vec3 frameC=fh(sdq*17.0)<.5?vec3(0.85,0.84,0.8):vec3(0.14,0.14,0.15);",
+"      base=mix(base,frameC,frame*aa);base=mix(base,base*1.12+0.04,sill*aa);gl=win*aa;",
+"      base*=1.0-0.08*step(.965,fz)*aa;",
+"    }",
+"    base=mix(base,base*0.86,pil*aa);",
+"    base=mix(base,glassC,gl);facGlass=gl;",
+"    base*=mix(0.72,1.0,smoothstep(0.0,2.5,z));",
+"  }else if(vFacade.x<-0.5&&vFacade.x>-1.5&&n.z>0.5){",
+"    float t=fract(sin(dot(floor(vWorld.xy*0.7),vec2(12.99,78.23)))*43758.5);base*=0.88+0.12*t;",
+"  }",
 "  float ndl=max(dot(n,sun),0.0);",
 "  vec3 hemis=mix(uGroundColor,uSkyColor,clamp(n.z*0.5+0.5,0.0,1.0));",
 "  float shadow=1.0;",
@@ -133,6 +178,14 @@ const FRAG="#version 300 es\n"+[
 "   }",
 "  }",
 "  vec3 rgb=base*(uUnlit==1?vec3(1.0):hemis+uSunColor*ndl*shadow+point)*uExposure;",
+"  // Glass mirrors the sky (production: smooth, partly metallic PBR glass",
+"  // plus a Fresnel sky term), so windows read light, not black.",
+"  if(facGlass>0.0){",
+"    vec3 V=normalize(uEye-vWorld);float fr=pow(1.0-abs(dot(V,n)),3.0);",
+"    vec3 skyRefl=mix(uSkyColor,uFogColor,0.45)*uExposure*1.05;",
+"    rgb=mix(rgb,skyRefl,facGlass*(0.42+0.4*fr));",
+"    rgb+=facGlass*mix(vec3(0.05,0.07,0.09),vec3(0.32,0.4,0.5),fr);",
+"  }",
 "  // Production grade: ACES, then a little saturation and contrast.",
 "  rgb=(rgb*(2.51*rgb+0.03))/(rgb*(2.43*rgb+0.59)+0.14);",
 "  float luma=dot(rgb,vec3(0.2126,0.7152,0.0722));",
@@ -171,7 +224,9 @@ function instances(input){
    const mat=transforms.subarray(k*16,k*16+16),normal=normalMatrix3(mat);
    normals.set(normal,k*9);
  }
- return {transforms,tints:tintBuf,normals,count};
+ // Per-instance normal matrices. Named apart from the per-vertex normals: a
+ // shared key let the instance array overwrite the vertex normal attribute.
+ return {transforms,tints:tintBuf,instanceNormals:normals,count};
 }
 function validate(input){
  const p=typed("positions",input.positions,3),count=p.length/3;
@@ -203,7 +258,9 @@ function validate(input){
   for(let k=0;k<weights.length;k+=4){const sum=weights[k]+weights[k+1]+weights[k+2]+weights[k+3];if(Math.abs(sum-1)>.001)throw Error("skin weights must sum to 1");}
   skin={joints,weights,bones};
  }
- return {p,normals,colors,uvs,indices,skin,...instances(input.instances)};
+ let facade=null;
+ if(input.facade){facade=typed("facade",input.facade,4);if(facade.length!==count*4)throw Error("facade attribute count mismatch");}
+ return {p,normals,colors,uvs,facade,indices,skin,...instances(input.instances)};
 }
 function program(gl){
  const shader=(type,src)=>{
@@ -324,15 +381,20 @@ export class NativeSceneRenderer{
   for(let i=0;i<4;i++){const loc=4+i;gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,4,gl.FLOAT,false,64,i*16);gl.vertexAttribDivisor(loc,1);}
   const tint=gl.createBuffer();m.buffers.push(tint);gl.bindBuffer(gl.ARRAY_BUFFER,tint);gl.bufferData(gl.ARRAY_BUFFER,d.tints,gl.DYNAMIC_DRAW);
   gl.enableVertexAttribArray(8);gl.vertexAttribPointer(8,4,gl.FLOAT,false,0,0);gl.vertexAttribDivisor(8,1);
-  const normal=gl.createBuffer();m.buffers.push(normal);gl.bindBuffer(gl.ARRAY_BUFFER,normal);gl.bufferData(gl.ARRAY_BUFFER,d.normals,gl.DYNAMIC_DRAW);
+  const normal=gl.createBuffer();m.buffers.push(normal);gl.bindBuffer(gl.ARRAY_BUFFER,normal);gl.bufferData(gl.ARRAY_BUFFER,d.instanceNormals,gl.DYNAMIC_DRAW);
   for(let i=0;i<3;i++){const loc=9+i;gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,36,i*12);gl.vertexAttribDivisor(loc,1);}
-  m.capTransforms=d.transforms.length;m.capTints=d.tints.length;m.capNormals=d.normals.length;
+  m.capTransforms=d.transforms.length;m.capTints=d.tints.length;m.capNormals=d.instanceNormals.length;
   if(d.skin){
     for(const [loc,values]of [[12,d.skin.joints],[13,d.skin.weights]]){
       const buffer=gl.createBuffer();m.buffers.push(buffer);gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
       gl.bufferData(gl.ARRAY_BUFFER,values,gl.STATIC_DRAW);gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc,4,gl.FLOAT,false,0,0);
     }
+  }
+  if(d.facade){
+    const buffer=gl.createBuffer();m.buffers.push(buffer);gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+    gl.bufferData(gl.ARRAY_BUFFER,d.facade,gl.STATIC_DRAW);gl.enableVertexAttribArray(14);
+    gl.vertexAttribPointer(14,4,gl.FLOAT,false,0,0);
   }
   if(d.indices){
    m.element=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,m.element);
@@ -355,7 +417,7 @@ export class NativeSceneRenderer{
    const gl=this.gl,slots=[
     [4,next.transforms,prev.transforms,"capTransforms"],
     [5,next.tints,prev.tints,"capTints"],
-    [6,next.normals,prev.normals,"capNormals"]
+    [6,next.instanceNormals,prev.instanceNormals,"capNormals"]
    ];
    try{
     for(const [slot,data,,cap] of slots){
@@ -447,7 +509,8 @@ export class NativeSceneRenderer{
   gl.viewport(rect.x,rect.y,rect.width,rect.height);
   gl.clearColor(...clearColor);gl.clearDepth(1);gl.depthMask(true);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-  this.sky.draw({eye:this.eye,target:this.target,fov:this.fov});
+  this.sky.draw({eye:this.eye,target:this.target,up:this.up,fov:this.fov,aspect:rect.width/rect.height,
+   sun:this.sunDirection,night:this.night||0,exposure:this.exposure});
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(this.gpu.handle);
   const camera=multiply4(perspective(this.fov,rect.width/rect.height,this.near,this.far),lookAt(this.eye,this.target,this.up));
   gl.uniformMatrix4fv(u.uViewProjection,false,camera);

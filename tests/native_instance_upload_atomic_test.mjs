@@ -5,7 +5,7 @@ import {identity4} from "../sim/native_render_math.mjs";
 const oldMat=identity4();oldMat[12]=3;
 const oldTint=new Float32Array([1,1,1,1]);
 const oldNormal=new Float32Array([1,0,0,0,1,0,0,0,1]);
-const oldData={transforms:oldMat,tints:oldTint,normals:oldNormal,count:1};
+const oldData={transforms:oldMat,tints:oldTint,instanceNormals:oldNormal,count:1};
 const m={
  id:"box3d/car",data:oldData,visible:true,material:{alphaMode:"opaque",castShadow:true},
  localBounds:{center:[0,0,0],radius:1},
