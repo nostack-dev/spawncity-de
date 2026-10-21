@@ -12,6 +12,7 @@ import {findXboxGamepad,sampleXboxGamepad} from "./xbox_gamepad.mjs";
 import {loadVehicleControlSettings} from "./vehicle_control_settings.mjs";
 import {installNativeFlightTouch,readNativeFlightTouch} from "./native_flight_touch.mjs";
 import {claimSticks,releaseSticks,sticks} from "./shared_sticks.mjs";
+import {nativeCarHandbrakeHeld} from "./native_vehicle_entry.mjs";
 export const NATIVE_GAME_INPUT_VERSION="native-game-input-v2-prod-vehicles";
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,Number(x)||0));
 const deadzone=(v,d=.12)=>Math.abs(v)<=d?0:Math.sign(v)*Math.min(1,(Math.abs(v)-d)/(1-d));
@@ -345,7 +346,7 @@ export class NativeGameInput{
    const button=i=>Math.max(0,Number(pad?.buttons?.[i]?.value)||(pad?.buttons?.[i]?.pressed?1:0));
    let steer=(held("KeyD")?1:0)-(held("KeyA")?1:0)+(own?sticks.move.x:0);
    let pedal=(held("KeyW")?1:0)-(held("KeyS")?1:0)-(own?sticks.move.y:0);
-   let handbrake=held("Space");
+   let handbrake=held("Space")||nativeCarHandbrakeHeld();
    if(pad){steer+=axis(pad.axes?.[0]);pedal+=button(7)-button(6);handbrake=handbrake||button(1)>.55;}
    base.car.pedal=clamp(clamp(pedal,-1,1)*car.throttleSensitivityPercent/100,-1,1);
    base.car.steer=clamp(clamp(steer,-1,1)*car.steeringSensitivityPercent/100,-1,1);

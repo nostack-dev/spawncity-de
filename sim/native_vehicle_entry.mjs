@@ -12,7 +12,11 @@ const CAR_CSS=`#enterCarButton{position:absolute;z-index:30;left:50%;transform:t
 html body.mobile-gameplay-compact.solo-flight:not(.desktop-input) #viewport #enterCarButton{left:max(12px,var(--solo-safe-left,env(safe-area-inset-left)))!important;right:auto!important;transform:none!important;bottom:calc(max(18px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + min(25vw,150px) + 16px)!important;min-width:54px!important;width:54px!important;height:54px!important;padding:0!important;border-radius:50%!important;font:900 24px/1 system-ui,-apple-system,sans-serif!important}
 #enterJetButton{position:absolute;z-index:30;left:50%;transform:translateX(-50%);bottom:calc(max(14px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + 118px);min-width:170px;height:46px;padding:0 18px;border-radius:14px;font:900 15px/1 "Nunito","Trebuchet MS",system-ui,sans-serif;letter-spacing:.06em;color:#0f2433;background:#7fd3ff;border:2.5px solid #fff;box-shadow:0 4px 0 #2d86b5;pointer-events:auto;touch-action:manipulation}#enterJetButton[hidden]{display:none!important}
 html body.mobile-gameplay-compact.solo-flight:not(.desktop-input) #viewport #enterJetButton{left:auto!important;right:max(12px,var(--solo-safe-right,env(safe-area-inset-right)))!important;transform:none!important;bottom:calc(max(18px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + min(25vw,150px) + 56px)!important;min-width:54px!important;width:54px!important;height:54px!important;padding:0!important;border-radius:50%!important;font:900 24px/1 system-ui,-apple-system,sans-serif!important}`;
-let game=null,input=null,installed=false,carButton=null,jetButton=null,lastRender=-Infinity;
+// Production driving HUD (player_car_mode.mjs installStyle / mountUi), verbatim.
+const DRIVE_CSS=`body.player-driving .vehicle-stick,html body.player-driving #footHud #footFire,html body.player-driving #footHud #footJump,body.player-driving #soloLeft,body.player-driving #soloRight,body.player-driving #soloClearance,body.player-driving .solo-action{display:none!important;pointer-events:none!important}#vehicleHud{display:none;position:absolute;inset:0;z-index:12;pointer-events:none;font-family:system-ui,-apple-system,sans-serif}body.player-driving #vehicleHud{display:block}.vehicle-stick{position:absolute!important;bottom:max(20px,var(--solo-safe-bottom,env(safe-area-inset-bottom)))!important;width:min(25vw,150px)!important;aspect-ratio:1!important;border:0!important;border-radius:50%!important;background:transparent!important;box-shadow:none!important;opacity:1!important;pointer-events:auto!important;touch-action:none!important;z-index:20!important}.vehicle-stick .ring{position:absolute!important;inset:0!important;border-radius:50%!important;border:2px solid #ffffff66!important;background:#0b18265c!important;box-shadow:inset 0 0 45px #0005,0 6px 22px #0005!important}.vehicle-stick .knob{position:absolute!important;left:50%;top:50%;width:31%!important;aspect-ratio:1!important;transform:translate(-50%,-50%)!important;border-radius:50%!important;background:#f3f7ffcc!important;border:2px solid #fff!important;box-shadow:0 3px 14px #0008!important}.vehicle-stick span{position:absolute;left:50%;bottom:-15px;transform:translateX(-50%);color:#f2f4f7;font:600 9px/1 system-ui;letter-spacing:.06em;white-space:nowrap;text-shadow:0 1px 1px #0008}#vehicleMove{left:max(12px,var(--solo-safe-left,env(safe-area-inset-left)))!important}#vehicleLook{right:max(12px,var(--solo-safe-right,env(safe-area-inset-right)))!important}#vehicleButtons{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(max(18px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + 36px);display:flex;gap:8px;pointer-events:auto}#vehicleButtons button{height:36px;padding:0 14px;border-radius:6px;font:600 12px/1 Inter,system-ui,sans-serif;letter-spacing:.06em;color:#f2f4f7;background:rgba(10,13,18,.6);border:1px solid rgba(255,255,255,.18)}#vehicleReadout{position:absolute;left:50%;bottom:max(18px,var(--solo-safe-bottom,env(safe-area-inset-bottom)));transform:translateX(-50%);padding:7px 10px;border:1px solid #ffffff2c;border-radius:9px;background:#071522d8;color:#dff5ff;font:900 9px/1 system-ui;letter-spacing:.07em}#driveModeButton[data-near="1"]{border-color:#7de7b988!important;background:#154932e8!important}body.player-driving #driveModeButton{border-color:#ffcf6f88!important;background:#52350fe8!important}@media(max-height:340px){.vehicle-stick{width:min(22vw,128px)!important;bottom:max(16px,var(--solo-safe-bottom,env(safe-area-inset-bottom)))!important}#vehicleReadout{bottom:max(10px,var(--solo-safe-bottom,env(safe-area-inset-bottom)));font-size:8px}}`;
+let game=null,input=null,installed=false,carButton=null,jetButton=null,lastRender=-Infinity,readout=null;
+let handbrakeHeld=false;
+export function nativeCarHandbrakeHeld(){return handbrakeHeld;}
 const dist2=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 function pose(id){try{return game?.rigids?.pose?.(id)||null;}catch{return null;}}
 function ground(x,y){try{const h=Number(game?.world?.terrain?.heightAt?.(x,y));return Number.isFinite(h)?h:0;}catch{return 0;}}
@@ -80,6 +84,7 @@ function render(force=false){
     carButton.textContent=touch?(driving?"↗":"🚗"):driving?`${key}AUSSTEIGEN`:`${key}🚗 EINSTEIGEN`;
     carButton.setAttribute("aria-label",driving?"Aus Auto aussteigen":"In Auto einsteigen");
   }
+  if(readout&&driving){const kmh=Math.round(Math.abs(Number(game.gameplayState?.car?.speedMps)||0)*3.6);const t=`CAR · ${kmh} km/h · E EXIT`;if(readout.textContent!==t)readout.textContent=t;}
   const showJet=playing&&game.mode==="foot"&&Boolean(near.jet)&&!near.car;
   if(jetButton.hidden===showJet)jetButton.hidden=!showJet;
   const jetText=touch?"✈":`${key}✈ JET EINSTEIGEN`;
@@ -97,6 +102,15 @@ export function installNativeVehicleEntry(runtime,{input:owner=null}={}){
   jetButton.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();enterJet();});
   jetButton.addEventListener("pointerdown",e=>e.stopPropagation());
   view.append(carButton,jetButton);
+  const driveStyle=document.createElement("style");driveStyle.dataset.playerCarMode="gta-physical-v1";driveStyle.textContent=DRIVE_CSS;document.head.appendChild(driveStyle);
+  const hud=document.createElement("div");hud.id="vehicleHud";
+  hud.innerHTML='<div id="vehicleReadout">CAR · 0 km/h · E EXIT</div><div id="vehicleButtons"><button id="vehicleCamButton" type="button">🎥 INNEN</button><button id="vehicleBrakeButton" type="button">HANDBREMSE</button></div>';
+  view.appendChild(hud);readout=hud.querySelector("#vehicleReadout");
+  const cam=hud.querySelector("#vehicleCamButton");
+  cam.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();input?.cycleCamera?.();});
+  const hb=hud.querySelector("#vehicleBrakeButton");
+  hb.addEventListener("pointerdown",e=>{handbrakeHeld=true;e.preventDefault();e.stopPropagation();});
+  for(const ev of ["pointerup","pointercancel","pointerleave"])hb.addEventListener(ev,()=>{handbrakeHeld=false;});
   addEventListener("keydown",onKey,{capture:true});
   globalThis.__nativeVehicleEntry={enterCar,enterJet,exitVehicle,nearVehicles,version:NATIVE_VEHICLE_ENTRY_VERSION};
 }
