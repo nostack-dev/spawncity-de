@@ -49,9 +49,16 @@ export function exitVehicle(){
   if(!game)return false;
   if(game.mode==="car"){placeBeside("player-car",2.1);game.setMode("foot");input?.syncModeClasses?.();render(true);return true;}
   if(game.mode==="jet"){
+    // E / F / Xbox X / EJECT: on the ground the pilot climbs out beside the
+    // jet; in the air production ejects under a parachute, here the pilot is
+    // set down on the ground below while the empty jet comes down.
     const jet=pose("player-jet");
-    if(jet?.position&&jet.position[2]-ground(jet.position[0],jet.position[1])>JET_EXIT_AGL_M)return false;
-    placeBeside("player-jet",4.2);game.setMode("foot");input?.syncModeClasses?.();render(true);return true;
+    const high=jet?.position&&jet.position[2]-ground(jet.position[0],jet.position[1])>JET_EXIT_AGL_M;
+    if(high){
+      const x=jet.position[0],y=jet.position[1];
+      try{game.rigids.setPose("player-foot",{position:[x,y,ground(x,y)+.97]});}catch{}
+    }else placeBeside("player-jet",4.2);
+    game.setMode("foot");input?.syncModeClasses?.();render(true);return true;
   }
   return false;
 }

@@ -214,7 +214,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
         else if(rt&&!state.padFire)foot.fireAt({});
       }
       state.padFire=rt;
-      if(game.mode==="jet"&&(state.jetHeld||rt||sample?.fire)&&now>=state.nextDrone){if(shootHitscan(now,650,"5.56"))state.nextDrone=now+92;}
+      if(game.mode==="jet"&&!globalThis.__nativeJetRocketSelected&&(state.jetHeld||rt||sample?.fire)&&now>=state.nextDrone){if(shootHitscan(now,650,"5.56"))state.nextDrone=now+92;}
       if(game.mode==="car"&&(state.held||rt)&&now>=state.nextDrone){if(shootHitscan(now,180,"9mm"))state.nextDrone=now+110;}
       const dt=Math.min(.05,(now-(paintRounds.last||now))/1000)||1/60;paintRounds.last=now;
       ordnance.tick(now,dt);

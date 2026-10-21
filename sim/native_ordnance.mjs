@@ -21,6 +21,9 @@ const GRENADE_BLAST_RADIUS_M=8.5,GRENADE_MAX_DAMAGE=125,GRENADE_SHOT_HIT_M=.35;
 const ROCKET_BLAST_RADIUS_M=9.5,ROCKET_MAX_DAMAGE=160;
 const ROCKET_FOOT_SPEED_MPS=40,ROCKET_FOOT_LAUNCH_MPS=22,ROCKET_FOOT_ACCEL_MPS2=55;
 const ROCKET_FOOT_COOLDOWN_MS=900,ROCKET_TURN_RAD_S=2.8,ROCKET_LASER_RANGE_M=420,ROCKET_FOOT_TTL_MS=9000;
+// Production jet_mode.mjs ordnance: rocket 260 m/s over the jet's speed, 8 m /
+// 120 blast, 2.4 s recharge; bombs fall with drag and blast 17 m / 170.
+const JET_ROCKET_MPS=260,JET_ROCKET_LIFE_MS=5000,JET_ROCKET_RECHARGE_MS=2400,JET_ROCKET_BLAST_M=8,JET_ROCKET_DAMAGE=120,JET_BOMB_GAP_MS=450,JET_BOMB_BLAST_M=17,JET_BOMB_DAMAGE=170;
 const ROCKET_SALVO=4,ROCKET_GAP_MS=90,ROCKET_COOLDOWN_MS=520,ROCKET_BLAST_M=5,ROCKET_DAMAGE=70;
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -51,7 +54,7 @@ function setData(key,value){const v=view();if(v)v.dataset[key]=String(value);}
 
 export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=()=>"gun"}={}){
   const rounds=[];
-  let lastGrenade=-Infinity,lastRocket=-Infinity,lastMissile=-Infinity,secondaryLeft=4;
+  let lastGrenade=-Infinity,lastRocket=-Infinity,lastMissile=-Infinity,secondaryLeft=4,lastJetRocket=-Infinity,lastJetBomb=-Infinity,jetRocketSide=1;
   function cast(origin,direction,distance){
     const hit=game.rigids?.raycast?.(origin,direction,distance);
     return hit?.point?hit:null;
@@ -121,7 +124,11 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
     const round=rounds[index];if(!round)return false;
     const at=round.pos.slice();
     rounds.splice(index,1);
-    if(round.kind==="missile"){
+    if(round.kind==="jet-rocket"){
+      dispatch(at,{kind:"jet-rocket",radiusM:JET_ROCKET_BLAST_M,maxDamage:JET_ROCKET_DAMAGE,source:"jet-rocket",impactReason:reason});
+    }else if(round.kind==="bomb"){
+      dispatch(at,{kind:"airstrike",radiusM:JET_BOMB_BLAST_M,maxDamage:JET_BOMB_DAMAGE,source:"jet-bomb",impactReason:reason});
+    }else if(round.kind==="missile"){
       dispatch(at,{kind:"missile",radiusM:ROCKET_BLAST_M,maxDamage:ROCKET_DAMAGE,droneMissile:true,playerDamageCap:round.guided?28:18,source:round.source||"missile",targeted:Boolean(round.targetId)});
     }else if(round.kind==="rocket"){
       dispatch(at,{kind:"rocket",radiusM:ROCKET_BLAST_RADIUS_M,maxDamage:ROCKET_MAX_DAMAGE,source:"rocket",impactReason:reason});
@@ -248,7 +255,41 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
     setData("walkGrenadeShotDetonations",(Number(view()?.dataset.walkGrenadeShotDetonations)||0)+1);
     return true;
   }
+  function stepJetRound(round,index,now,dt){
+    if(round.kind==="jet-rocket"&&now-round.born>JET_ROCKET_LIFE_MS)return detonate(index,"ttl");
+    if(round.kind==="bomb"&&now-round.born>30000)return detonate(index,"ttl");
+    const prev=round.pos.slice();
+    round.vel[2]-=(round.kind==="bomb"?9.81:9.81*.15)*dt;
+    if(round.kind==="bomb"){const k=1-.04*dt;round.vel=scale(round.vel,k);}
+    round.pos=add(round.pos,round.vel,dt);
+    const step=len(add(round.pos,prev,-1));
+    const hit=step>.01?cast(prev,unit(round.vel),step+.3):null;
+    if(hit?.point){round.pos=hit.point.slice();return detonate(index,"impact");}
+    const gz=ground(game,round.pos[0],round.pos[1]);
+    if(round.pos[2]<=gz+.2){round.pos[2]=Math.max(round.pos[2],gz);return detonate(index,"ground");}
+    return false;
+  }
+  function launchJet(kind,now=performance.now()){
+    if(game.mode!=="jet")return false;
+    const af=game.jetAirframe;if(af&&af.contacts>0)return false;
+    const pose=game.rigids.pose("player-jet");if(!pose?.position)return false;
+    const q=pose.rotation||[0,0,0,1];
+    const rot=v=>{const [x,y,z,w]=q,ix=w*v[0]+y*v[2]-z*v[1],iy=w*v[1]+z*v[0]-x*v[2],iz=w*v[2]+x*v[1]-y*v[0],iw=-x*v[0]-y*v[1]-z*v[2];return [ix*w+iw*-x+iy*-z-iz*-y,iy*w+iw*-y+iz*-x-ix*-z,iz*w+iw*-z+ix*-y-iy*-x];};
+    const fwd=rot([0,1,0]),right=rot([1,0,0]),up=rot([0,0,1]),vel=pose.velocity||[0,0,0];
+    if(kind==="rocket"){
+      if(now-lastJetRocket<JET_ROCKET_RECHARGE_MS)return false;lastJetRocket=now;jetRocketSide=-jetRocketSide;
+      const pos=add(add(add(pose.position,right,jetRocketSide*3.2),fwd,2),up,-.6);
+      return push({kind:"jet-rocket",mesh:"missile",pos,vel:add(vel,fwd,JET_ROCKET_MPS),born:now,fuseAt:Infinity,source:"jet"});
+    }
+    if(kind==="bomb"){
+      if(now-lastJetBomb<JET_BOMB_GAP_MS)return false;lastJetBomb=now;
+      return push({kind:"bomb",mesh:"grenade",pos:add(pose.position,up,-1.6),vel:vel.slice(),born:now,fuseAt:Infinity,source:"jet"});
+    }
+    return false;
+  }
+  globalThis.__nativeJetOrdnance={launchJet,get rocketReadyInMs(){return Math.max(0,JET_ROCKET_RECHARGE_MS-(performance.now()-lastJetRocket));}};
   function stepOne(round,index,now,dt){
+    if(round.kind==="jet-rocket"||round.kind==="bomb")return stepJetRound(round,index,now,dt);
     if(now>=round.fuseAt||now-round.born>(round.kind==="rocket"?ROCKET_FOOT_TTL_MS:round.kind==="missile"?MISSILE_TTL_MS:GRENADE_TTL_MS))return detonate(index,round.kind==="missile"?"ttl":"fuse");
     const substeps=Math.max(1,Math.min(4,Math.ceil(dt/.014))),stepDt=dt/substeps;
     for(let step=0;step<substeps;step++){
@@ -313,7 +354,7 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
   }
   return {
     get projectiles(){return rounds;},
-    launchFoot,launchDrone,shotLine,throwHand,explodeAt,explodeCar,
+    launchFoot,launchDrone,launchJet,shotLine,throwHand,explodeAt,explodeCar,
     tick(now=performance.now(),dt=1/60){
       for(let i=rounds.length-1;i>=0;i--)stepOne(rounds[i],i,now,dt);
       const n=rounds.filter(round=>round.kind==="grenade"||round.kind==="rocket").length;
