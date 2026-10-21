@@ -201,7 +201,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
       if(game.mode==="car"&&(state.held||rt)&&now>=state.nextDrone){if(shootHitscan(now,180,"9mm"))state.nextDrone=now+110;}
       const dt=Math.min(.05,(now-(paintRounds.last||now))/1000)||1/60;paintRounds.last=now;
       ordnance.tick(now,dt);
-      for(const boom of takeNativeCarBooms())ordnance.explodeCar([boom.x,boom.y,boom.z]);
+      for(const boom of takeNativeCarBooms())ordnance.explodeCar([boom.x,boom.y,boom.z],boom);
       paintRounds();
       tickNativeFireFx(game,now);
     },

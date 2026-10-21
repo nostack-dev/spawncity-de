@@ -8,6 +8,7 @@ import {blastNativeCops} from "./native_police_ground.mjs";
 import {blastNativeThreats} from "./native_threats.mjs";
 import {blastNativeCows} from "./native_world_life.mjs";
 import {blastNativeWanted} from "./native_wanted.mjs";
+import {spawnNativeCarDebris} from "./native_car_debris.mjs";
 
 export const NATIVE_ORDNANCE_VERSION="live-grenade-rocket-missile-blast-v1";
 
@@ -69,6 +70,7 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
   function dispatch(position,detail){
     if(!detail.secondary)secondaryLeft=4;
     const payload={position:[...position],radiusM:BLAST_RADIUS_M,maxDamage:BLAST_MAX_DAMAGE,kind:"missile",...detail};
+    if(payload.kind==="car")spawnNativeCarDebris({position:payload.position,yaw:payload.yaw,velocity:payload.velocity,color:payload.color,id:payload.id,seed:payload.seed||payload.id});
     if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:world-explosion",{detail:payload}));
     apply(position,payload);
   }
@@ -105,7 +107,7 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
         if(secondaryLeft<=0)break;
         secondaryLeft--;
         const at=[car.x,car.y,car.z||.6];
-        setTimeout(()=>dispatch(at,{kind:"car",radiusM:BLAST_RADIUS_M,maxDamage:BLAST_MAX_DAMAGE,secondary:true,id:car.id||"car"}),40);
+        setTimeout(()=>dispatch(at,{kind:"car",radiusM:BLAST_RADIUS_M,maxDamage:BLAST_MAX_DAMAGE,secondary:true,id:car.id||"car",yaw:car.yaw||0,velocity:[car.vx||0,car.vy||0,0],seed:car.id||"car"}),40);
       }
     }
     setData("explosionPhysics","box3d-radial-impulse+damage-falloff-v2");
@@ -209,9 +211,9 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
     dispatch(position.slice(),{kind:"grenade",radiusM:GRENADE_BLAST_RADIUS_M,maxDamage:GRENADE_MAX_DAMAGE,source,impactReason:"fuse"});
     return true;
   }
-  function explodeCar(position){
+  function explodeCar(position,meta={}){
     if(!Array.isArray(position))return false;
-    dispatch(position.slice(),{kind:"car",radiusM:BLAST_RADIUS_M,maxDamage:BLAST_MAX_DAMAGE,source:"car"});
+    dispatch(position.slice(),{kind:"car",radiusM:BLAST_RADIUS_M,maxDamage:BLAST_MAX_DAMAGE,source:"car",yaw:meta.yaw||0,velocity:meta.velocity||[0,0,0],color:meta.color??0x777777,id:meta.id||"",seed:meta.seed||meta.id||""});
     return true;
   }
   function launchDrone(mode,now=performance.now(),slot=0){

@@ -9,6 +9,7 @@ import {fromTRS} from "./native_render_math.mjs";
 import {NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
 import {isCriticalDamage,criticalDetonationAt,accelerateCriticalDetonation} from "./critical_damage_logic.mjs";
 import {installNativeRagdoll,spawnNativeRagdoll,tickNativeRagdoll} from "./native_ragdoll.mjs";
+import {installNativeCarDebris,tickNativeCarDebris} from "./native_car_debris.mjs";
 
 const PERSON_CAP=100,CAR_CAP=42,BUS_CAP=8,CAR_SPEED=8;
 let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawnCars=false,routes=[],carBooms=[],carSmokeAt=0;
@@ -21,6 +22,7 @@ function playerPos(){
 }
 export function installNativeCityLife(game,snapshot){
   installNativeRagdoll(game);
+  installNativeCarDebris(game);
   const origin=snapshot?.origin||NATIVE_DEMO_CITY.origin;
   routes=[];
   for(const road of snapshot?.roads||[]){
@@ -165,6 +167,7 @@ if(typeof window!=="undefined"){
 }
 export function tickNativeCityLife(game,now=performance.now()){
   tickNativeRagdoll(game,now);
+  tickNativeCarDebris(game,now);
   if(!net)return;
   const dt=Math.min(.05,Math.max(0,(now-(last||now))/1000));last=now;
   const p=playerPos();
@@ -178,7 +181,10 @@ export function tickNativeCityLife(game,now=performance.now()){
     if(car.criticalAt&&now>=car.criticalAt){
       car.alive=false;car.criticalAt=0;
       const at=pointOn(car.route,car.s);
-      if(at)carBooms.push({id:car.id,x:at.x,y:at.y,z:.6});
+      if(at){
+        const yaw=at.yaw+(car.dir<0?Math.PI:0);
+        carBooms.push({id:car.id,x:at.x,y:at.y,z:car.bus?1.2:.45,yaw,velocity:[Math.cos(at.yaw)*car.speed*car.dir,Math.sin(at.yaw)*car.speed*car.dir,0]});
+      }
       continue;
     }
     car.s+=car.dir*car.speed*dt;
@@ -211,7 +217,11 @@ export function blastNativeCity(center,radius,falloff,exposure){
     const hits=Math.min(5,Math.ceil(f*(car.bus?4:3)));
     if(!hits)continue;
     car.hits+=hits;
-    if(car.hits>=car.structure){car.alive=false;carsOut.push({id:car.id,x:at.x,y:at.y,z:.6});}
+    if(car.hits>=car.structure){
+      car.alive=false;
+      const yaw=at.yaw+(car.dir<0?Math.PI:0);
+      carsOut.push({id:car.id,x:at.x,y:at.y,z:car.bus?1.2:.45,yaw,vx:Math.cos(at.yaw)*car.speed*car.dir,vy:Math.sin(at.yaw)*car.speed*car.dir});
+    }
   }
   return {cars:carsOut};
 }
