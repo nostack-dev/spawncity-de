@@ -23,7 +23,6 @@ function paint(renderer,id,geo,data){
 }
 export function installNativeThreats(){
   globalThis.__arondightGangsters={version:"street-gangsters-v1"};
-  globalThis.__militaryResponse={version:"native-military-v1",soldiers:()=>soldiers};
   globalThis.__zombies={version:"cod-zombie-nights-v1",get points(){return points;},get round(){return round;}};
 }
 export function tickNativeThreats(game,now=performance.now()){
@@ -39,7 +38,8 @@ export function tickNativeThreats(game,now=performance.now()){
       if(armsOf(a)==="knife"&&d<2.2){globalThis.__arondightPlayerDamageModel?.damage?.(KNIFE,"knife:pedestrian");lastGang=now;break;}
     }
   }
-  if(heat()>=TRIGGER_HEAT&&soldiers.filter(s=>s.hp>0).length<MAX_SOLDIERS){
+  // The army is native_military.mjs (production military_response).
+  if(false&&heat()>=TRIGGER_HEAT&&soldiers.filter(s=>s.hp>0).length<MAX_SOLDIERS){
     const n=Math.min(SQUAD,MAX_SOLDIERS-soldiers.filter(s=>s.hp>0).length);
     for(let i=0;i<n;i++){
       const a=Math.random()*Math.PI*2,r=60+Math.random()*40;
@@ -73,8 +73,6 @@ export function tickNativeThreats(game,now=performance.now()){
   }
   paint(renderer,"threat/soldiers",ORIGINAL_HUMAN,soldierData);
   paint(renderer,"threat/zombies",ORIGINAL_HUMAN,zombieData);
-  const heli=heat()>=55?fromTRS([p[0]-30,p[1]-20,28],[0,0,0,1],[1,1,1]):[];
-  paint(renderer,"threat/heli",ORIGINAL_JET,heli);
 }
 export function listNativeThreats(){
   const out=[];
