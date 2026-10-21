@@ -18,7 +18,7 @@ function featureRing(feature){
   if(Array.isArray(coords[0]))return coords;
   return null;
 }
-function ring(coords,kind){
+function ring(coords,kind,name=""){
   if(!origin||!Array.isArray(coords))return null;
   const path=[];
   for(const p of coords){
@@ -26,7 +26,7 @@ function ring(coords,kind){
     const m=toMeters(origin.lon,origin.lat,Number(p[0]),Number(p[1]));
     if(m.every(Number.isFinite))path.push(m);
   }
-  return path.length>=2?{kind,path}:null;
+  return path.length>=2?{kind,path,name}:null;
 }
 export function installNativeHudMap(game,snapshot){
   origin=snapshot?.origin||null;
@@ -37,10 +37,14 @@ export function installNativeHudMap(game,snapshot){
   }
   for(const r of snapshot?.roads||[]){
     const line=r.geometry?.coordinates||(r.a&&r.b?[r.a,r.b]:null);
-    const item=ring(line,"road");if(item)features.push(item);
+    const item=ring(line,"road",String(r.properties?.name||""));if(item){item.cls=String(r.properties?.highway||r.properties?.class||"");features.push(item);}
   }
   for(const w of snapshot?.water||[]){
     const item=ring(featureRing(w),"water");if(item)features.push(item);
+  }
+  for(const a of snapshot?.areas||[]){
+    const k=a.class==="water"?"water":a.class==="sand"?null:"green";if(!k)continue;
+    const item=ring(featureRing(a),k);if(item)features.unshift(item);
   }
   for(const g of snapshot?.green||snapshot?.meadows||snapshot?.pastures||[]){
     const item=ring(featureRing(g),"green");if(item)features.push(item);
@@ -58,10 +62,16 @@ export function installNativeHudMap(game,snapshot){
   .world-look-n{top:22px;left:53px}.world-look-e{top:62px;right:12px}.world-look-s{bottom:9px;left:54px}.world-look-w{top:62px;left:12px}`;
   document.head.append(style);document.body.append(hud);
   canvas=hud.querySelector(".world-mini-canvas");
+  // production: a double tap on the minimap opens the fullscreen world map
+  {let lastTap=-Infinity,down=null;
+   hud.addEventListener("pointerdown",e=>{down={x:e.clientX,y:e.clientY};e.stopPropagation();});
+   hud.addEventListener("pointerup",e=>{e.stopPropagation();if(!down||Math.hypot(e.clientX-down.x,e.clientY-down.y)>=8)return;down=null;const now=performance.now();if(now-lastTap<360){globalThis.__arondightWorldMap?.open?.();lastTap=-Infinity;}else lastTap=now;});}
   ctx=canvas.getContext("2d");
   globalThis.__arondightNativeGame=game;
 }
 export function setNativeHudSources(){}
+// the loaded OSM features in local metres (fullscreen world map)
+export function nativeMapFeatures(){return features;}
 export function tickNativeHudMap(game){
   if(!ctx)return;
   const now=performance.now();if(now-last<80)return;last=now;
@@ -85,6 +95,8 @@ export function tickNativeHudMap(game){
     if(f.kind==="green"){ctx.fillStyle=GREEN;ctx.beginPath();pts.forEach((q,i)=>i?ctx.lineTo(...q):ctx.moveTo(...q));ctx.closePath();ctx.fill();continue;}
     ctx.fillStyle=BUILD;ctx.strokeStyle=BUILD_EDGE;ctx.lineWidth=1;ctx.beginPath();pts.forEach((q,i)=>i?ctx.lineTo(...q):ctx.moveTo(...q));ctx.closePath();ctx.fill();ctx.stroke();
   }
+  // the navigation route and its pin (native_world_map drawOnMinimap)
+  try{globalThis.__arondightWorldMap?.drawOnMinimap?.(ctx,project);}catch{}
   const yaw=globalThis.__arondightWalkMode?.yaw||0;
   ctx.save();ctx.translate(w/2,baseY);ctx.rotate(-yaw);
   ctx.fillStyle="#f5b301";ctx.strokeStyle="#111";ctx.lineWidth=1.4;

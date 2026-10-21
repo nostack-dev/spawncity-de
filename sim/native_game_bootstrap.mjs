@@ -64,6 +64,7 @@ import {installNativeFighterJets,tickNativeFighterJets} from "./native_fighter_j
 import {installNativeJoggerChain,tickNativeJoggerChain} from "./native_jogger_chain.mjs";
 import {installNativeMilitary,tickNativeMilitary} from "./native_military.mjs";
 import {installNativeZombies,tickNativeZombies} from "./native_zombies.mjs";
+import {installWorldMapFull} from "./native_world_map.mjs";
 import "./police_sirens.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
 import {installNativeCombat,tickNativeCombat} from "./native_combat.mjs";
@@ -333,6 +334,7 @@ async function prepareEngine(){
   installNativeJoggerChain(game);
   installNativeMilitary(game);
   installNativeZombies(game);
+  installWorldMapFull(game);
   globalThis.__nativeListener=()=>game.world?.camera?.eye||null;
   globalThis.__nativeCamera=()=>game.world?.camera||null;
   installNativeCombat();
