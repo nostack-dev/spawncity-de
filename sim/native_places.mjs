@@ -53,7 +53,9 @@ export function installNativePlaces(game,snapshot){
     const door=doors.find(d=>Math.hypot(d.x-p[0],d.y-p[1])<2.4);
     if(!door)return;
     inside={x:p[0],y:p[1]};
-    game.rigids.setPose("player-foot",{position:[door.in[0],door.in[1],1]});
+    door.floor=(door.floor||0)+1;
+    const z=[1,4.2,7.4][Math.min(door.floor,2)];
+    game.rigids.setPose("player-foot",{position:[door.in[0],door.in[1],z]});
   });
   return {doors:doors.length,race:Boolean(race)};
 }

@@ -9,6 +9,7 @@ import {hitNativePeople} from "./native_city_life.mjs";
 import {hitNativeCops} from "./native_police_ground.mjs";
 import {hitNativeCows,markNativeImpact} from "./native_world_life.mjs";
 import {markFacade} from "./native_session.mjs";
+import {addGlassCrack,addWallSoot,addWallBreach} from "./native_combat.mjs";
 import {hitNativeThreats} from "./native_threats.mjs";
 import {ORIGINAL_MISSILE,ORIGINAL_GUIDED,ORIGINAL_GRENADE} from "./native_actor_meshes.mjs";
 
@@ -61,7 +62,11 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     const hit=game.rigids.raycast(ray.origin,ray.direction,range);
     const person=hitNativePeople(ray.origin,ray.direction,range)||hitNativeCops(ray.origin,ray.direction,range)||hitNativeCows(ray.origin,ray.direction,range)||hitNativeThreats(ray.origin,ray.direction,range);
     const end=person?.point||hit?.point||add(ray.origin,ray.direction,Math.min(range,80));
-    if(person?.point||hit?.point){markNativeImpact(person?.point||hit.point);markFacade(person?.point||hit.point);}
+    if(person?.point||hit?.point){
+      const point=person?.point||hit.point;
+      markNativeImpact(point);markFacade(point);
+      addGlassCrack(point);addWallSoot(point);if(Math.random()<.2)addWallBreach(point);
+    }
     tracer(ray.origin,end,game.mode,game.mode==="foot"?state.foot:state.drone,clientX,clientY);
     if(hit&&hit.id!==selfId(game.mode))impact(hit,kind,ray.direction);
     if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,at:now}}));
