@@ -23,7 +23,7 @@ import "./gameplay_final_ui_dock.mjs";
 import "./edge_hud_layout.mjs";
 import "./drone_weapon_modes.mjs";
 import "./mp_fun_hud.mjs";
-import "./changelog_menu.mjs";
+import "./start_location.mjs";
 import "./player_settings_sections.mjs";
 import {mountPlayerControlSettings} from "./control_settings.mjs";
 import {mountAudioSettings,loadAudioSettings,saveAudioSettings} from "./audio_settings.mjs";
@@ -89,23 +89,25 @@ async function preciseGeoLocation(){
    ()=>resolve(null),{enableHighAccuracy:true,timeout:12000,maximumAge:0});
  });
 }
-async function loadRealWorld(game,{source="demo"}={}){
+async function resolveStartOrigin(){
+ // Same contract as production: a place picked this session wins, otherwise
+ // the player's GPS position. Konstanz is only the labelled fallback.
+ const chosen=globalThis.__arondightStartPlace?.fix?.();
+ if(chosen?.coords){
+  return {origin:{lon:chosen.coords.longitude,lat:chosen.coords.latitude},label:globalThis.__arondightStartPlace.get()?.name||"chosen place",source:"place"};
+ }
+ const fix=await preciseGeoLocation();
+ if(fix)return {origin:fix,label:"your GPS location",source:"gps"};
+ report("GPS denied · switching to real Konstanz demo");
+ return {origin:NATIVE_DEMO_CITY.origin,label:NATIVE_DEMO_CITY.name,source:"demo"};
+}
+async function loadRealWorld(game){
  const epoch=++osmEpoch;
  activeOsm?.abort();
  const controller=new AbortController();activeOsm=controller;
- // Production starts at the player's GPS position. Konstanz is only the
- // labelled fallback when GPS is denied or the player picks the demo.
- let origin=NATIVE_DEMO_CITY.origin;
- let label=NATIVE_DEMO_CITY.name;
- if(source==="gps"){
-  const fix=await preciseGeoLocation();
-  if(!fix){
-   if(game.closed)return false;
-   report("GPS denied · switching to real Konstanz demo");
-  }else{
-   origin=fix;label="your GPS location";
-  }
- }
+ const resolved=await resolveStartOrigin();
+ if(game.closed)return false;
+ const origin=resolved.origin,label=resolved.label;
  if(game.closed||epoch!==osmEpoch)return;
  report("Loading "+label+" · real OpenStreetMap buildings and roads…");
  try{
@@ -224,7 +226,7 @@ async function prepareEngine(){
   });
   $("cityButton")?.addEventListener("click",()=>{
    if(!session||session.game.closed)return;
-   void loadRealWorld(game,{source:session.worldSource});
+   void loadRealWorld(game);
   });
   $("cameraButton")?.addEventListener("click",()=>{
    const current=game.world.flightCameraMode??"follow";
@@ -250,7 +252,7 @@ async function prepareEngine(){
    }catch(error){report("Fullscreen not permitted on this browser");}
   });
   await game.start();
-  session={game,input,canvas,worldSource:"demo",worldLoaded:false,weapons};
+  session={game,input,canvas,worldLoaded:false,placeKey:null,weapons};
   globalThis.__arondightApplyStartMode=()=>applyStartupPlayerMode(game);
   applyStartupPlayerMode(game);
   if(navigator.webdriver)window.__spawncityNativeProbe=()=>{
@@ -302,12 +304,12 @@ async function startGame(){
  starting=true;
  holdMenus(8000);
  startButton.disabled=true;startButton.textContent="LOADING";
- const worldSource=$("worldSource")?.value==="demo"?"demo":"gps";
+ const placeKey=JSON.stringify(globalThis.__arondightStartPlace?.get?.()||null);
  try{
-  if(!session.worldLoaded||worldSource!==session.worldSource){
-   setMenuStatus(worldSource==="gps"?"LOCATING":"BUILDING CITY");
-   const loaded=await loadRealWorld(session.game,{source:worldSource});
-   if(loaded){session.worldLoaded=true;session.worldSource=worldSource;}
+  if(!session.worldLoaded||placeKey!==session.placeKey){
+   setMenuStatus("LOCATING");
+   const loaded=await loadRealWorld(session.game);
+   if(loaded){session.worldLoaded=true;session.placeKey=placeKey;}
   }
   setMenuStatus("PREPARING");
   applyStartupPlayerMode(session.game);
@@ -319,7 +321,6 @@ async function startGame(){
   document.documentElement.dataset.engine="native-webgl2";
   viewport.dataset.renderer="native-webgl2-only";
   session.canvas?.focus?.();
-  document.getElementById("worldSource")?.blur?.();
   startButton.disabled=false;startButton.textContent="START";
  }catch(error){
   console.warn("game startup preparation continued after non-fatal failure",error);

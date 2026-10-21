@@ -29,7 +29,6 @@ font:600 12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;text-shadow:0 
 #musicSwitch{right:calc(max(10px,env(safe-area-inset-right)) + 46px)}
 #gameMenuStart:disabled{opacity:.7;cursor:default}
 #gameMenuStatus{margin-top:8px;font:600 12px/1.3 Inter,system-ui,sans-serif;color:#b4c5d5}
-#worldSource{display:block;width:min(64vw,300px);margin:8px auto 2px;padding:10px 12px;border-radius:8px;border:1px solid #ffffff33;background:#12161c;color:#eef0f2;font:600 13px Inter,system-ui,sans-serif}
 #gameMenu .phone-settings-button,#gameMenuShare,#gameMenuWorld,#gameMenuChangelog{position:relative;z-index:2;pointer-events:auto;margin-top:4px;min-width:min(64vw,300px);padding:9px 24px;font:800 13px/1 Inter,system-ui,sans-serif;letter-spacing:.24em;color:#d8dde2;background:#ffffff0c;border:1px solid #ffffff33;border-radius:10px;cursor:pointer}
 #toolbar{position:absolute;bottom:max(12px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
 display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding:8px 12px;border-radius:18px;background:#071523c9;
@@ -82,10 +81,6 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
 <div class="gm-sub">DRONE · CARS · ZOMBIES</div>
 <button id="gameMenuStart" type="button" disabled>LOADING</button>
 <div id="gameMenuStatus" role="status">PREPARING</div>
-<select id="worldSource" aria-label="Choose the source of real OpenStreetMap buildings">
-<option value="gps" selected>My location · GPS</option>
-<option value="demo">Real OSM demo: Konstanz · no GPS</option>
-</select>
 </div></div>
 <button id="soundSwitch" type="button" data-on="1" aria-label="Sound">SND</button>
 <button id="musicSwitch" type="button" data-on="1" aria-label="Music">MUS</button>
