@@ -26,13 +26,13 @@ function meshOf(batch){
 }
 function poleMesh(){
  const batch={p:[],n:[],c:[],uv:[]},steel=[.17,.18,.2];
- addBox(batch,[-.11,-.11,0],[.11,.11,POLE_H],steel);
- addBox(batch,[0,-.05,POLE_H-.18],[1.45,.05,POLE_H-.08],steel);
+ addBox(batch,[-.09,-.09,0],[.09,.09,POLE_H],steel);
+ addBox(batch,[0,-.045,POLE_H-.16],[1.42,.045,POLE_H-.07],steel);
  return meshOf(batch);
 }
 function headMesh(){
  const batch={p:[],n:[],c:[],uv:[]};
- addBox(batch,[1.15,-.13,POLE_H-.28],[1.7,.13,POLE_H-.08],[1,.74,.42]);
+ addBox(batch,[1.12,-.13,POLE_H-.26],[1.72,.13,POLE_H-.12],[1,.74,.42]);
  return meshOf(batch);
 }
 function poolMesh(){

@@ -3,8 +3,8 @@
 // Polygon roofing (concave + holes) uses in-repo ISC Earcut v3.0.2.
 import earcut,{deviation as earcutDeviation} from "./vendor/earcut.mjs";
 export const NATIVE_CITY_GEOMETRY_VERSION="osm-city-chunks-webgl2-v1";
-const WALLS=[[.86,.78,.66],[.78,.62,.48],[.62,.38,.32],[.72,.70,.66],[.90,.86,.80],[.70,.52,.40],[.55,.58,.62],[.84,.76,.64],[.68,.64,.58],[.80,.74,.62]];
-const ROOFS=[[.29,.30,.32],[.23,.24,.25],[.43,.26,.20],[.33,.34,.36]];
+const WALLS=[[.788,.749,.682],[.725,.659,.549],[.557,.329,.263],[.612,.604,.580],[.847,.824,.769],[.659,.486,.373],[.490,.522,.565],[.796,.718,.604]];
+const ROOFS=[[.290,.298,.314],[.231,.239,.251],[.431,.263,.204],[.333,.345,.361]];
 const area=ring=>ring.reduce((s,p,i)=>{const q=ring[(i+1)%ring.length];return s+p[0]*q[1]-q[0]*p[1];},0)*.5;
 const hash=text=>{let n=2166136261;for(const c of String(text)){n=Math.imul(n^c.charCodeAt(0),16777619);}return n>>>0;};
 function cleanRing(input){
@@ -71,18 +71,18 @@ export function* nativeCityChunkSteps(footprints,{chunkSize=320,maxBuildings=260
      // Real window grid, not a shader hint. One dark pane per floor cell,
      // slightly proud of the wall so it reads at the live camera distance.
      if(wallHeight>2.6&&len>2.2){
-      const pitch=2.7,floorH=3.15,push=.045;
-      const nWin=Math.max(1,Math.floor((len-.6)/pitch));
+      const pitch=3.1,floorH=3.3,push=.04;
+      const nWin=Math.max(1,Math.floor((len-.7)/pitch));
       const margin=(len-nWin*pitch)*.5;
-      const floors=Math.max(1,Math.floor((wallHeight-1.1)/floorH));
-      const glass=[.16,.2,.26];
+      const floors=Math.max(1,Math.floor((wallHeight-.8)/floorH));
+      const glass=[.13,.17,.22],frame=[.22,.2,.18];
       const lift=(u,z)=>[a[0]+dx/len*u+normal[0]*push,a[1]+dy/len*u+normal[1]*push,z];
       for(let f=0;f<floors;f++){
-       const z0=base+1.05+f*floorH,z1=Math.min(top-.25,z0+(f===0?1.7:1.35));
-       if(z1-z0<.5)continue;
+       const z0=base+.9+f*floorH,z1=Math.min(top-.2,z0+1.55);
+       if(z1-z0<.45)continue;
        for(let w=0;w<nWin;w++){
-        const u0=margin+w*pitch+.28,u1=u0+pitch-.56;
-        if(u1-u0<.4)continue;
+        const u0=margin+w*pitch+.22,u1=u0+pitch-.44;
+        if(u1-u0<.35)continue;
         const p0=lift(u0,z0),p1=lift(u1,z0),p2=lift(u1,z1),p3=lift(u0,z1);
         appendTriangle(batch,p0,p1,p2,normal,glass,[0,0],[1,0],[1,1]);
         appendTriangle(batch,p0,p2,p3,normal,glass,[0,0],[1,1],[0,1]);

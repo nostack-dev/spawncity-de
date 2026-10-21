@@ -4,7 +4,7 @@
 // WITHOUT Three.js geometry, materials, GPU renderer or fallback.
 export const NATIVE_ROADS_VERSION="native-osm-road-surfaces-v1";
 const WIDTH={motorway:14,trunk:12,primary:11,secondary:9,tertiary:8,minor:6.5,service:4.2,track:3,path:2.2,pedestrian:3.6,raceway:8,busway:7};
-const COLOR={asphalt:[.24,.25,.27],major:[.20,.22,.24],curb:[.52,.51,.48],line:[.90,.88,.85],yellow:[.84,.71,.29],path:[.72,.67,.53]};
+const COLOR={asphalt:[.235,.247,.267],major:[.204,.216,.235],curb:[.525,.514,.486],line:[.902,.894,.863],yellow:[.839,.710,.290],path:[.72,.67,.53]};
 const SEGMENT_M=6,CHUNK_M=420;
 const lines=geometry=>!geometry?[]:geometry.type==="LineString"?[geometry.coordinates]:geometry.type==="MultiLineString"?geometry.coordinates:[];
 const finite2=p=>Array.isArray(p)&&p.length>=2&&Number.isFinite(p[0])&&Number.isFinite(p[1]);
