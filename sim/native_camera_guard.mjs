@@ -19,6 +19,8 @@ function anchorFor(mode){
 }
 export function guardNativeCamera(camera,mode){
   if(!camera?.eye||!camera?.target||mode==="jet"||globalThis.__nativeCameraOverrideActive)return camera;
+  // inside a walkable building the chest-to-eye path starts inside its Box3D prism
+  if(mode==="foot"&&globalThis.__buildingInteriors?.engaged)return camera;
   const a=anchorFor(mode);if(!a)return camera;
   let eye=camera.eye.slice(),target=camera.target.slice(),up=camera.up,collided=false;
   try{

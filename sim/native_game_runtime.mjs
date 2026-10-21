@@ -130,10 +130,19 @@ export class NativeGameRuntime{
   if(input.jet)for(const key of jetAxes)if(Number.isFinite(input.jet[key]))
    this.jetInput[key]=clamp(input.jet[key],-1,1);
  }
+ footWalkVelocity(){
+  const a=this.footInput.yaw,f=this.footInput.forward,s=this.footInput.strafe,mag=Math.hypot(f,s);
+  if(!(mag>.05))return [0,0];
+  const speed=(this.footInput.sprint?FOOT_SPRINT_MPS:FOOT_WALK_MPS)/mag;
+  return [(Math.sin(a)*f+Math.cos(a)*s)*speed,(Math.cos(a)*f-Math.sin(a)*s)*speed];
+ }
  moveActors(dt){
   if(this.mode==="foot"){
    const pose=this.rigids.pose("player-foot");
-   if(pose){
+   // Walkable buildings (native_building_interiors.mjs): inside / at the door
+   // of the active building, production resolveMove()/feetHeightAt() own the step.
+   const indoor=pose&&globalThis.__buildingInteriors?.footStep?.(this,pose,this.footWalkVelocity(),dt);
+   if(pose&&!indoor){
     const half=pose.groundOffset||.88;
     const probe=this.rigids.raycast([pose.position[0],pose.position[1],pose.position[2]+.3],[.001,.001,-1],half+1.4,{maskBits:WORLD_PHYSICS_CATEGORIES.terrain});
     const gap=probe?pose.position[2]-half-probe.point[2]:1;
