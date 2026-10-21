@@ -3,6 +3,7 @@
 // alpha sorting, fog, asynchronous GPU timers and loss/recovery.
 // TODO for full game release: shadow maps, effects, picking and every
 // gameplay scene producer; native-only release gate remains closed.
+import {NativeBloomPass} from "./native_bloom_pass.mjs";
 import {multiply4,lookAt,perspective,identity4,normalMatrix3} from "./native_render_math.mjs";
 import {extractFrustumPlanes,sphereVisible,geometryBoundingSphere,instancedBoundingSphere} from "./native_render_culling.mjs";
 import {screenRay,pickNativeMeshes} from "./native_scene_picking.mjs";
@@ -72,7 +73,9 @@ const FRAG="#version 300 es\n"+[
 "uniform float uEnvIntensity;",
 "uniform int uPointLightCount;",
 "uniform vec4 uPointPosRange[6],uPointColorIntensity[6];",
-"out vec4 outColor;",
+"layout(location=0) out vec4 outColor;",
+"// Linear pre-tone-map colour for the production neon bloom (native_bloom_pass).",
+"layout(location=1) out vec4 outHdr;",
 "float fh(float n){return fract(sin(n*127.1)*43758.5453);}",
 "float gh(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.55);}",
 "float gn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(gh(i),gh(i+vec2(1,0)),f.x),mix(gh(i+vec2(0,1)),gh(i+vec2(1,1)),f.x),f.y);}",
@@ -227,6 +230,7 @@ const FRAG="#version 300 es\n"+[
 "    rgb+=facGlass*mix(vec3(0.05,0.07,0.09),vec3(0.32,0.4,0.5),fr);",
 "  }",
 "  // Production grade (stylized_world_style.mjs CustomToneMapping), then sRGB.",
+"  outHdr=vec4(max(rgb,vec3(0.0)),alpha);",
 "  rgb=acesFilmic(rgb);",
 "  float luma=dot(rgb,vec3(0.2126,0.7152,0.0722));",
 "  rgb=mix(vec3(luma),rgb,1.14);",
@@ -337,7 +341,7 @@ export class NativeSceneRenderer{
   this.pointLights={count:0,posRange:new Float32Array(24),colorIntensity:new Float32Array(24)};
   this.shadow=null;this.shadowConfig=shadows&&shadows!==false?{...shadows}:null;
   this.sceneRevision=0;this.shadowRevision=0;this.shadowCache=null;
-  this.onLost=e=>{e.preventDefault();this.lost=true;this.shadow?.dispose({contextLost:true});this.sky?.dispose({contextLost:true});this.shadow=null;this.shadowCache=null;};
+  this.onLost=e=>{e.preventDefault();this.lost=true;this.bloom?.dispose({contextLost:true});this.shadow?.dispose({contextLost:true});this.sky?.dispose({contextLost:true});this.shadow=null;this.shadowCache=null;};
   this.onRestored=()=>{this.lost=false;this.init();for(const m of this.meshes.values())this.upload(m);};
   canvas.addEventListener?.("webglcontextlost",this.onLost,false);
   canvas.addEventListener?.("webglcontextrestored",this.onRestored,false);
@@ -346,6 +350,7 @@ export class NativeSceneRenderer{
  init(){
   this.gpu=program(this.gl);
   this.sky=new NativeSkyPass(this.gl);
+  this.bloom??=new NativeBloomPass(this.gl);
   this.timer=this.gl.getExtension("EXT_disjoint_timer_query_webgl2");
   if(this.shadowConfig)this.shadow=new NativeSunShadowMap(this.gl,this.shadowConfig);
   this.shadowCache=null;
@@ -551,6 +556,9 @@ export class NativeSceneRenderer{
    throw Error("native viewport must fit inside the drawing buffer");
   if(viewport){gl.enable(gl.SCISSOR_TEST);gl.scissor(rect.x,rect.y,rect.width,rect.height);}
   else gl.disable(gl.SCISSOR_TEST);
+  // Production neon bloom: the scene goes into the bloom target (plain
+  // path for stereo eyes / when the device cannot run it).
+  const post=!viewport&&Boolean(this.bloom?.begin(this.width,this.height));
   gl.viewport(rect.x,rect.y,rect.width,rect.height);
   gl.clearColor(...clearColor);gl.clearDepth(1);gl.depthMask(true);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
@@ -603,12 +611,14 @@ export class NativeSceneRenderer{
    stats.drawCalls++;stats.instances+=d.count;stats.triangles+=(d.indices?d.indices.length:d.p.length/3)/3*d.count;
   };
   for(const m of opaque)draw(m);
-  // Same contract as viewmodel_pass.mjs: the weapon is drawn after a depth
-  // clear, so a wall against the camera cannot cut the gun.
-  if(viewmodel.length){gl.clear(gl.DEPTH_BUFFER_BIT);for(const m of viewmodel)draw(m);}
   if(transparent.length){gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);}
   for(const m of transparent)draw(m);
-  gl.depthMask(true);gl.disable(gl.BLEND);gl.bindVertexArray(null);
+  gl.depthMask(true);gl.disable(gl.BLEND);
+  // Same contract as viewmodel_pass.mjs: the weapon is drawn last, after a
+  // depth clear, so a wall against the camera cannot cut the gun.
+  if(viewmodel.length){gl.clear(gl.DEPTH_BUFFER_BIT);for(const m of viewmodel)draw(m);}
+  gl.bindVertexArray(null);
+  if(post){this.bloom.end(this.exposure);gl.useProgram(this.gpu.handle);gl.enable(gl.DEPTH_TEST);gl.viewport(rect.x,rect.y,rect.width,rect.height);}
   if(viewport)gl.disable(gl.SCISSOR_TEST);
   if(timerQuery){gl.endQuery(this.timer.TIME_ELAPSED_EXT);this.pending.push(timerQuery);}
   stats.cpuMs=+(performance.now()-start).toFixed(3);this.stats=stats;return stats;
