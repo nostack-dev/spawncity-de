@@ -23,7 +23,6 @@ function paint(renderer,id,geo,data){
 }
 export function installNativeThreats(){
   globalThis.__arondightGangsters={version:"street-gangsters-v1"};
-  globalThis.__zombies={version:"cod-zombie-nights-v1",get points(){return points;},get round(){return round;}};
 }
 export function tickNativeThreats(game,now=performance.now()){
   const renderer=game?.world?.renderer;if(!renderer?.upsert)return;
@@ -56,7 +55,8 @@ export function tickNativeThreats(game,now=performance.now()){
     if(d<22&&Math.random()<.02)globalThis.__arondightPlayerDamageModel?.damage?.(12,"gun:military");
     soldierData.push(...fromTRS([s.x,s.y,0],yawQuat(s.yaw),[1,1,1]));
   }
-  if(zombiesOn()){
+  // Zombie nights are native_zombies.mjs (production zombie_nights).
+  if(false&&zombiesOn()){
     if(!zombies.some(z=>z.hp>0)&&now> (tickNativeThreats.next||0)){
       round++;const n=Math.min(CAP,4+round*2);
       for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,r=SPAWN_MIN+Math.random()*(SPAWN_MAX-SPAWN_MIN);zombies.push({id:`zombie-${++threatSeq}`,kind:"zombie",x:p[0]+Math.cos(a)*r,y:p[1]+Math.sin(a)*r,hp:Z_HP});}

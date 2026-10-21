@@ -16,6 +16,7 @@ import {nativeBulletImpact} from "./native_world_impacts.mjs";
 import {nativeTracerGlint} from "./native_scene_lighting.mjs";
 import {hitNativeAnimals,shootNativeAnimal} from "./native_animals.mjs";
 import {hitNativeMilitary,shootNativeMilitary} from "./native_military.mjs";
+import {hitNativeZombies,shootNativeZombie} from "./native_zombies.mjs";
 import {createNativeOrdnance} from "./native_ordnance.mjs";
 import {createNativeFootFire} from "./native_foot_fire.mjs";
 import {takeNativeCarBooms} from "./native_city_life.mjs";
@@ -94,7 +95,8 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
   function shootHitscan(now,range,kind,clientX,clientY){
     const ray=aim(clientX,clientY);if(!ray)return false;
     const hit=game.rigids.raycast(ray.origin,ray.direction,range);
-    const person=hitNativePeople(ray.origin,ray.direction,range)||hitNativeCops(ray.origin,ray.direction,range)||hitNativeCows(ray.origin,ray.direction,range)||hitNativeThreats(ray.origin,ray.direction,range)||hitNativeSandbox(ray.origin,ray.direction,range)||hitNativeAnimals(ray.origin,ray.direction,range)||hitNativeMilitary(ray.origin,ray.direction,range);
+    const person=hitNativePeople(ray.origin,ray.direction,range)||hitNativeCops(ray.origin,ray.direction,range)||hitNativeCows(ray.origin,ray.direction,range)||hitNativeThreats(ray.origin,ray.direction,range)||hitNativeSandbox(ray.origin,ray.direction,range)||hitNativeAnimals(ray.origin,ray.direction,range)||hitNativeMilitary(ray.origin,ray.direction,range)||hitNativeZombies(ray.origin,ray.direction,range);
+    if(person?.kind==="zombie-night")shootNativeZombie(person.id,ray.direction);
     if(person?.kind==="military")shootNativeMilitary(person,ray.direction);
     if(person?.kind==="animal")shootNativeAnimal(person.index,ray.direction);
     if(person?.kind==="enemy")damageNativeSandboxEnemy(person.id,1);
