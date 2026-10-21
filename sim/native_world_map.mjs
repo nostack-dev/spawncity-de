@@ -235,7 +235,8 @@ function drawCanvas(){
   const feats=nativeMapFeatures(),poly=(f,fill,stroke)=>{c.beginPath();f.path.forEach((q,i)=>{const [x,y]=P(q[0],q[1]);i?c.lineTo(x,y):c.moveTo(x,y);});c.closePath();c.fillStyle=fill;c.fill();if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke();}};
   for(const f of feats)if(f.kind==="green")poly(f,"#2f4128");
   for(const f of feats)if(f.kind==="water")poly(f,"#2f5f86");
-  const prisms=game?.gameplayState?.carObstacleSnapshot?.prisms||[];if(prisms.length){c.fillStyle="#4b5056";c.strokeStyle="#6a6f75";c.lineWidth=1;for(const pr of prisms){const pts=pr.points;if(!pts||pts.length<3)continue;c.beginPath();pts.forEach((q,i)=>{const [x,y]=P(q[0],q[1]);i?c.lineTo(x,y):c.moveTo(x,y);});c.closePath();c.fill();c.stroke();}}
+  // footprints as whole outlines (the collision prisms are triangulated pieces)
+  const prisms=feats.some(f=>f.kind==="building")?[]:(game?.gameplayState?.carObstacleSnapshot?.prisms||[]);if(prisms.length){c.fillStyle="#4b5056";c.strokeStyle="#6a6f75";c.lineWidth=1;for(const pr of prisms){const pts=pr.points;if(!pts||pts.length<3)continue;c.beginPath();pts.forEach((q,i)=>{const [x,y]=P(q[0],q[1]);i?c.lineTo(x,y):c.moveTo(x,y);});c.closePath();c.fill();c.stroke();}}
   else for(const f of feats)if(f.kind==="building")poly(f,"#4b5056","#6a6f75");
   c.lineCap="round";c.lineJoin="round";const roads=feats.filter(f=>f.kind==="road");
   for(const r of roads){const minor=/path|track|foot|cycle|service|steps|pedestrian/.test(r.cls||"");c.strokeStyle=minor?"#8d8f86":"#d6d6cf";c.lineWidth=Math.max(1.5,(minor?2.5:6)/mpp*.6);c.beginPath();r.path.forEach((q,i)=>{const [x,y]=P(q[0],q[1]);i?c.lineTo(x,y):c.moveTo(x,y);});c.stroke();}
