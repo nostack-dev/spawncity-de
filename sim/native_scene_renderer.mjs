@@ -69,6 +69,7 @@ const FRAG="#version 300 es\n"+[
 "uniform int uSunShadowEnabled;",
 "uniform int uHasTexture,uUnlit,uFacade,uTerrain,uPaint,uLinearColor;",
 "uniform vec2 uPbr;",
+"uniform float uEnvIntensity;",
 "uniform int uPointLightCount;",
 "uniform vec4 uPointPosRange[6],uPointColorIntensity[6];",
 "out vec4 outColor;",
@@ -207,7 +208,7 @@ const FRAG="#version 300 es\n"+[
 "  // IBL at environmentIntensity 0.9. Unlit materials keep their colour.",
 "  const float PI=3.141592653589793;",
 "  float rough=clamp(uPbr.x,0.04,1.0),metal=clamp(uPbr.y,0.0,1.0);",
-"  vec3 rgb=uUnlit==1?base:base*(1.0-metal)*((uSunColor*ndl*shadow+hemis+point*PI)/PI+envIrradiance(n)*0.9);",
+"  vec3 rgb=uUnlit==1?base:base*(1.0-metal)*((uSunColor*ndl*shadow+hemis+point*PI)/PI+envIrradiance(n)*uEnvIntensity);",
 "  if(uUnlit!=1&&(metal>0.0||rough<0.95)){",
 "    // MeshStandardMaterial specular: Schlick Fresnel with roughness against",
 "    // the sky environment, plus a GGX-shaped sun highlight.",
@@ -216,7 +217,7 @@ const FRAG="#version 300 es\n"+[
 "    vec3 F0=mix(vec3(0.04),base,metal);",
 "    vec3 F=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NdV,5.0);",
 "    vec3 envR=mix(envIrradiance(R),mix(vec3(0.52,0.66,0.86),vec3(0.05,0.2,0.62),clamp(R.z,0.0,1.0)),1.0-rough);",
-"    rgb+=F*envR*0.9;",
+"    rgb+=F*envR*uEnvIntensity;",
 "    vec3 H=normalize(sun+V);float a2=rough*rough*rough*rough;float NdH=clamp(dot(n,H),0.0,1.0);",
 "    float d=a2/(PI*pow(NdH*NdH*(a2-1.0)+1.0,2.0));",
 "    rgb+=F*uSunColor*ndl*shadow*min(d,40.0)*0.25;",
@@ -225,7 +226,7 @@ const FRAG="#version 300 es\n"+[
 "  // plus a Fresnel sky term), so windows read light, not black.",
 "  if(facGlass>0.0){",
 "    vec3 V=normalize(uEye-vWorld);float fr=pow(1.0-abs(dot(V,n)),3.0);",
-"    vec3 skyRefl=mix(vec3(0.52,0.66,0.86),vec3(0.05,0.2,0.62),clamp(reflect(-V,n).z,0.0,1.0)*0.6)*0.9;",
+"    vec3 skyRefl=mix(vec3(0.52,0.66,0.86),vec3(0.05,0.2,0.62),clamp(reflect(-V,n).z,0.0,1.0)*0.6)*uEnvIntensity;",
 "    rgb=mix(rgb,skyRefl,facGlass*(0.45+0.4*fr));",
 "    rgb+=facGlass*mix(vec3(0.05,0.07,0.09),vec3(0.32,0.4,0.5),fr);",
 "  }",
@@ -317,7 +318,7 @@ function program(gl){
  const v=shader(gl.VERTEX_SHADER,VERT),f=shader(gl.FRAGMENT_SHADER,FRAG),p=gl.createProgram();
  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){const e=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw Error("native program: "+e);}
- const uniforms=["uViewProjection","uMaterial","uLinearColor","uPbr","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uTerrain","uPaint","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
+ const uniforms=["uViewProjection","uMaterial","uLinearColor","uPbr","uEnvIntensity","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uTerrain","uPaint","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
  return {handle:p,u:Object.fromEntries(uniforms.map(k=>[k,gl.getUniformLocation(p,k)]))};
 }
 export class NativeSceneRenderer{
@@ -558,13 +559,13 @@ export class NativeSceneRenderer{
   gl.clearColor(...clearColor);gl.clearDepth(1);gl.depthMask(true);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   this.sky.draw({eye:this.eye,target:this.target,up:this.up,fov:this.fov,aspect:rect.width/rect.height,
-   sun:this.sunDirection,night:this.night||0,exposure:this.exposure});
+   sun:this.skySun||this.sunDirection,moon:this.skyMoon||undefined,night:this.night||0,exposure:this.exposure});
   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(this.gpu.handle);
   const camera=multiply4(perspective(this.fov,rect.width/rect.height,this.near,this.far),lookAt(this.eye,this.target,this.up));
   gl.uniformMatrix4fv(u.uViewProjection,false,camera);
   for(const key of ["sunDirection","sunColor","skyColor","groundColor","fogColor","eye"])
    gl.uniform3fv(u["u"+key[0].toUpperCase()+key.slice(1)],new Float32Array(this[key]));
-  gl.uniform1f(u.uFogDensity,this.fogDensity);gl.uniform1f(u.uExposure,this.exposure);gl.uniform1i(u.uTexture,0);
+  gl.uniform1f(u.uFogDensity,this.fogDensity);gl.uniform1f(u.uExposure,this.exposure);gl.uniform1f(u.uEnvIntensity,Number.isFinite(this.envIntensity)?this.envIntensity:.9);gl.uniform1i(u.uTexture,0);
   gl.uniform1i(u.uPointLightCount,this.pointLights.count);
   gl.uniform4fv(u["uPointPosRange[0]"],this.pointLights.posRange);
   gl.uniform4fv(u["uPointColorIntensity[0]"],this.pointLights.colorIntensity);

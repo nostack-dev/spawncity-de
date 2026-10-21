@@ -35,6 +35,7 @@ function headMesh(){
  addBox(batch,[1.12,-.13,POLE_H-.26],[1.72,.13,POLE_H-.12],[1,.74,.42]);
  return meshOf(batch);
 }
+function lampGlow(){const night=Number(globalThis.__dayNight?.state?.night)||0;return Math.min(1,Math.max(0,(night-.15)/.5));}
 function poolMesh(){
  const batch={p:[],n:[],c:[],uv:[]};
  addBox(batch,[-.5,-.5,.02],[.5,.5,.03],[1,.72,.38]);
@@ -102,14 +103,25 @@ export class NativeStreetLamps{
    this.renderer.upsert(id,data);
   };
   send("lamps/poles",this.pole,poleT,{color:[1,1,1,1],castShadow:true});
-  send("lamps/heads",this.head,headT,{color:[1,.78,.45,1],unlit:true,castShadow:false});
-  send("lamps/pools",this.pool,poolT,{color:[1,.72,.38,.45],unlit:true,alphaMode:"blend",castShadow:false,doubleSided:true});
+  // Production street_lamps.mjs: heads glow and pools appear only at night
+  // (glow = (night - .15) / .5 of the day / night cycle).
+  const g=this.glow=lampGlow();
+  send("lamps/heads",this.head,headT,g>.01?{color:[1,.78,.45,1],unlit:true,castShadow:false}:{color:[.86,.84,.8,1],castShadow:false});
+  send("lamps/pools",this.pool,poolT,{color:[1,.72,.38,.45*g],unlit:true,alphaMode:"blend",castShadow:false,doubleSided:true});
+  if(n)this.renderer.setVisible?.("lamps/pools",g>.01);
   this.built=n>0;
+ }
+ syncNight(){
+  if(!this.points?.length)return;
+  const g=lampGlow();
+  if(Math.abs(g-(this.glow??-1))>=.01||(g===0)!==(this.glow===0))this.upload();
  }
  contribute(lights,eye){
   if(!lights?.request||!Array.isArray(eye))return 0;
+  this.syncNight();
+  if(!(this.glow>.01))return 0;
   const ranked=this.points.map(p=>({p,d:Math.hypot(p.hx-eye[0],p.hy-eye[1])})).sort((a,b)=>a.d-b.d).slice(0,6);
-  for(const row of ranked)lights.request([row.p.hx,row.p.hy,row.p.z+POLE_H],{color:[1,.7,.36],intensity:16,distance:22});
+  for(const row of ranked)lights.request([row.p.hx,row.p.hy,row.p.z+POLE_H],{color:[1,.7,.36],intensity:16*this.glow,distance:22});
   return ranked.length;
  }
  clear(){

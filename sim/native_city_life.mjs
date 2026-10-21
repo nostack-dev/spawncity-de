@@ -186,6 +186,7 @@ if(typeof window!=="undefined"){
   });
 }
 export function tickNativeCityLife(game,now=performance.now()){
+  lamps?.syncNight?.();
   tickNativeRagdoll(game,now);
   tickNativeCarDebris(game,now);
   if(!net)return;

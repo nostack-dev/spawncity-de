@@ -13,12 +13,21 @@ const renderer={
  upsert(id,data){uploaded.set(id,data);},
  remove(id){uploaded.delete(id);}
 };
+const visible=new Map();renderer.setVisible=(id,v)=>{visible.set(id,v);return true;};
+// Production: by day the lamps are dark poles, no pools, no point lights.
+globalThis.__dayNight={state:{night:0}};
 const lamps=new NativeStreetLamps(renderer,{heightAt:()=>2});
 assert.equal(lamps.setRoads([line]),points.length);
 assert.equal(uploaded.get("lamps/poles").instances.transforms.length/16,points.length);
-assert.equal(uploaded.get("lamps/heads").material.unlit,true);
+assert.notEqual(uploaded.get("lamps/heads").material.unlit,true);
+assert.equal(visible.get("lamps/pools"),false);
 const lights={n:0,request(){this.n++;return true;}};
+assert.equal(lamps.contribute(lights,[0,0,2]),0);
+// At night the heads glow, the sodium pools show and the six nearest light up.
+globalThis.__dayNight={state:{night:1}};
 assert.equal(lamps.contribute(lights,[0,0,2]),Math.min(6,points.length));
+assert.equal(uploaded.get("lamps/heads").material.unlit,true);
+assert.equal(visible.get("lamps/pools"),true);
 lamps.clear();
 assert.equal(uploaded.size,0);
 console.log("native street lamps: OSM spacing, no paths, instanced poles, six nearest sodium lights");

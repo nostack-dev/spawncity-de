@@ -11,7 +11,8 @@ const CAP=28,Z_HP=100,MELEE=11,MELEE_MS=1150,SPAWN_MIN=34,SPAWN_MAX=70,HIT_PTS=1
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
 let soldiers=[],zombies=[],round=0,points=0,lastMelee=0,lastGang=0,drawn={},threatSeq=0;
 function heat(){return Number(globalThis.__arondightWantedSystem?.state?.heat)||0;}
-function night(){const h=new Date().getHours();return h<6||h>=21;}
+// Zombie nights follow the game's day / night cycle (production zombie_nights).
+function night(){const dn=globalThis.__dayNight?.state;if(dn)return Boolean(dn.isNight);const h=new Date().getHours();return h<6||h>=21;}
 function zombiesOn(){return globalThis.__arondightWorldOptions?.get?.("zombies")!==false&&night();}
 function player(){const p=globalThis.__arondightWalkMode?.position;return p?[p.x,p.y,p.z||1]:[0,0,2];}
 function paint(renderer,id,geo,data){
