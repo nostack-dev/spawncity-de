@@ -32,6 +32,9 @@ function setData(k,v){const el=$("viewport");if(el)el.dataset[k]=String(v);}
 
 // ------------------------------------------------------------------ geodesy (same as the world bridge)
 const R=6378137;
+// Distance of a fix from the loaded world's origin (production calls this but
+// never defines it, so its GPS live throws once a real world is active).
+function kmFromOrigin(lon,lat){const b=bridge();if(!b||!Number.isFinite(b.originLon))return Infinity;const dx=(lon-b.originLon)*Math.PI/180*R*Math.cos(lat*Math.PI/180),dy=(lat-b.originLat)*Math.PI/180*R;return Math.hypot(dx,dy)/1000;}
 // world frame when the real-map world is live; otherwise (training world, map can't load) a local
 // frame anchored at the first fix, so the mode still mirrors your movement
 let ownOrigin=null,worldTried=false;
