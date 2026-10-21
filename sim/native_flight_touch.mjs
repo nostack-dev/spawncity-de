@@ -37,10 +37,10 @@ export function installNativeFlightTouch(){
   const toolbar=document.getElementById("toolbar");
   if(actions&&toolbar){for(const node of [...toolbar.children])actions.appendChild(node);toolbar.hidden=true;}
   const foot=document.createElement("div");foot.id="footHud";
-  foot.innerHTML=`<div id="footLookZone" aria-label="Drag anywhere to look"></div><div id="footReadout"><b>WALK</b></div><div id="footReticle" aria-hidden="true"></div>
+  foot.innerHTML=`<div id="footLookZone" aria-label="Drag anywhere to look"></div><div id="footReadout"><b>WALK READY</b> · left move · drag anywhere to look</div><div id="footReticle" aria-hidden="true"></div>
   <div id="footMove" class="foot-stick" aria-label="Move"><div class="ring"></div><div class="knob"></div><span>MOVE</span></div>
   <div id="footLook" class="foot-stick" aria-label="Look"><div class="ring"></div><div class="knob"></div><span>LOOK</span></div>
-  <button id="footFire" type="button">FIRE</button><button id="footJump" type="button">JUMP</button>`;
+  <button id="footFire" type="button">FIRE</button><button id="footJump" type="button" aria-label="Jump">JUMP</button>`;
   view.appendChild(foot);
   const style=document.createElement("style");style.dataset.nativeFlightTouch=NATIVE_FLIGHT_TOUCH_VERSION;
   style.textContent=`/* Production drone HUD (simulator.mjs soloStyle), verbatim. */
@@ -92,16 +92,27 @@ export function installNativeFlightTouch(){
 
 #soloRaceHud[hidden]{display:none!important}
 #hud,#help,#toolbar{display:none!important}
-#footHud{display:none;position:absolute;inset:0;z-index:8;pointer-events:none}
-body.on-foot-mode:not(.desktop-input) #footHud,body.sticks-claimed #footHud{display:block}
-.foot-stick{position:absolute;width:min(25vw,150px);aspect-ratio:1;bottom:max(20px,env(safe-area-inset-bottom));pointer-events:auto;touch-action:none}
-#footMove{left:max(12px,env(safe-area-inset-left))}#footLook{right:max(12px,env(safe-area-inset-right))}
-.foot-stick .ring{position:absolute;inset:0;border-radius:50%;border:2px solid #ffffff66;background:#0b18265c}
-.foot-stick .knob{position:absolute;left:50%;top:50%;width:31%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:#f3f7ffcc;border:2px solid #fff}
-.foot-stick span{position:absolute;left:50%;bottom:-16px;transform:translateX(-50%);font-size:9px;font-weight:800;color:#fff}
-#footFire,#footJump{position:absolute;pointer-events:auto;width:64px;height:64px;border-radius:50%;border:2px solid #fff;background:#0d1118b8;color:#fff;font:800 12px system-ui}
-#footJump{right:calc(max(12px,env(safe-area-inset-right)) + min(25vw,150px) + 18px);bottom:max(28px,env(safe-area-inset-bottom))}
-#footFire{left:50%;bottom:max(16px,env(safe-area-inset-bottom));transform:translateX(-50%)}
+/* Production on-foot HUD (player_walk_mode_v4.mjs), verbatim. */
+#playerModeButton{border-color:#78d8ff66!important;background:#0b2740e8!important;color:#e5f8ff!important}
+body.on-foot-mode #playerModeButton{border-color:#ffd36b88!important;background:#402b10e8!important;color:#fff1c9!important}
+#footHud{display:none;position:absolute;inset:0;z-index:8;pointer-events:none;font-family:system-ui,-apple-system,sans-serif;color:#eef8ff}
+body.on-foot-mode #footHud{display:block}
+body.on-foot-mode #soloLeft,body.on-foot-mode #soloRight,body.on-foot-mode #soloClearance,body.on-foot-mode .solo-action{display:none!important;opacity:0!important;pointer-events:none!important}
+body.on-foot-mode #soloState,body.on-foot-mode #soloRaceHud{display:none!important}
+body.on-foot-mode #worldLookHud{z-index:10!important}
+.foot-stick{position:absolute;bottom:max(18px,var(--solo-safe-bottom,env(safe-area-inset-bottom)));width:min(25vw,150px);aspect-ratio:1;border-radius:50%;border:1px solid #c6edff55;background:#0715227d;box-shadow:inset 0 0 34px #39bdf01c,0 6px 20px #0006;pointer-events:auto;touch-action:none;z-index:3}
+#footMove{left:max(12px,var(--solo-safe-left,env(safe-area-inset-left)))}
+#footLook{right:max(12px,var(--solo-safe-right,env(safe-area-inset-right)));width:min(25vw,148px);opacity:.68;background:#07152255}
+.foot-stick .ring{position:absolute;inset:0;border-radius:50%;border:1px solid #e6f8ff33}.foot-stick .knob{position:absolute;left:50%;top:50%;width:32%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:#e9f8ffcc;border:1px solid #fff;box-shadow:0 3px 12px #0008}.foot-stick span{position:absolute;left:50%;bottom:-15px;transform:translateX(-50%);font:850 9px/1 system-ui;letter-spacing:.08em;white-space:nowrap;text-shadow:0 2px 5px #000}
+#footLookZone{position:absolute;display:block;left:0;right:0;top:max(44px,var(--solo-safe-top,env(safe-area-inset-top)));bottom:0;width:auto;z-index:1;pointer-events:auto;touch-action:none;background:transparent;cursor:crosshair}
+#footLookZone::after{content:"DRAG · LOOK";position:absolute;right:18px;top:8px;color:#d9f5ff55;font:800 7px/1 system-ui;letter-spacing:.10em;pointer-events:none}
+#footFire{position:absolute;right:calc(max(12px,var(--solo-safe-right,env(safe-area-inset-right))) + min(25vw,148px) + 18px);bottom:max(22px,calc(var(--solo-safe-bottom,env(safe-area-inset-bottom)) + 18px));width:clamp(96px,13vw,116px);height:clamp(96px,13vw,116px);border-radius:50%;border:2px solid #ffd172cc;background:radial-gradient(circle at 38% 30%,#985123,#5a2f16 58%,#2b170e);color:#fff6dd;font:950 13px/1 system-ui;letter-spacing:.08em;text-shadow:0 2px 4px #000;box-shadow:0 8px 28px #0009,0 0 0 5px #ffb34a20,inset 0 0 24px #ffba4d38;pointer-events:auto;touch-action:none;z-index:6;user-select:none;-webkit-tap-highlight-color:transparent}
+#footFire::before{content:"";position:absolute;inset:15%;border:1px solid #ffe1a56b;border-radius:50%}#footFire:active{transform:scale(.94);filter:brightness(1.18)}
+#footReadout{position:absolute;left:50%;top:max(46px,calc(var(--solo-safe-top,env(safe-area-inset-top)) + 40px));transform:translateX(-50%);padding:5px 9px;border-radius:8px;background:#071522c7;border:1px solid #ffffff22;font:850 9px/1 system-ui;letter-spacing:.08em;pointer-events:none;z-index:4}#footReadout b{color:#ffd36b}
+#footReticle{position:absolute;left:50%;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);border:1px solid #f5fbffcc;border-radius:50%;box-shadow:0 0 5px #000,0 0 7px #fff4;opacity:.85;z-index:4}
+#footReticle.aim-assisted{border-color:#8fe7ff;box-shadow:0 0 5px #000,0 0 9px #42cfffaa;opacity:1}
+@media(max-height:340px){.foot-stick{width:min(22vw,128px);bottom:max(16px,var(--solo-safe-bottom,env(safe-area-inset-bottom)))}#footLook{width:min(22vw,124px)}#footFire{right:calc(max(10px,var(--solo-safe-right,env(safe-area-inset-right))) + min(22vw,124px) + 12px);width:92px;height:92px;bottom:max(14px,var(--solo-safe-bottom,env(safe-area-inset-bottom)));font-size:11px}}
+body.sticks-claimed #footHud{display:block}
 #sticks{display:none!important}
 @media(pointer:coarse){#toolbar{top:max(8px,env(safe-area-inset-top));bottom:auto}}`;
   document.head.appendChild(style);
