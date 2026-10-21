@@ -7,9 +7,10 @@ import {NativeStreetLamps} from "./native_street_lamps.mjs";
 import {ORIGINAL_SEDAN} from "./native_original_vehicles.mjs";
 import {fromTRS} from "./native_render_math.mjs";
 import {NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
+import {isCriticalDamage,criticalDetonationAt,accelerateCriticalDetonation} from "./critical_damage_logic.mjs";
 
 const PERSON_CAP=100,CAR_CAP=42,BUS_CAP=8,CAR_SPEED=8;
-let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawnCars=false,routes=[];
+let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawnCars=false,routes=[],carBooms=[],carSmokeAt=0;
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
 function playerPos(){
   const w=globalThis.__arondightWalkMode,p=w?.position;
@@ -38,7 +39,8 @@ export function installNativeCityLife(game,snapshot){
   }
   people=people.slice(0,PERSON_CAP);
   cars=routes.slice(0,CAR_CAP).map((route,i)=>({
-    id:`traffic-${i}`,route,s:(i+.3)/CAR_CAP*route.length,dir:i%2?1:-1,speed:CAR_SPEED*(.7+.4*(i%5)/5),bus:i<BUS_CAP,alive:true,hits:0,structure:i<BUS_CAP?4:3
+    id:`traffic-${i}`,route,s:(i+.3)/CAR_CAP*route.length,dir:i%2?1:-1,speed:CAR_SPEED*(.7+.4*(i%5)/5),bus:i<BUS_CAP,alive:true,hits:0,structure:i<BUS_CAP?4:3,
+    hp:i<BUS_CAP?320:180,maxHp:i<BUS_CAP?320:180,criticalAt:0
   }));
   visuals=new NativePedestrianVisuals(game.world.renderer,{people:()=>people.filter(a=>a.alive&&!a.knocked).map(a=>({id:a.id,x:a.x,y:a.y,z:0,yaw:a.yaw}))},{maxPeople:PERSON_CAP});
   last=performance.now();
@@ -57,6 +59,51 @@ function pointOn(route,s){
   return {x:seg.a[0]+seg.dx*t,y:seg.a[1]+seg.dy*t,yaw:Math.atan2(seg.dy,seg.dx)};
 }
 export function nativePeople(){return people;}
+export function nativeTraffic(){
+  const out=[];
+  for(const car of cars){
+    if(!car.alive)continue;
+    const at=pointOn(car.route,car.s);if(!at)continue;
+    out.push({id:car.id,bus:car.bus,x:at.x,y:at.y,z:.45,yaw:at.yaw,hp:car.hp,maxHp:car.maxHp});
+  }
+  return out;
+}
+export function takeNativeCarBooms(){return carBooms.splice(0);}
+export function applyPersonDamage(id,{times=1,each=34,head=false,dir=[0,1,0],melee=false,momentumNs=30}={}){
+  const a=people.find(p=>p.id===id);
+  if(!a||!a.alive||a.knocked)return null;
+  if(melee){
+    a.hp=(Number.isFinite(a.hp)?a.hp:100)-each;
+    const hd=Math.hypot(dir[0],dir[1])||1,k=Math.max(.5,momentumNs/30);
+    let result="hit";
+    if(a.hp<=0){a.alive=false;a.knocked=true;result="dead";}
+    else if(a.hp<=35){a.knocked=true;a.v=0;result="down";}
+    else{const step=Math.min(.6,.22*k);a.x+=dir[0]/hd*step;a.y+=dir[1]/hd*step;a.v=0;provoke(a,performance.now(),{punched:true});}
+    frightenAround(a.x,a.y,12,performance.now(),1);
+    globalThis.__arondightWantedSystem?.reportCrime?.({id:`assault-${id}-${Math.round(performance.now())}`,kind:result==="dead"?"person":"person-hit",severity:1});
+    return {result,hp:a.hp};
+  }
+  const shot=head?100:each;let applied=0;
+  for(let i=0;i<Math.max(1,times);i++){
+    if(!a.alive||a.knocked)break;
+    a.hp=(Number.isFinite(a.hp)?a.hp:100)-shot;applied++;
+    if(a.hp<=0){a.alive=false;a.knocked=true;}
+  }
+  provoke(a,performance.now(),{shot:true,by:{x:a.x-dir[0],y:a.y-dir[1]}});
+  frightenAround(a.x,a.y,16,performance.now(),1.2);
+  globalThis.__arondightWantedSystem?.reportCrime?.({id:`person-${id}-${Math.round(performance.now())}`,kind:"person-hit",severity:1});
+  return {result:a.alive&&!a.knocked?"hit":"dead",hp:a.hp,applied};
+}
+export function applyVehicleShot(id,amount){
+  const car=cars.find(c=>c.id===id&&c.alive);if(!car||!(amount>0))return null;
+  car.hp=(Number.isFinite(car.hp)?car.hp:car.maxHp)-amount;
+  const kind=car.bus?"bus":"car";
+  if(isCriticalDamage(kind,car.hp,car.maxHp)){
+    const now=performance.now();
+    car.criticalAt=car.criticalAt?accelerateCriticalDetonation(kind,car.criticalAt,now):criticalDetonationAt(kind,now);
+  }
+  return {hp:car.hp,critical:Boolean(car.criticalAt),kind};
+}
 export function hitNativePeople(origin,dir,range){
   if(!people.length)return null;
   let best=null,bestT=range;
@@ -99,9 +146,16 @@ export function tickNativeCityLife(game,now=performance.now()){
   const data=[];
   for(const car of cars){
     if(!car.alive)continue;
+    if(car.criticalAt&&now>=car.criticalAt){
+      car.alive=false;car.criticalAt=0;
+      const at=pointOn(car.route,car.s);
+      if(at)carBooms.push({id:car.id,x:at.x,y:at.y,z:.6});
+      continue;
+    }
     car.s+=car.dir*car.speed*dt;
     if(car.s<0||car.s>car.route.length)car.dir*=-1;
     const at=pointOn(car.route,car.s);if(!at)continue;
+    if(car.criticalAt&&now-carSmokeAt>180){carSmokeAt=now;game?.world?.effects?.emit?.({kind:"smoke",position:[at.x,at.y,1.1],velocity:[0,0,.8],lifeMs:700,size:.4});}
     data.push(...fromTRS([at.x,at.y,.45],yawQuat(at.yaw),car.bus?[1.6,3.2,1]:[1,1,1]));
   }
   if(!data.length){if(drawnCars){renderer.remove("traffic/cars");drawnCars=false;}return;}

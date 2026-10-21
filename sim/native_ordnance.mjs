@@ -168,8 +168,11 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
   function launchFoot(mode,now=performance.now()){
     if(game.mode!=="foot"||dead())return false;
     if(mode==="grenade"){
-      if(rounds.some(round=>round.kind==="grenade"||round.kind==="rocket")){
-        for(let i=rounds.length-1;i>=0;i--)if(rounds[i].kind==="grenade"||rounds[i].kind==="rocket")detonate(i,"remote");
+      if(rounds.some(round=>(round.kind==="grenade"&&!round.hand)||round.kind==="rocket")){
+        for(let i=rounds.length-1;i>=0;i--){
+          const round=rounds[i];
+          if((round.kind==="grenade"&&!round.hand)||round.kind==="rocket")detonate(i,"remote");
+        }
         lastGrenade=now-GRENADE_COOLDOWN_MS*.5;
         setData("walkGrenadeRemoteDetonations",(Number(view()?.dataset.walkGrenadeRemoteDetonations)||0)+1);
         return "remote";
@@ -193,6 +196,22 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
     const dir=unit(ray.direction);
     push({kind:"rocket",mesh:"missile",pos:add(ray.origin,dir,.25),vel:scale(dir,ROCKET_FOOT_LAUNCH_MPS),born:now,fuseAt:now+ROCKET_FOOT_TTL_MS,bounces:0,nextCollisionAt:0,resting:false,guided:true,source:"rocket",smokeAt:0});
     setData("walkRocketLaunches",(Number(view()?.dataset.walkRocketLaunches)||0)+1);
+    return true;
+  }
+  function throwHand({origin,velocity,fuseAt,source="hand-grenade"}={}){
+    if(!Array.isArray(origin)||!Array.isArray(velocity))return false;
+    const now=performance.now();
+    push({kind:"grenade",mesh:"grenade",pos:origin.slice(),vel:velocity.slice(),born:now,fuseAt:Number(fuseAt)||now+4000,bounces:0,nextCollisionAt:now+60,resting:false,guided:false,hand:true,source});
+    return true;
+  }
+  function explodeAt(position,source="hand-grenade"){
+    if(!Array.isArray(position))return false;
+    dispatch(position.slice(),{kind:"grenade",radiusM:GRENADE_BLAST_RADIUS_M,maxDamage:GRENADE_MAX_DAMAGE,source,impactReason:"fuse"});
+    return true;
+  }
+  function explodeCar(position){
+    if(!Array.isArray(position))return false;
+    dispatch(position.slice(),{kind:"car",radiusM:BLAST_RADIUS_M,maxDamage:BLAST_MAX_DAMAGE,source:"car"});
     return true;
   }
   function launchDrone(mode,now=performance.now(),slot=0){
@@ -274,11 +293,10 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
       if(now>=round.nextCollisionAt)hit=cast(round.pos,dir,travel+GRENADE_RADIUS_M+.035);
       if(hit&&hit.distanceM<=travel+GRENADE_RADIUS_M+.018){
         const mode=impactMode(hit);
-        if(mode!=="floor")return detonate(index,mode);
-        bounce(round,hit.point,hit.normal||[0,0,1],now);
-        continue;
+        if(round.hand||mode==="floor"){bounce(round,hit.point,hit.normal||[0,0,1],now);continue;}
+        return detonate(index,mode);
       }
-      if(soft(round.pos))return detonate(index,"organic");
+      if(!round.hand&&soft(round.pos))return detonate(index,"organic");
       const next=add(round.pos,dir,travel),gz=ground(game,next[0],next[1]),floorZ=gz+GRENADE_RADIUS_M;
       if(next[2]<=floorZ){
         next[2]=floorZ;
@@ -293,7 +311,7 @@ export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=
   }
   return {
     get projectiles(){return rounds;},
-    launchFoot,launchDrone,shotLine,
+    launchFoot,launchDrone,shotLine,throwHand,explodeAt,explodeCar,
     tick(now=performance.now(),dt=1/60){
       for(let i=rounds.length-1;i>=0;i--)stepOne(rounds[i],i,now,dt);
       const n=rounds.filter(round=>round.kind==="grenade"||round.kind==="rocket").length;

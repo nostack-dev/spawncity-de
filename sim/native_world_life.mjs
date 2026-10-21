@@ -53,7 +53,7 @@ export function installNativeWorldLife(game,snapshot){
     }
   }
   installNativeWorldLife.water=water;
-  globalThis.__arondightCows={list:()=>cows.filter(cow=>cow.alive).map(cow=>({x:cow.x,y:cow.y,dead:!cow.alive,hidden:false}))};
+  globalThis.__arondightCows={list:()=>cows.filter(cow=>cow.alive).map(cow=>({id:cow.id,x:cow.x,y:cow.y,z:.8,dead:!cow.alive,hidden:false,liveBody:cow.id}))};
   return {cows:cows.length,flocks:flocks.length,water:water.length/16};
 }
 function paint(renderer,id,geo,data){
@@ -90,6 +90,13 @@ export function markNativeImpact(point){
   if(!point)return;
   marks.push(fromTRS(point,[0,0,0,1],[1,1,1]));
   if(marks.length>40)marks.shift();
+}
+export function applyCowDamage(id,amount){
+  const cow=cows.find(c=>c.id===id&&c.alive);
+  if(!cow||!(amount>0))return null;
+  cow.hp-=amount;
+  if(cow.hp<=0)cow.alive=false;
+  return {hp:cow.hp,dead:!cow.alive};
 }
 export function hitNativeCows(origin,dir,range){
   let best=null,bestT=range;

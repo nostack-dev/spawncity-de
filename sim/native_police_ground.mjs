@@ -28,13 +28,32 @@ export function installNativePolice(){
   globalThis.__arondightPoliceGround={units:()=>units,version:"gta-police-cruisers+officers-v1"};
 }
 export function nativeCops(){return units.flatMap(u=>u.cops.map(c=>({...c,alive:c.hp>0})));}
+export function liveNativeCops(){
+  const out=[];
+  for(const u of units)for(const cop of u.cops)if(cop.hp>0)out.push(cop);
+  return out;
+}
+export function applyCopDamage(cop,amount){
+  if(!cop||cop.hp<=0||!(amount>0))return null;
+  cop.hp-=amount;
+  return {hp:cop.hp,dead:cop.hp<=0};
+}
+export function scanReadyCruisers(){
+  return units.filter(u=>(u.hp??180)>0).map(u=>({key:`cruiser:${u.id||u.x.toFixed(1)}`,x:u.x,y:u.y,yaw:u.yaw,unit:u}));
+}
+export function applyCruiserDamage(unit,amount){
+  if(!unit||(unit.hp??180)<=0||!(amount>0))return null;
+  unit.maxHp=unit.maxHp||180;
+  unit.hp=(unit.hp??180)-amount;
+  return {hp:unit.hp,dead:unit.hp<=0};
+}
 export function tickNativePolice(game,now=performance.now()){
   const renderer=game?.world?.renderer;if(!renderer?.upsert)return;
   const n=stars(),p=player(),onFoot=game?.mode==="foot";
   while(units.length<Math.min(MAX_UNITS,n)){
     const ang=Math.random()*Math.PI*2,dist=SPAWN_MIN+Math.random()*(SPAWN_MAX-SPAWN_MIN);
     const spot=nearestRoadPoint(p[0]+Math.cos(ang)*dist,p[1]+Math.sin(ang)*dist)||{x:p[0]+Math.cos(ang)*dist,y:p[1]+Math.sin(ang)*dist,yaw:ang};
-    units.push({x:spot.x,y:spot.y,yaw:spot.yaw,cops:Array.from({length:COPS},(_,i)=>({x:spot.x,y:spot.y,yaw:spot.yaw,out:false,hp:100,i}))});
+    units.push({id:`cruiser-${units.length}-${Math.round(now||performance.now())}`,x:spot.x,y:spot.y,yaw:spot.yaw,hp:180,maxHp:180,cops:Array.from({length:COPS},(_,i)=>({id:`cop-${units.length}-${i}`,x:spot.x,y:spot.y,yaw:spot.yaw,out:false,hp:100,i}))});
   }
   while(units.length>n)units.pop();
   const cars=[],officers=[];
@@ -42,7 +61,7 @@ export function tickNativePolice(game,now=performance.now()){
     const dx=p[0]-u.x,dy=p[1]-u.y,d=Math.hypot(dx,dy)||1;
     const stop=onFoot&&d<STOP_FOOT;
     if(!stop){u.x+=dx/d*9*(1/60);u.y+=dy/d*9*(1/60);u.yaw=Math.atan2(dy,dx);}
-    cars.push(...fromTRS([u.x,u.y,.45],yawQuat(u.yaw),[1,1,1]));
+    if((u.hp??180)>0)cars.push(...fromTRS([u.x,u.y,.45],yawQuat(u.yaw),[1,1,1]));
     for(const cop of u.cops){
       if(stop||d>RETURN_M)cop.out=stop;
       if(cop.out&&cop.hp>0){

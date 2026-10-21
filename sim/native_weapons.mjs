@@ -12,14 +12,14 @@ import {markFacade} from "./native_session.mjs";
 import {addGlassCrack,addWallSoot,addWallBreach} from "./native_combat.mjs";
 import {hitNativeThreats} from "./native_threats.mjs";
 import {createNativeOrdnance} from "./native_ordnance.mjs";
+import {createNativeFootFire} from "./native_foot_fire.mjs";
+import {takeNativeCarBooms} from "./native_city_life.mjs";
 import {ORIGINAL_MISSILE,ORIGINAL_GUIDED,ORIGINAL_GRENADE} from "./native_actor_meshes.mjs";
 
-export const NATIVE_WEAPONS_VERSION="live-rates-box3d-ray-v1";
+export const NATIVE_WEAPONS_VERSION="live-glock-sniper-melee-v1";
 const FOOT=["smg","glock","sniper","grenade","rocket","fists","knife"];
 const DRONE=["gun","missile","guided"];
 const FOOT_MS={smg:55,glock:110,sniper:1150,grenade:760,rocket:900,fists:300,knife:380};
-const FOOT_RANGE={smg:180,glock:120,sniper:1500,fists:1.8,knife:1.6};
-const FOOT_KIND={smg:"9mm",glock:"9mm",sniper:".50bmg"};
 const NAMES={smg:"SMG",glock:"PISTOL",sniper:"SNIPER",grenade:"GRENADE",rocket:"ROCKET",fists:"FISTS",knife:"KNIFE",gun:"GUN",missile:"ROCKETS",guided:"GUIDED"};
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
 const add=(a,b,s=1)=>[a[0]+b[0]*s,a[1]+b[1]*s,a[2]+b[2]*s];
@@ -55,8 +55,8 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     game.world.effects.emit({kind:"spark",position:hit.point,velocity:[0,0,1.2],lifeMs:180,size:.18});
     if(hit.id&&hit.id!==selfId(game.mode))game.rigids.applyImpulse(hit.id,bulletImpulse(direction,kind),{point:hit.point});
   }
-  function tracer(from,to,mode,weapon,clientX,clientY){
-    nativeFireShot(game,{from,to,mode,weapon,clientX,clientY});
+  function tracer(from,to,mode,weapon,speed){
+    nativeFireShot(game,{from,to,mode,weapon,speed});
   }
   function shootHitscan(now,range,kind,clientX,clientY){
     const ray=aim(clientX,clientY);if(!ray)return false;
@@ -68,7 +68,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
       markNativeImpact(point);markFacade(point);
       addGlassCrack(point);addWallSoot(point);if(Math.random()<.2)addWallBreach(point);
     }
-    tracer(ray.origin,end,game.mode,game.mode==="foot"?state.foot:state.drone,clientX,clientY);
+    tracer(ray.origin,end,game.mode,game.mode==="foot"?state.foot:state.drone);
     ordnance.shotLine(ray.origin,end);
     if(hit&&hit.id!==selfId(game.mode))impact(hit,kind,ray.direction);
     if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,at:now}}));
@@ -78,18 +78,26 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon,at:now}}));
   }
   const ordnance=createNativeOrdnance(game,{aim,footWeapon:()=>state.foot,droneWeapon:()=>state.drone});
-  function fireFoot(now,clientX,clientY){
-    if(game.mode!=="foot"||now<state.nextFoot)return false;
+  const shots=createNativeFootFire(game,{aim,tracer:(from,to,mode,weapon,speed)=>tracer(from,to,mode,weapon,speed)});
+  function fireFoot(now,clientX,clientY,hand=0,{hold=false}={}){
+    if(game.mode!=="foot")return false;
     const mode=state.foot;
     if(mode==="grenade"||mode==="rocket"){
+      if(now<state.nextFoot)return false;
       const thrown=ordnance.launchFoot(mode,now);
       if(!thrown)return false;
       state.nextFoot=now+(thrown==="remote"?380:FOOT_MS[mode]);
       fired(now,mode);
       return true;
     }
-    if(!shootHitscan(now,FOOT_RANGE[mode],FOOT_KIND[mode]||"9mm",clientX,clientY))return false;
-    state.nextFoot=now+FOOT_MS[mode];
+    let ok=false;
+    if(mode==="smg"){if(now<state.nextFoot)return false;ok=shots.smg(now,clientX,clientY);if(ok)state.nextFoot=now+FOOT_MS.smg;}
+    else if(mode==="glock")ok=shots.glock(now,clientX,clientY,hand,hold);
+    else if(mode==="sniper")ok=shots.sniper(now,clientX,clientY);
+    else if(mode==="fists")ok=shots.fists(now,clientX,clientY,hand);
+    else if(mode==="knife")ok=shots.knife(now,clientX,clientY);
+    if(!ok)return false;
+    fired(now,mode);
     return true;
   }
   function fireDrone(now){
@@ -105,7 +113,9 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     get mode(){return state.foot;},
     setMode(mode){if(!FOOT.includes(mode))return state.foot;state.foot=mode;publish();return mode;},
     toggle(){state.foot=FOOT[(FOOT.indexOf(state.foot)+1)%FOOT.length];publish();return state.foot;},
-    fireAt({clientX,clientY,at}={}){return fireFoot(Number(at)||performance.now(),clientX,clientY);}
+    fireAt({clientX,clientY,at,hand=0,hold=false}={}){return fireFoot(Number(at)||performance.now(),clientX,clientY,hand,{hold});},
+    throwHandGrenade(opts){return ordnance.throwHand(opts);},
+    explodeAt(position,source){return ordnance.explodeAt(position,source);}
   };
   const drone={
     get mode(){return state.drone==="gun"?"gun":"missile";},
@@ -143,6 +153,17 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     addEventListener("mouseup",onUp,true);
     addEventListener("pointerdown",onDown,true);
     addEventListener("pointerup",onUp,true);
+    const fireBtn=document.getElementById("footFire");
+    const onFire=e=>{
+      if(game.mode!=="foot")return;
+      e.preventDefault();e.stopPropagation();
+      state.held=true;
+      const rect=document.getElementById("viewport")?.getBoundingClientRect();
+      const hand=state.foot==="fists"&&rect&&e.clientX<rect.left+rect.width/2?1:0;
+      foot.fireAt({clientX:e.clientX,clientY:e.clientY,hand});
+    };
+    fireBtn?.addEventListener("pointerdown",onFire,true);
+    installNativeWeapons.fireBtn=fireBtn;installNativeWeapons.onFire=onFire;
   }
   function paintRounds(){
     const renderer=game.world?.renderer;
@@ -171,7 +192,8 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
       const rt=pad?Math.max(0,Number(pad.buttons?.[7]?.value)||(pad.buttons?.[7]?.pressed?1:0))>.5:false;
       if(game.mode==="drone"&&(sample?.fire||state.touchFire||rt))fireDrone(now);
       if(game.mode==="foot"&&(state.held||rt)){
-        if(state.foot==="smg"||state.foot==="glock")foot.fireAt({});
+        if(state.foot==="smg")foot.fireAt({});
+        else if(state.foot==="glock")foot.fireAt({hold:true});
         else if(rt&&!state.padFire)foot.fireAt({});
       }
       state.padFire=rt;
@@ -179,12 +201,15 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
       if(game.mode==="car"&&(state.held||rt)&&now>=state.nextDrone){if(shootHitscan(now,180,"9mm"))state.nextDrone=now+110;}
       const dt=Math.min(.05,(now-(paintRounds.last||now))/1000)||1/60;paintRounds.last=now;
       ordnance.tick(now,dt);
+      for(const boom of takeNativeCarBooms())ordnance.explodeCar([boom.x,boom.y,boom.z]);
       paintRounds();
       tickNativeFireFx(game,now);
     },
     dispose(){
       const renderer=game.world?.renderer;
       for(const kind of drawn)renderer?.remove?.("ordnance/"+kind);
-      drawn.clear();if(typeof window==="undefined")return;removeEventListener("keydown",onKey);removeEventListener("keyup",onKeyUp);removeEventListener("mousedown",onDown,true);removeEventListener("mouseup",onUp,true);removeEventListener("pointerdown",onDown,true);removeEventListener("pointerup",onUp,true);}
+      drawn.clear();if(typeof window==="undefined")return;removeEventListener("keydown",onKey);removeEventListener("keyup",onKeyUp);removeEventListener("mousedown",onDown,true);removeEventListener("mouseup",onUp,true);removeEventListener("pointerdown",onDown,true);removeEventListener("pointerup",onUp,true);
+      installNativeWeapons.fireBtn?.removeEventListener("pointerdown",installNativeWeapons.onFire,true);
+    }
   };
 }

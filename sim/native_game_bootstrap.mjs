@@ -5,6 +5,7 @@ import Box3DFactory from "box3d.js/dist/box3d.inline.mjs";
 import FlightCoreFactory from "../generated/flight_core.mjs";
 import {NativeGameRuntime,NativeGameInput,fetchNativeOsm,NATIVE_DEMO_CITY} from "./native_engine.mjs";
 import {installNativeWeapons} from "./native_weapons.mjs";
+import {installNativeHandGrenade} from "./native_hand_grenade.mjs";
 import {syncNativeViewmodel} from "./native_viewmodels.mjs";
 import {installNativeVitals} from "./native_vitals.mjs";
 import {installNativeWanted} from "./native_wanted.mjs";
@@ -196,6 +197,7 @@ async function prepareEngine(){
   installNativeCombat();
   try{installNativeModeOverlay();}catch(error){console.warn("overlay",error);}
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});
+  installNativeHandGrenade(game);
   for(const button of document.querySelectorAll("#mobileGameplayDock button,#mobileGameplayMode,#mobileGameplayReset,#mobileGameplayMultiplayer,#gameExitButton,#toolbar button"))
    button.tabIndex=-1;
   const vitals=installNativeVitals(game);

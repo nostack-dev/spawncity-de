@@ -2,7 +2,7 @@
 // opaque, fromTRS. Moving tracer from the live runtime: 240 m/s, 9 m tail.
 import {fromTRS} from "./native_render_math.mjs";
 
-const SPEED=210,TAIL=9,HOLD_MS=130,FLASH_MS=70;
+const TAIL=9,HOLD_MS=130,FLASH_MS=70,TRACER_MPS=240;
 const IDS={core:"fx/tracer-core",halo:"fx/tracer-halo",flash:"fx/muzzle",decal:"fx/decals"};
 const shots=[];
 const drawn={};
@@ -51,12 +51,12 @@ export function nativeMuzzle(game){
     cam.eye[2]+r[2]*hold.right+u[2]*(-hold.down+.03)+f[2]*(hold.forward+.39)
   ];
 }
-export function nativeFireShot(game,{from,to,mode,weapon}={}){
+export function nativeFireShot(game,{from,to,mode,weapon,speed}={}){
   if(!from||!to)return;
   const muzzle=nativeMuzzle(game)||from;
   const dir=[to[0]-muzzle[0],to[1]-muzzle[1],to[2]-muzzle[2]];
   const distance=Math.hypot(...dir);if(distance<.03)return;
-  shots.push({start:muzzle,dir:unit(dir),distance,speed:SPEED,born:performance.now(),end:to});
+  shots.push({start:muzzle,dir:unit(dir),distance,speed:Number(speed)>0?Number(speed):TRACER_MPS,born:performance.now(),end:to});
   if(shots.length>24)shots.shift();
   globalThis.__nativeLastShotAt=performance.now();
   const view=document.getElementById("viewport");

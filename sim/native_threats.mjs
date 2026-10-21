@@ -9,7 +9,7 @@ const GUN=10,KNIFE=8;
 const TRIGGER_HEAT=36,SQUAD=4,MAX_SOLDIERS=8,SOLDIER_HP=100;
 const CAP=28,Z_HP=100,MELEE=11,MELEE_MS=1150,SPAWN_MIN=34,SPAWN_MAX=70,HIT_PTS=10,KILL_PTS=60;
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
-let soldiers=[],zombies=[],round=0,points=0,lastMelee=0,lastGang=0,drawn={};
+let soldiers=[],zombies=[],round=0,points=0,lastMelee=0,lastGang=0,drawn={},threatSeq=0;
 function heat(){return Number(globalThis.__arondightWantedSystem?.state?.heat)||0;}
 function night(){const h=new Date().getHours();return h<6||h>=21;}
 function zombiesOn(){return globalThis.__arondightWorldOptions?.get?.("zombies")!==false&&night();}
@@ -42,7 +42,7 @@ export function tickNativeThreats(game,now=performance.now()){
     const n=Math.min(SQUAD,MAX_SOLDIERS-soldiers.filter(s=>s.hp>0).length);
     for(let i=0;i<n;i++){
       const a=Math.random()*Math.PI*2,r=60+Math.random()*40;
-      soldiers.push({x:p[0]+Math.cos(a)*r,y:p[1]+Math.sin(a)*r,yaw:a,hp:SOLDIER_HP});
+      soldiers.push({id:`soldier-${++threatSeq}`,kind:"soldier",x:p[0]+Math.cos(a)*r,y:p[1]+Math.sin(a)*r,yaw:a,hp:SOLDIER_HP});
     }
   }
   if(heat()<12)soldiers=soldiers.filter(s=>Math.hypot(s.x-p[0],s.y-p[1])<80);
@@ -58,7 +58,7 @@ export function tickNativeThreats(game,now=performance.now()){
   if(zombiesOn()){
     if(!zombies.some(z=>z.hp>0)&&now> (tickNativeThreats.next||0)){
       round++;const n=Math.min(CAP,4+round*2);
-      for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,r=SPAWN_MIN+Math.random()*(SPAWN_MAX-SPAWN_MIN);zombies.push({x:p[0]+Math.cos(a)*r,y:p[1]+Math.sin(a)*r,hp:Z_HP});}
+      for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,r=SPAWN_MIN+Math.random()*(SPAWN_MAX-SPAWN_MIN);zombies.push({id:`zombie-${++threatSeq}`,kind:"zombie",x:p[0]+Math.cos(a)*r,y:p[1]+Math.sin(a)*r,hp:Z_HP});}
       tickNativeThreats.next=now+20000;
     }
   }else zombies=[];
@@ -74,6 +74,21 @@ export function tickNativeThreats(game,now=performance.now()){
   paint(renderer,"threat/zombies",ORIGINAL_HUMAN,zombieData);
   const heli=heat()>=55?fromTRS([p[0]-30,p[1]-20,28],[0,0,0,1],[1,1,1]):[];
   paint(renderer,"threat/heli",ORIGINAL_JET,heli);
+}
+export function listNativeThreats(){
+  const out=[];
+  for(const s of soldiers)if(s.hp>0)out.push(s);
+  for(const z of zombies)if(z.hp>0)out.push(z);
+  return out;
+}
+export function applyThreatDamage(id,amount){
+  const soldier=soldiers.find(e=>e.id===id);
+  const zombie=!soldier&&zombies.find(e=>e.id===id);
+  const actor=soldier||zombie;
+  if(!actor||actor.hp<=0||!(amount>0))return null;
+  actor.hp-=amount;
+  if(zombie)points+=actor.hp<=0?KILL_PTS:HIT_PTS;
+  return {hp:actor.hp,dead:actor.hp<=0,kind:actor.kind};
 }
 export function hitNativeThreats(origin,dir,range){
   const lists=[{arr:soldiers,kind:"soldier"},{arr:zombies,kind:"zombie"}];
