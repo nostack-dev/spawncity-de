@@ -36,7 +36,9 @@ export function installNativePlaces(game,snapshot){
   doors=[];
   for(const b of snapshot.buildings||[]){
     const ring=b.geometry?.coordinates?.[0];if(!ring||ring.length<4)continue;
-    const pts=ring.map(([lon,lat])=>toMeters(origin.lon,origin.lat,lon,lat));
+    const pts=[];
+    for(const p of ring){if(Array.isArray(p)&&p.length>=2)pts.push(toMeters(origin.lon,origin.lat,Number(p[0]),Number(p[1])));}
+    if(pts.length<4)continue;
     let best=null,len=0;
     for(let i=0;i<pts.length-1;i++){
       const a=pts[i],c=pts[i+1],dx=c[0]-a[0],dy=c[1]-a[1],d=Math.hypot(dx,dy);

@@ -96,7 +96,7 @@ function mountIntoPhoneSettings(){
   const section=document.createElement("section");section.dataset.worldLocationSettings="1";section.innerHTML=selectorMarkup(false);const actions=dialog.querySelector(".phone-settings-actions");dialog.insertBefore(section,actions||null);const root=section.querySelector("[data-world-location-selector]");wireSelector(root);syncUi();return true;
 }
 function patchBridge(){
-  const bridge=currentBridge();if(!bridge||bridge.__worldLocationSelectorPatched)return false;
+  const bridge=currentBridge();if(!bridge||bridge.__worldLocationSelectorPatched||typeof bridge.activate!=="function")return false;
   const originalActivate=bridge.activate.bind(bridge);bridge.__worldLocationSelectorPatched=true;bridge.__worldLocationOriginalActivate=originalActivate;
   bridge.activate=async locationFix=>{
     let fix=locationFix,choice=null;const persisted=readChoice(),explicitShared=Boolean(locationFix?.vsSharedOrigin);

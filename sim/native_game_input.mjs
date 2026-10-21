@@ -96,6 +96,11 @@ export class NativeGameInput{
      this.pitch=clamp(this.pitch-(s.invertLookVertical?-1:1)*(Number(dy)||0)*.0026*v,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
      return {yaw:this.yaw,pitch:this.pitch};
     },
+    setPose:({yaw,pitch}={})=>{
+     if(Number.isFinite(yaw))this.yaw=wrapFpsAngleRad(yaw);
+     if(Number.isFinite(pitch))this.pitch=clamp(pitch,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
+     return {yaw:this.yaw,pitch:this.pitch};
+    },
     get position(){
      const p=runtime.rigids?.pose?.("player-foot")?.position;
      return p?{x:p[0],y:p[1],z:p[2]}:null;
@@ -111,7 +116,8 @@ export class NativeGameInput{
    // These listeners only cover the modes that module leaves to the vehicle.
    listen(win,"keydown",e=>{
     if(this.closed||e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
-    if(e.target?.closest?.("input,textarea,select,[contenteditable=true]"))return;
+    const typing=e.target?.closest?.("input,textarea,select,[contenteditable=true]");
+    if(typing){const menu=this.doc.getElementById?.("gameMenu");if(!(menu?.hidden&&menu.contains(typing)))return;}
     const mode=runtime.mode;
     const move=new Set(["KeyW","KeyA","KeyS","KeyD","Space","ShiftLeft","ShiftRight","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
     if(move.has(e.code)){this.keys.add(e.code);e.preventDefault?.();return;}
@@ -123,9 +129,14 @@ export class NativeGameInput{
    listen(win,"keyup",e=>this.keys.delete(e.code));
    listen(win,"mousemove",e=>{
     if(this.closed)return;
+    const desk=globalThis.__arondightDesktopInput;
+    if(desk?.active)return;
     const locked=this.doc.pointerLockElement===this.canvas||this.doc.pointerLockElement?.id==="viewport";
     if(!locked&&!e.buttons)return;
-    const dx=Number(e.movementX)||0,dy=Number(e.movementY)||0;
+    let dx=Number(e.movementX)||0,dy=Number(e.movementY)||0;
+    if(!dx&&!dy&&this.lastMouse){dx=e.clientX-this.lastMouse.x;dy=e.clientY-this.lastMouse.y;}
+    this.lastMouse={x:e.clientX,y:e.clientY};
+    if(!dx&&!dy)return;
     if(runtime.mode==="drone"){
      this.mouseStick.x=clamp((this.mouseStick.x||0)+dx/80,-1,1);
      this.mouseStick.y=clamp((this.mouseStick.y||0)+dy/80,-1,1);

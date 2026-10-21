@@ -95,10 +95,7 @@ export function installSoloFlightLayout(){
   document.head.appendChild(style);
   installInitialAirframeGroundPose();
   installFpvViewHeight();
-  installVsCombatPresentation();
   installVsMultiplayerGuard();
   installVsFxGeoAdapter();
-  installVsMultiplayer();
-  installPlayerVehicleRuntime();
   installPlayerRuntimeHotfix();
 }

@@ -22,7 +22,7 @@ const viewport=()=>document.getElementById("viewport");
 const walk=()=>globalThis.__arondightWalkMode||null;
 const bridge=()=>globalThis.__arondightRealWorld||null;
 
-let installed=false,desktop=false,lmb=false,rmb=false,dronePx={x:0,y:0},droneRate={x:0,y:0},lastTick=performance.now(),lastLookMs=-Infinity,lookOwned=false,jetDelta={x:0,y:0};
+let installed=false,desktop=false,lmb=false,rmb=false,dronePx={x:0,y:0},droneRate={x:0,y:0},lastTick=performance.now(),lastLookMs=-Infinity,lookOwned=false,jetDelta={x:0,y:0},lockFailed=false,hadLock=false,lastClient=null;
 const keys=new Set(),droneSample={active:false,left:{x:0,y:0},right:{x:0,y:0},heightAxis:0,fire:false,arm:false,camera:false};
 
 function playerDown(){return Boolean(globalThis.__arondightPlayerDamageModel?.dead||globalThis.__arondightRealWorld?.vsLocalDead||document.body.classList.contains("player-dead"));}
@@ -45,13 +45,12 @@ function releaseAll(){keys.clear();lmb=rmb=false;dronePx.x=dronePx.y=0;droneRate
 
 let wantMenu=false;
 function openMenu(){const d=document.querySelector("dialog.phone-settings-dialog");if(d?.open)return;wantMenu=true;if(locked())document.exitPointerLock?.();(document.querySelector("#soloTopbar .phone-settings-button")||document.querySelector(".phone-settings-button"))?.click();}
+let lockTry=0;
 function requestLock(){
-  const v=viewport();if(!v?.requestPointerLock)return;
-  // Default (OS-adjusted) movement is important for laptop precision touchpads.
-  // Windows raw WM_INPUT / unadjustedMovement can intermittently report no
-  // trackpad deltas even while pointer lock is active. The same lock still
-  // supports a physical mouse; game sensitivity remains user-adjustable.
-  try{const p=v.requestPointerLock();if(p?.catch)p.catch(()=>{});}catch{}
+  const v=viewport();if(!v?.requestPointerLock){lockFailed=true;return;}
+  const stamp=++lockTry;
+  try{const p=v.requestPointerLock();if(p?.then)p.then(()=>{lockFailed=false;hadLock=true;},()=>{lockFailed=true;});}catch{lockFailed=true;}
+  setTimeout(()=>{if(stamp===lockTry&&!locked())lockFailed=true;},500);
 }
 
 // head look (car, drone with RMB): the shared world look, snapping back when idle
@@ -86,6 +85,11 @@ function onPointerDown(event){if(event.pointerType==="mouse")document.body.class
   setDesktop(true);
   if(!locked()){
     if(!inGame()||!gameplayTarget(event.target)||(event.button!==0&&event.button!==2))return;
+    if(lockFailed){
+      if(event.button===2)rmb=true;
+      else{lmb=true;if(gameMode()==="drone")droneFire(true);}
+      return;
+    }
     if(event.button===2){
       // RMB-first must capture the mouse too. Keep the held ADS state during the
       // asynchronous pointer-lock request so a subsequent LMB mousedown can fire.
@@ -127,23 +131,37 @@ function onPointerMove(event){
   // or reports another pointer type under lock; do not drive the camera here.
   if(event.pointerType==="mouse"&&(event.movementX||event.movementY)&&!locked()&&!desktop&&mouseMeansDesktop()&&!(event.target instanceof Element&&event.target.closest(UI_SELECTOR)))setDesktop(true);
 }
-function onMouseMove(event){
-  // Pointer Lock specifies movementX/Y on MouseEvent ("mousemove"). Use one
-  // authoritative movement stream: processing both events doubles sensitivity.
-  if(!locked())return;
-  const rawX=Number(event.movementX),rawY=Number(event.movementY);
-  if(!Number.isFinite(rawX)||!Number.isFinite(rawY))return;
-  // A fast trackpad gesture can coalesce into a large delta. Limit the spike,
-  // but NEVER discard the whole event and make mouselook appear frozen.
-  let dx=clamp(rawX,-MAX_EVENT_PX,MAX_EVENT_PX);
-  let dy=clamp(rawY,-MAX_EVENT_PX,MAX_EVENT_PX);
-  [dx,dy]=scaleMouseDelta(dx,dy); // SETTINGS: mouse sensitivity / invert Y
+function applyMouse(dx,dy){
+  [dx,dy]=scaleMouseDelta(dx,dy);
   const mode=gameMode();
   if(mode==="foot")walk()?.applyMouseLook?.({dx,dy});
   else if(mode==="car")look(dx,dy);
   else if(mode==="jet"){jetDelta.x+=dx;jetDelta.y+=dy;}
   else if(rmb)look(dx,dy);
   else{dronePx.x+=dx;dronePx.y+=dy;}
+}
+function onMouseMove(event){
+  // Pointer Lock specifies movementX/Y on MouseEvent ("mousemove"). Use one
+  // authoritative movement stream: processing both events doubles sensitivity.
+  // If the browser refuses pointer lock (embedded preview, permission), the
+  // same deltas come from the cursor while a button is held.
+  const rawX=Number(event.movementX),rawY=Number(event.movementY);
+  let dx=Number.isFinite(rawX)?rawX:0,dy=Number.isFinite(rawY)?rawY:0;
+  if(!locked()){
+    if(!desktop||!inGame()){lastClient={x:event.clientX,y:event.clientY};return;}
+    if(!dx&&!dy&&lastClient){dx=event.clientX-lastClient.x;dy=event.clientY-lastClient.y;}
+    lastClient={x:event.clientX,y:event.clientY};
+    if(!(event.buttons||lmb||rmb)||(!dx&&!dy))return;
+    dx=clamp(dx,-MAX_EVENT_PX,MAX_EVENT_PX);dy=clamp(dy,-MAX_EVENT_PX,MAX_EVENT_PX);
+    applyMouse(dx,dy);
+    return;
+  }
+  if(!Number.isFinite(rawX)||!Number.isFinite(rawY))return;
+  // A fast trackpad gesture can coalesce into a large delta. Limit the spike,
+  // but NEVER discard the whole event and make mouselook appear frozen.
+  dx=clamp(rawX,-MAX_EVENT_PX,MAX_EVENT_PX);
+  dy=clamp(rawY,-MAX_EVENT_PX,MAX_EVENT_PX);
+  applyMouse(dx,dy);
   consume(event);
 }
 function onWheel(event){
@@ -257,7 +275,8 @@ export function installDesktopControls(){
   // ESC (the browser's own mouse release) opens the pause menu, like any shooter: no
   // "press ESC, then hunt for a button" dance. Closing the menu with a click captures the
   // mouse again right away.
-  document.addEventListener("pointerlockchange",()=>{if(!locked()){lmb=false;rmb=false;droneFire(false);endLook();if(desktop&&inGame()&&document.pointerLockElement==null&&!playerDown()&&!wantMenu&&!quietUnlock()&&performance.now()>(Number(globalThis.__arondightHadLockUntil)||0))setTimeout(()=>{if(!locked()&&inGame()&&!playerDown()&&!quietUnlock())globalThis.__arondightQuitConfirm?.open?.();},0);}wantMenu=false;syncOverlay();});
+  document.addEventListener("pointerlockchange",()=>{if(locked()){hadLock=true;lockFailed=false;}else{lmb=false;rmb=false;droneFire(false);endLook();if(hadLock&&desktop&&inGame()&&document.pointerLockElement==null&&!playerDown()&&!wantMenu&&!quietUnlock()&&performance.now()>(Number(globalThis.__arondightHadLockUntil)||0))setTimeout(()=>{if(!locked()&&inGame()&&!playerDown()&&!quietUnlock())globalThis.__arondightQuitConfirm?.open?.();},0);}wantMenu=false;syncOverlay();});
+  document.addEventListener("pointerlockerror",()=>{lockFailed=true;});
   document.addEventListener("click",e=>{if(desktop&&e.target?.closest?.("#gameMenuStart"))requestLock();},true);
   document.addEventListener("close",e=>{if(desktop&&e.target?.matches?.("dialog.phone-settings-dialog")&&inGame())requestLock();},true);
   window.addEventListener("blur",releaseAll);

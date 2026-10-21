@@ -22,7 +22,10 @@ function box(sx,sy,sz,color){
 }
 const COW=box(1.6,.7,.8,[.92,.9,.84]),BIRD=box(.18,.08,.1,[.55,.55,.58]),PING=box(.35,.35,1.4,[1,.55,.1]),MARK=box(.12,.12,.02,[.12,.1,.08]),WATER=box(1,1,.04,[.15,.45,.62]);
 function project(origin,coordinates){
-  return coordinates.map(([lon,lat])=>toMeters(origin.lon,origin.lat,lon,lat));
+  const out=[];
+  if(!Array.isArray(coordinates))return out;
+  for(const p of coordinates){if(Array.isArray(p)&&p.length>=2)out.push(toMeters(origin.lon,origin.lat,Number(p[0]),Number(p[1])));}
+  return out;
 }
 function centre(pts){
   let x=0,y=0;for(const p of pts){x+=p[0];y+=p[1];}

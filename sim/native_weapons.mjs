@@ -134,15 +134,23 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
   };
   const onKeyUp=e=>{if(e.code==="Space")state.jetHeld=false;};
   const onDown=e=>{
-    if(e.button!==0)return;
+    if(e.button!=null&&e.button!==0)return;
+    const now=performance.now();
+    if(now-(state.lastDown||0)<30)return;
     const canvas=game.world.renderer?.canvas;
-    if(document.pointerLockElement===canvas){
+    const view=typeof document==="undefined"?null:document.getElementById("viewport");
+    const locked=document.pointerLockElement===canvas||document.pointerLockElement===view;
+    const mouse=e.pointerType==="mouse"||e.type==="mousedown";
+    if(mouse){
+      const ui=e.target instanceof Element&&e.target.closest("button,a,input,select,textarea,label,dialog,#soloTopbar,#mobileGameplayDock,#gameMenu,#toolbar");
+      if(!locked&&(ui||!(view&&(e.target===canvas||view.contains(e.target)))))return;
+      state.lastDown=now;
       if(game.mode==="foot"){state.held=true;foot.fireAt({clientX:e.clientX,clientY:e.clientY});}
       else if(game.mode==="jet"||game.mode==="car"){state.held=true;state.jetHeld=game.mode==="jet";}
       return;
     }
-    if(e.pointerType==="mouse")return;
     if(e.target instanceof Element&&e.target.closest("#soloLeft,#soloRight,#soloClearance,#footHud,#toolbar,button"))return;
+    state.lastDown=now;
     if(game.mode==="drone")state.touchFire=true;
   };
   const onUp=e=>{if(e.button===0||e.type==="pointerup"){state.held=false;state.jetHeld=false;state.touchFire=false;}};

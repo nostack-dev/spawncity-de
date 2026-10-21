@@ -241,8 +241,8 @@ export class NativeGameRuntime{
     // snapshots gives responsive controls/cameras without lying about sim
     // time, switching engines, or overloading a frame with 2 seconds of work.
     this.draw(now);
-    this.afterFrame?.(this.lastDraw,now);
    }catch(error){this.running=false;this.onError?.(error);return;}
+   try{this.afterFrame?.(this.lastDraw,now);}catch(error){this.onError?.(error);}
    if(this.running&&epoch===this.generation)this.frameHandle=this.requestFrame(frame);
   };
   this.frameHandle=this.requestFrame(frame);

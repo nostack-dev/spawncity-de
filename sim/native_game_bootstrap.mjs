@@ -35,6 +35,7 @@ import {nativeCops} from "./native_police_ground.mjs";
 import {installNativeCityLife,tickNativeCityLife} from "./native_city_life.mjs";
 import {installNativePolice,tickNativePolice} from "./native_police_ground.mjs";
 import {installNativeWorldLife,tickNativeWorldLife} from "./native_world_life.mjs";
+import {installNativeThreats,tickNativeThreats} from "./native_threats.mjs";
 import {installNativePlaces,tickNativePlaces} from "./native_places.mjs";
 import {installNativeSession,tickNativeSession} from "./native_session.mjs";
 import {installNativeCombat,tickNativeCombat} from "./native_combat.mjs";
@@ -320,6 +321,7 @@ async function startGame(){
   document.documentElement.dataset.engine="native-webgl2";
   viewport.dataset.renderer="native-webgl2-only";
   session.canvas?.focus?.();
+  document.getElementById("worldSource")?.blur?.();
   startButton.disabled=false;startButton.textContent="START";
  }catch(error){
   console.warn("game startup preparation continued after non-fatal failure",error);

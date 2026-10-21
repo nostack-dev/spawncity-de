@@ -9,9 +9,23 @@ function player(){
   const p=globalThis.__arondightWalkMode?.position;
   return flight||(p?[p.x,p.y,1]:[0,0,2]);
 }
+function featureRing(feature){
+  const geometry=feature?.geometry||feature;
+  const coords=geometry?.coordinates;
+  if(!Array.isArray(coords)||!coords.length)return null;
+  // Polygon: coordinates[0] is the outer ring. LineString: coordinates is the ring.
+  if(geometry?.type==="Polygon"||Array.isArray(coords[0]?.[0]))return coords[0];
+  if(Array.isArray(coords[0]))return coords;
+  return null;
+}
 function ring(coords,kind){
   if(!origin||!Array.isArray(coords))return null;
-  const path=coords.map(([lon,lat])=>toMeters(origin.lon,origin.lat,lon,lat)).filter(p=>p.every(Number.isFinite));
+  const path=[];
+  for(const p of coords){
+    if(!Array.isArray(p)||p.length<2)continue;
+    const m=toMeters(origin.lon,origin.lat,Number(p[0]),Number(p[1]));
+    if(m.every(Number.isFinite))path.push(m);
+  }
   return path.length>=2?{kind,path}:null;
 }
 export function installNativeHudMap(game,snapshot){
@@ -26,10 +40,10 @@ export function installNativeHudMap(game,snapshot){
     const item=ring(line,"road");if(item)features.push(item);
   }
   for(const w of snapshot?.water||[]){
-    const item=ring(w.geometry?.coordinates?.[0]||w,"water");if(item)features.push(item);
+    const item=ring(featureRing(w),"water");if(item)features.push(item);
   }
-  for(const g of snapshot?.green||snapshot?.meadows||[]){
-    const item=ring(g.geometry?.coordinates?.[0]||g,"green");if(item)features.push(item);
+  for(const g of snapshot?.green||snapshot?.meadows||snapshot?.pastures||[]){
+    const item=ring(featureRing(g),"green");if(item)features.push(item);
   }
   hud=document.createElement("div");
   hud.id="worldLookHud";
