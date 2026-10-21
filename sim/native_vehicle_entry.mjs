@@ -15,7 +15,7 @@ html body.mobile-gameplay-compact.solo-flight:not(.desktop-input) #viewport #ent
 // Production driving HUD (player_car_mode.mjs installStyle / mountUi), verbatim.
 const DRIVE_CSS=`body.player-driving .vehicle-stick,html body.player-driving #footHud #footFire,html body.player-driving #footHud #footJump,body.player-driving #soloLeft,body.player-driving #soloRight,body.player-driving #soloClearance,body.player-driving .solo-action{display:none!important;pointer-events:none!important}#vehicleHud{display:none;position:absolute;inset:0;z-index:12;pointer-events:none;font-family:system-ui,-apple-system,sans-serif}body.player-driving #vehicleHud{display:block}.vehicle-stick{position:absolute!important;bottom:max(20px,var(--solo-safe-bottom,env(safe-area-inset-bottom)))!important;width:min(25vw,150px)!important;aspect-ratio:1!important;border:0!important;border-radius:50%!important;background:transparent!important;box-shadow:none!important;opacity:1!important;pointer-events:auto!important;touch-action:none!important;z-index:20!important}.vehicle-stick .ring{position:absolute!important;inset:0!important;border-radius:50%!important;border:2px solid #ffffff66!important;background:#0b18265c!important;box-shadow:inset 0 0 45px #0005,0 6px 22px #0005!important}.vehicle-stick .knob{position:absolute!important;left:50%;top:50%;width:31%!important;aspect-ratio:1!important;transform:translate(-50%,-50%)!important;border-radius:50%!important;background:#f3f7ffcc!important;border:2px solid #fff!important;box-shadow:0 3px 14px #0008!important}.vehicle-stick span{position:absolute;left:50%;bottom:-15px;transform:translateX(-50%);color:#f2f4f7;font:600 9px/1 system-ui;letter-spacing:.06em;white-space:nowrap;text-shadow:0 1px 1px #0008}#vehicleMove{left:max(12px,var(--solo-safe-left,env(safe-area-inset-left)))!important}#vehicleLook{right:max(12px,var(--solo-safe-right,env(safe-area-inset-right)))!important}#vehicleButtons{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(max(18px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + 36px);display:flex;gap:8px;pointer-events:auto}#vehicleButtons button{height:36px;padding:0 14px;border-radius:6px;font:600 12px/1 Inter,system-ui,sans-serif;letter-spacing:.06em;color:#f2f4f7;background:rgba(10,13,18,.6);border:1px solid rgba(255,255,255,.18)}#vehicleReadout{position:absolute;left:50%;bottom:max(18px,var(--solo-safe-bottom,env(safe-area-inset-bottom)));transform:translateX(-50%);padding:7px 10px;border:1px solid #ffffff2c;border-radius:9px;background:#071522d8;color:#dff5ff;font:900 9px/1 system-ui;letter-spacing:.07em}#driveModeButton[data-near="1"]{border-color:#7de7b988!important;background:#154932e8!important}body.player-driving #driveModeButton{border-color:#ffcf6f88!important;background:#52350fe8!important}@media(max-height:340px){.vehicle-stick{width:min(22vw,128px)!important;bottom:max(16px,var(--solo-safe-bottom,env(safe-area-inset-bottom)))!important}#vehicleReadout{bottom:max(10px,var(--solo-safe-bottom,env(safe-area-inset-bottom)));font-size:8px}}`;
 let game=null,input=null,installed=false,carButton=null,jetButton=null,lastRender=-Infinity,readout=null;
-let handbrakeHeld=false;
+let handbrakeHeld=false,chute=null;
 export function nativeCarHandbrakeHeld(){return handbrakeHeld;}
 const dist2=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 function pose(id){try{return game?.rigids?.pose?.(id)||null;}catch{return null;}}
@@ -55,8 +55,13 @@ export function exitVehicle(){
     const jet=pose("player-jet");
     const high=jet?.position&&jet.position[2]-ground(jet.position[0],jet.position[1])>JET_EXIT_AGL_M;
     if(high){
-      const x=jet.position[0],y=jet.position[1];
-      try{game.rigids.setPose("player-foot",{position:[x,y,ground(x,y)+.97]});}catch{}
+      // Production ejection seat: thrown 2.8 m out along the jet's up axis
+      // at 28 m/s, canopy opens after 1.1 s, then a steerable 6.5 m/s descent.
+      const q=jet.rotation||[0,0,0,1],[x,y,z,w]=q;
+      const up=[2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y)];
+      const v=jet.velocity||[0,0,0];
+      try{game.rigids.setPose("player-foot",{position:[jet.position[0]+up[0]*2.8,jet.position[1]+up[1]*2.8,jet.position[2]+up[2]*2.8],velocity:[v[0]+up[0]*28,v[1]+up[1]*28,v[2]+up[2]*28]});}catch{}
+      chute={t:performance.now()};
     }else placeBeside("player-jet",4.2);
     game.setMode("foot");input?.syncModeClasses?.();render(true);return true;
   }
@@ -121,4 +126,29 @@ export function installNativeVehicleEntry(runtime,{input:owner=null}={}){
   addEventListener("keydown",onKey,{capture:true});
   globalThis.__nativeVehicleEntry={enterCar,enterJet,exitVehicle,nearVehicles,version:NATIVE_VEHICLE_ENTRY_VERSION};
 }
-export function tickNativeVehicleEntry(){render(false);}
+// Canopy flight after an ejection (jet_mode.mjs stepPara): gravity, then the
+// open canopy eases the sink rate to 6.5 m/s and the move input steers it at
+// up to 4 m/s, until the pilot is on the ground.
+const CANOPY={positions:new Float32Array([-2.2,-1.4,3.2, 2.2,-1.4,3.2, 2.2,1.4,3.2, -2.2,-1.4,3.2, 2.2,1.4,3.2, -2.2,1.4,3.2, -2.2,-1.4,3.2, 0,0,0, 2.2,-1.4,3.2, 2.2,1.4,3.2, 0,0,0, -2.2,1.4,3.2]),
+  colors:new Float32Array([.86,.32,.18, .86,.32,.18, .96,.9,.82, .86,.32,.18, .96,.9,.82, .96,.9,.82, .4,.4,.4, .4,.4,.4, .4,.4,.4, .4,.4,.4, .4,.4,.4, .4,.4,.4])};
+let canopyShown=false;
+function tickChute(dt){
+  const renderer=game?.world?.renderer;
+  if(!chute||game.mode!=="foot"){chute=null;if(canopyShown){renderer?.remove?.("player/canopy");canopyShown=false;}return;}
+  const p=pose("player-foot");if(!p?.position)return;
+  const age=(performance.now()-chute.t)/1000,agl=p.position[2]-ground(p.position[0],p.position[1]);
+  if(age>.6&&agl<1.3){chute=null;if(canopyShown){renderer?.remove?.("player/canopy");canopyShown=false;}return;}
+  if(age>1.1){
+    const v=p.velocity||[0,0,0],m=82,k=Math.min(1,dt*1.6),kh=Math.min(1,dt*.8);
+    const yaw=Number(game.footInput?.yaw)||0,f=Number(game.footInput?.forward)||0,st=Number(game.footInput?.strafe)||0;
+    const wantX=(Math.sin(yaw)*f+Math.cos(yaw)*st)*4,wantY=(Math.cos(yaw)*f-Math.sin(yaw)*st)*4;
+    try{game.rigids.applyImpulse("player-foot",[m*(wantX-v[0])*kh,m*(wantY-v[1])*kh,m*(-6.5-v[2])*k]);}catch{}
+    if(renderer?.upsert){
+      const t=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,p.position[0],p.position[1],p.position[2]+.6,1]);
+      if(!canopyShown){renderer.upsert("player/canopy",{...CANOPY,instances:{transforms:t},material:{doubleSided:true,castShadow:false}});canopyShown=true;}
+      else renderer.updateInstances("player/canopy",{transforms:t});
+    }
+  }
+}
+let lastTick=0;
+export function tickNativeVehicleEntry(){const now=performance.now(),dt=lastTick?Math.min(.1,(now-lastTick)/1000):1/60;lastTick=now;tickChute(dt);render(false);}
