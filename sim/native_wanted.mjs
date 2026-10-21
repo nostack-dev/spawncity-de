@@ -54,13 +54,13 @@ function clearWanted(reason="escaped"){
 }
 function ensureDrones(now){
   const n=wantedPoliceCount(stars);
-  while(drones.length<n)drones.push({index:drones.length,active:false,pos:[0,0,8],engageAt:0,nextShotAt:0});
+  while(drones.length<n)drones.push({index:drones.length,active:false,pos:[0,0,8],engageAt:0,nextShotAt:0,hp:100});
   const p=player()||[0,0,1],ring=wantedDetectionRadiusM(stars);
   drones.forEach((d,i)=>{
     if(i>=n){d.active=false;return;}
     if(d.active)return;
     const a=i/n*Math.PI*2,r=ring*.7;
-    d.active=true;d.pos=[p[0]+Math.cos(a)*r,p[1]+Math.sin(a)*r,p[2]+6+i];
+    d.active=true;d.hp=100;d.pos=[p[0]+Math.cos(a)*r,p[1]+Math.sin(a)*r,p[2]+6+i];
     d.engageAt=now+wantedPoliceArrivalDelayMs(stars)+wantedPoliceEngageDelayMs(stars);
   });
 }
@@ -118,4 +118,19 @@ export function installNativeWanted(game){
   const loop=now=>{try{step(now);paint(game);}catch{}requestAnimationFrame(loop);};
   requestAnimationFrame(loop);
   return api;
+}
+export function blastNativeWanted(center,radius,maxDamage,falloff,exposure){
+  let hit=0;
+  for(const drone of drones){
+    if(!drone.active)continue;
+    const dist=Math.hypot(drone.pos[0]-center[0],drone.pos[1]-center[1],drone.pos[2]-(center[2]||0));
+    if(dist>=radius)continue;
+    const amount=maxDamage*falloff(dist)*(exposure?.(drone.pos[0],drone.pos[1],drone.pos[2])??1);
+    const hits=Math.min(3,Math.max(0,Math.round(amount/34)));
+    if(!hits)continue;
+    drone.hp=(drone.hp??100)-hits*34;
+    if(drone.hp<=0)drone.active=false;
+    hit+=hits;
+  }
+  return hit;
 }

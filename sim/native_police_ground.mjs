@@ -83,3 +83,15 @@ export function hitNativeCops(origin,dir,range){
   best.hp-=25;
   return {point:[origin[0]+dir[0]*bestT,origin[1]+dir[1]*bestT,origin[2]+dir[2]*bestT]};
 }
+export function blastNativeCops(center,radius,falloff,exposure){
+  let hit=0;
+  for(const u of units)for(const cop of u.cops){
+    if(cop.hp<=0)continue;
+    const dist=Math.hypot(cop.x-center[0],cop.y-center[1],1.1-(center[2]||0));
+    if(dist>=radius)continue;
+    const f=falloff(dist)*(exposure?.(cop.x,cop.y,1.1)??1);
+    if(f<=.22)continue;
+    cop.hp-=34;hit++;
+  }
+  return hit;
+}

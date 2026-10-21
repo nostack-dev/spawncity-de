@@ -38,10 +38,11 @@ export function installNativeCityLife(game,snapshot){
   }
   people=people.slice(0,PERSON_CAP);
   cars=routes.slice(0,CAR_CAP).map((route,i)=>({
-    id:`traffic-${i}`,route,s:(i+.3)/CAR_CAP*route.length,dir:i%2?1:-1,speed:CAR_SPEED*(.7+.4*(i%5)/5),bus:i<BUS_CAP
+    id:`traffic-${i}`,route,s:(i+.3)/CAR_CAP*route.length,dir:i%2?1:-1,speed:CAR_SPEED*(.7+.4*(i%5)/5),bus:i<BUS_CAP,alive:true,hits:0,structure:i<BUS_CAP?4:3
   }));
   visuals=new NativePedestrianVisuals(game.world.renderer,{people:()=>people.filter(a=>a.alive&&!a.knocked).map(a=>({id:a.id,x:a.x,y:a.y,z:0,yaw:a.yaw}))},{maxPeople:PERSON_CAP});
   last=performance.now();
+  globalThis.__streetLamps={lamps:()=>lamps?.points||[]};
   globalThis.__arondightProceduralPopulation={
     people:()=>people,
     roads:()=>routes,
@@ -97,6 +98,7 @@ export function tickNativeCityLife(game,now=performance.now()){
   const renderer=game?.world?.renderer;if(!renderer?.upsert)return;
   const data=[];
   for(const car of cars){
+    if(!car.alive)continue;
     car.s+=car.dir*car.speed*dt;
     if(car.s<0||car.s>car.route.length)car.dir*=-1;
     const at=pointOn(car.route,car.s);if(!at)continue;
@@ -106,4 +108,31 @@ export function tickNativeCityLife(game,now=performance.now()){
   const transforms=new Float32Array(data);
   if(!drawnCars){renderer.upsert("traffic/cars",{...ORIGINAL_SEDAN,instances:{transforms},material:{doubleSided:true,castShadow:false}});drawnCars=true;}
   else renderer.updateInstances("traffic/cars",{transforms});
+}
+export function blastNativeCity(center,radius,falloff,exposure){
+  const carsOut=[];
+  for(const person of people){
+    if(!person.alive||person.knocked)continue;
+    const dist=Math.hypot(person.x-center[0],person.y-center[1],1.1-(center[2]||0));
+    if(dist>=radius)continue;
+    const f=falloff(dist)*(exposure?.(person.x,person.y,1.1)??1);
+    if(f<=.22)continue;
+    person.hp=(person.hp??100)-34;
+    provoke(person,performance.now(),{shot:true,by:{x:center[0],y:center[1]}});
+    if(person.hp<=0){person.alive=false;person.knocked=true;}
+    frightenAround(person.x,person.y,16,performance.now(),1.2);
+    globalThis.__arondightWantedSystem?.reportCrime?.({id:`blast-${person.id}-${Math.round(performance.now())}`,kind:"person-hit",severity:1});
+  }
+  for(const car of cars){
+    if(!car.alive)continue;
+    const at=pointOn(car.route,car.s);if(!at)continue;
+    const dist=Math.hypot(at.x-center[0],at.y-center[1],.45-(center[2]||0));
+    if(dist>=radius)continue;
+    const f=falloff(dist)*(exposure?.(at.x,at.y,.45)??1);
+    const hits=Math.min(5,Math.ceil(f*(car.bus?4:3)));
+    if(!hits)continue;
+    car.hits+=hits;
+    if(car.hits>=car.structure){car.alive=false;carsOut.push({id:car.id,x:at.x,y:at.y,z:.6});}
+  }
+  return {cars:carsOut};
 }

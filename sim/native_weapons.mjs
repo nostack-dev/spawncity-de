@@ -11,6 +11,7 @@ import {hitNativeCows,markNativeImpact} from "./native_world_life.mjs";
 import {markFacade} from "./native_session.mjs";
 import {addGlassCrack,addWallSoot,addWallBreach} from "./native_combat.mjs";
 import {hitNativeThreats} from "./native_threats.mjs";
+import {createNativeOrdnance} from "./native_ordnance.mjs";
 import {ORIGINAL_MISSILE,ORIGINAL_GUIDED,ORIGINAL_GRENADE} from "./native_actor_meshes.mjs";
 
 export const NATIVE_WEAPONS_VERSION="live-rates-box3d-ray-v1";
@@ -37,7 +38,7 @@ function selfId(mode){return {foot:"player-foot",car:"player-car",jet:"player-je
 export function installNativeWeapons(game,{armed=()=>false}={}){
   if(!game?.rigids?.raycast||!game?.world?.effects?.emit)throw Error("weapons need the native engine");
   const state={foot:"smg",drone:"gun",nextFoot:0,nextDrone:0,held:false,jetHeld:false,touchFire:false};
-  const rounds=[],drawn=new Set();
+  const drawn=new Set();
   let frames=0,fpsWindow=performance.now(),fps=0;
   const label=()=>NAMES[game.mode==="foot"?state.foot:game.mode==="drone"?state.drone:""]||"";
   function publish(){const view=typeof document==="undefined"?null:document.getElementById("viewport");if(view){view.dataset.footWeapon=state.foot;view.dataset.droneExtendedWeapon=state.drone;}}
@@ -68,33 +69,37 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
       addGlassCrack(point);addWallSoot(point);if(Math.random()<.2)addWallBreach(point);
     }
     tracer(ray.origin,end,game.mode,game.mode==="foot"?state.foot:state.drone,clientX,clientY);
+    ordnance.shotLine(ray.origin,end);
     if(hit&&hit.id!==selfId(game.mode))impact(hit,kind,ray.direction);
     if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,at:now}}));
     return true;
   }
-  function launch(now,{speed,life,blast,guided,mesh,clientX,clientY}){
-    const ray=aim(clientX,clientY);if(!ray)return false;
-    const look=game.rigids.raycast(ray.origin,ray.direction,420);
-    rounds.push({pos:[...ray.origin],dir:[...ray.direction],speed,life,blast,mesh:mesh||(guided?"guided":"missile"),target:guided?look?.id||null:null,born:now});
-    nativeFireShot(game,{from:ray.origin,to:add(ray.origin,ray.direction,1.2),mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,clientX,clientY});
-    if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon:game.mode==="foot"?state.foot:state.drone,at:now}}));
-    return true;
+  function fired(now,weapon){
+    if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:weapon-fired",{detail:{mode:game.mode,weapon,at:now}}));
   }
+  const ordnance=createNativeOrdnance(game,{aim,footWeapon:()=>state.foot,droneWeapon:()=>state.drone});
   function fireFoot(now,clientX,clientY){
     if(game.mode!=="foot"||now<state.nextFoot)return false;
     const mode=state.foot;
-    const ok=mode==="grenade"||mode==="rocket"
-      ?launch(now,{speed:mode==="rocket"?40:18,life:mode==="rocket"?4:2.4,blast:mode==="rocket"?5:6,guided:mode==="rocket",mesh:mode==="grenade"?"grenade":"missile",clientX,clientY})
-      :shootHitscan(now,FOOT_RANGE[mode],FOOT_KIND[mode]||"9mm",clientX,clientY);
-    if(ok)state.nextFoot=now+FOOT_MS[mode];
-    return ok;
+    if(mode==="grenade"||mode==="rocket"){
+      const thrown=ordnance.launchFoot(mode,now);
+      if(!thrown)return false;
+      state.nextFoot=now+(thrown==="remote"?380:FOOT_MS[mode]);
+      fired(now,mode);
+      return true;
+    }
+    if(!shootHitscan(now,FOOT_RANGE[mode],FOOT_KIND[mode]||"9mm",clientX,clientY))return false;
+    state.nextFoot=now+FOOT_MS[mode];
+    return true;
   }
   function fireDrone(now){
     if(game.mode!=="drone"||now<state.nextDrone||!armed())return false;
     const mode=state.drone;
     if(mode==="gun"){if(!shootHitscan(now,650,"5.56"))return false;state.nextDrone=now+92;return true;}
-    if(!launch(now,{speed:mode==="guided"?48:31,life:mode==="guided"?6:7.2,blast:mode==="guided"?9:8,guided:mode==="guided",mesh:mode==="guided"?"guided":"missile"}))return false;
-    state.nextDrone=now+950;return true;
+    if(!ordnance.launchDrone(mode,now))return false;
+    state.nextDrone=now+520;
+    fired(now,mode);
+    return true;
   }
   const foot={
     get mode(){return state.foot;},
@@ -143,9 +148,10 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     const renderer=game.world?.renderer;
     if(!renderer?.upsert)return;
     const batches={missile:[],guided:[],grenade:[]};
-    for(const p of rounds){
+    for(const p of ordnance.projectiles){
       const kind=batches[p.mesh]?p.mesh:"missile";
-      batches[kind].push(...fromTRS(p.pos,facing(p.dir)));
+      const dir=Math.hypot(p.vel?.[0]||0,p.vel?.[1]||0,p.vel?.[2]||0)>.05?p.vel:[0,1,0];
+      batches[kind].push(...fromTRS(p.pos,facing(dir)));
     }
     for(const kind of Object.keys(batches)){
       const id="ordnance/"+kind,data=batches[kind];
@@ -171,19 +177,8 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
       state.padFire=rt;
       if(game.mode==="jet"&&(state.jetHeld||rt||sample?.fire)&&now>=state.nextDrone){if(shootHitscan(now,650,"5.56"))state.nextDrone=now+92;}
       if(game.mode==="car"&&(state.held||rt)&&now>=state.nextDrone){if(shootHitscan(now,180,"9mm"))state.nextDrone=now+110;}
-      const dt=Math.min(.05,1/60);
-      for(let i=rounds.length-1;i>=0;i--){
-        const p=rounds[i];
-        if(p.target){const pose=game.rigids.pose(p.target);if(pose?.position)p.dir=unit(sub(pose.position,p.pos));}
-        const step=p.speed*dt,hit=game.rigids.raycast(p.pos,p.dir,step);
-        if(hit&&hit.id!==selfId(game.mode)){
-          game.world.effects.emit({kind:"blast",position:hit.point,velocity:[0,0,2],lifeMs:280,size:p.blast*.35});
-          impact(hit,"9mm",p.dir);rounds.splice(i,1);continue;
-        }
-        p.pos=add(p.pos,p.dir,step);p.life-=dt;
-        if((frames&3)===0)game.world.effects.emit({kind:"smoke",position:p.pos,velocity:[0,0,.4],lifeMs:220,size:.25});
-        if(p.life<=0)rounds.splice(i,1);
-      }
+      const dt=Math.min(.05,(now-(paintRounds.last||now))/1000)||1/60;paintRounds.last=now;
+      ordnance.tick(now,dt);
       paintRounds();
       tickNativeFireFx(game,now);
     },

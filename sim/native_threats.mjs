@@ -91,3 +91,17 @@ export function hitNativeThreats(origin,dir,range){
   if(best.kind==="zombie"){points+=best.e.hp<=0?KILL_PTS:HIT_PTS;}
   return {point:[origin[0]+dir[0]*bestT,origin[1]+dir[1]*bestT,origin[2]+dir[2]*bestT]};
 }
+export function blastNativeThreats(center,radius,maxDamage,falloff,exposure){
+  let hit=0;
+  for(const group of [soldiers,zombies])for(const actor of group){
+    if(actor.hp<=0)continue;
+    const dist=Math.hypot(actor.x-center[0],actor.y-center[1],1.1-(center[2]||0));
+    if(dist>=radius)continue;
+    const amount=maxDamage*falloff(dist)*(exposure?.(actor.x,actor.y,1.1)??1);
+    if(amount<=2)continue;
+    actor.hp-=amount;
+    if(group===zombies)points+=actor.hp<=0?KILL_PTS:HIT_PTS;
+    hit++;
+  }
+  return hit;
+}
