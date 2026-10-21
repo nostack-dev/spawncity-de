@@ -133,7 +133,8 @@ export class NativeGameInput{
     // nothing. Vehicles are entered and left with E (F = E, Xbox X) next to
     // them (native_vehicle_entry.mjs), never by a mode key from anywhere.
     if(e.code==="KeyV"){if(mode==="foot"||mode==="drone"){try{runtime.setMode(mode==="foot"?"drone":"foot");}catch{}}e.preventDefault?.();return;}
-    if(e.code==="KeyC"){this.cycleCamera();e.preventDefault?.();}
+    if(e.code==="KeyC"){this.cycleCamera();e.preventDefault?.();return;}
+    if(mode==="car"&&["Equal","NumpadAdd","Minus","NumpadSubtract"].includes(e.code)){this.zoomCar(e.code==="Equal"||e.code==="NumpadAdd"?1/1.15:1.15);e.preventDefault?.();}
    });
    listen(win,"keyup",e=>this.keys.delete(e.code));
    listen(win,"mousemove",e=>{
@@ -154,6 +155,7 @@ export class NativeGameInput{
      this.pitch=clamp(this.pitch-dy*.0018,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
     }
    });
+   listen(win,"wheel",e=>{if(this.runtime.mode==="car"&&!e.target?.closest?.("dialog,#gameMenu")){this.zoomCar(e.deltaY>0?1.08:1/1.08);}},{passive:true});
    listen(win,"blur",()=>this.releaseInputs());
    return;
   }
@@ -213,10 +215,23 @@ export class NativeGameInput{
   if(this.walk)this.walk.mode=mode==="foot"?"foot":"drone";
  }
  cycleCamera(){
+  // Production: C / CAM / Xbox VIEW toggle cockpit and chase in the car
+  // (player_car_mode) and the jet (jet_mode); the drone cycles its views.
+  const gs=this.runtime.gameplayState;
+  if(this.runtime.mode==="car"&&gs){
+   gs.carCameraMode=gs.carCameraMode==="cockpit"?"chase":"cockpit";
+   const b=this.doc?.getElementById?.("vehicleCamButton");if(b)b.textContent=gs.carCameraMode==="cockpit"?"🎥 AUSSEN":"🎥 INNEN";
+   return;
+  }
+  if(this.runtime.mode==="jet"&&gs?.jet){gs.jet.cockpit=!gs.jet.cockpit;return;}
   const m=this.runtime.world?.flightCameraMode??"follow";
   const next=m==="follow"?"fpv":m==="fpv"?"third":"follow";
   this.runtime.world?.setFlightCameraMode?.(next);
   const label=this.doc?.getElementById?.("soloCamera");if(label)label.textContent=next.toUpperCase();
+ }
+ zoomCar(f){
+  const gs=this.runtime.gameplayState;if(!gs)return;
+  this.carZoom=Math.max(.55,Math.min(2.6,(this.carZoom||1)*f));gs.carDistanceM=5*this.carZoom;gs.carHeightM=2.2*Math.sqrt(this.carZoom);
  }
  syncDroneHud(){
   const d=this.doc;if(!d?.getElementById)return;
