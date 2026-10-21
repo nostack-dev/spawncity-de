@@ -114,7 +114,9 @@ function drawScorches(r){
 // ------------------------------------------------------------------ trees (world_procedural_population)
 function hashText(text){let h=2166136261;for(const c of String(text||"")){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
 const u01=(seed,salt)=>hashText(`${seed}:${salt}`)/4294967295,range=(seed,salt,a,b)=>a+(b-a)*u01(seed,salt);
-const trees=[];let treeState={seed:0,anchor:[0,0],roads:[],prismKey:""},treesDrawn=false,treesDirty=false;
+const trees=[],allRoads=[];
+// the loaded streets in metres (production __streetLamps.roads(): {pts,cls,w})
+export function nativeProjectedRoads(){return allRoads;}let treeState={seed:0,anchor:[0,0],roads:[],prismKey:""},treesDrawn=false,treesDirty=false;
 function prisms(){return game?.gameplayState?.carObstacleSnapshot?.prisms||game?.rigids?.buildingSnapshot?.prisms||[];}
 function pointInRing(x,y,pts){let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const xi=+pts[i][0],yi=+pts[i][1],xj=+pts[j][0],yj=+pts[j][1];if(((yi>y)!==(yj>y))&&x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi)inside=!inside;}return inside;}
 function bbox(p){if(p.__bb)return p.__bb;const b=[Infinity,Infinity,-Infinity,-Infinity];for(const q of p.points||[]){b[0]=Math.min(b[0],+q[0]);b[1]=Math.min(b[1],+q[1]);b[2]=Math.max(b[2],+q[0]);b[3]=Math.max(b[3],+q[1]);}try{p.__bb=b;}catch{}return b;}
@@ -135,7 +137,10 @@ export function installNativeTrees(snapshot){
   if(!training&&snapshot?.origin){const o=snapshot.origin,lat=Math.round(o.lat*1000)/1000,lon=Math.round(o.lon*1000)/1000;key=`${lat.toFixed(3)}:${lon.toFixed(3)}`;project=nativeOsmProjector(o).project;anchor=project(lon,lat);}
   else if(snapshot?.origin)project=nativeOsmProjector(snapshot.origin).project;
   const roads=[];
-  for(const r of snapshot?.roads||[]){const cls=String(r.properties?.highway||r.properties?.class||"");if(/path|track|foot|cycle/.test(cls))continue;const c=r.geometry?.coordinates;if(!Array.isArray(c)||c.length<2||!project)continue;
+  allRoads.length=0;
+  for(const r of snapshot?.roads||[]){const cls=String(r.properties?.highway||r.properties?.class||"");const c=r.geometry?.coordinates;if(!Array.isArray(c)||c.length<2||!project)continue;
+    try{allRoads.push({pts:c.map(([lo,la])=>project(lo,la)),cls,w:/primary|secondary|trunk/.test(cls)?8:/tertiary|residential/.test(cls)?6:5});}catch{}
+    if(/path|track|foot|cycle/.test(cls))continue;
     try{const pts=c.map(([lo,la])=>project(lo,la));const bb=[Infinity,Infinity,-Infinity,-Infinity];for(const q of pts){bb[0]=Math.min(bb[0],q[0]);bb[1]=Math.min(bb[1],q[1]);bb[2]=Math.max(bb[2],q[0]);bb[3]=Math.max(bb[3],q[1]);}
       if(bb[0]>anchor[0]+96||bb[2]<anchor[0]-96||bb[1]>anchor[1]+96||bb[3]<anchor[1]-96)continue;roads.push({pts,bb});}catch{}}
   treeState={seed:hashText(`arondight-world-pop:${key}`),anchor,roads,prismKey:""};positionTrees();

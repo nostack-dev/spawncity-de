@@ -86,7 +86,8 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     if(hit.id&&hit.id!==selfId(game.mode))game.rigids.applyImpulse(hit.id,bulletImpulse(direction,kind),{point:hit.point});
   }
   function tracer(from,to,mode,weapon,speed){
-    nativeTracerGlint(from,to);
+    // production arondight:foot-tracer (scene light glint, joggers hit by the round)
+    if(mode==="foot"&&typeof window!=="undefined")window.dispatchEvent(new CustomEvent("arondight:foot-tracer",{detail:{start:[...from],end:[...to],weapon}}));
     nativeFireShot(game,{from,to,mode,weapon,speed});
   }
   function shootHitscan(now,range,kind,clientX,clientY){
