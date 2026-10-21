@@ -113,6 +113,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
   const shots=createNativeFootFire(game,{aim,tracer:(from,to,mode,weapon,speed)=>tracer(from,to,mode,weapon,speed)});
   function fireFoot(now,clientX,clientY,hand=0,{hold=false}={}){
     if(game.mode!=="foot")return false;
+    if(performance.now()<(Number(globalThis.__arondightWeaponLockUntil)||0))return false;
     const mode=state.foot;
     if(mode==="grenade"||mode==="rocket"){
       if(now<state.nextFoot)return false;
@@ -134,6 +135,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
   }
   function fireDrone(now){
     if(game.mode!=="drone"||now<state.nextDrone||!armed())return false;
+    if(performance.now()<(Number(globalThis.__arondightWeaponLockUntil)||0))return false;
     const mode=state.drone;
     if(mode==="gun"){if(!shootHitscan(now,650,"5.56"))return false;state.nextDrone=now+92;return true;}
     if(!ordnance.launchDrone(mode,now))return false;
