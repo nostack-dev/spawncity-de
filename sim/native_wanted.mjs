@@ -113,7 +113,6 @@ export function installNativeWanted(game){
   installHud();
   const api={reportCrime,clear:clearWanted,triggerEmp,get state(){return {heat,stars,phase,policeActive:drones.filter(d=>d.active).length,lastCrimeAt,lastContactAt,empReadyAt};},get drones(){return drones.slice();}};
   globalThis.__arondightWantedSystem=api;
-  addEventListener("arondight:weapon-fired",()=>reportCrime({id:`gunfire-${++seq}-${Math.round(performance.now())}`,kind:"gunfire",severity:1}));
   addEventListener("click",e=>{if(e.target instanceof Element&&e.target.closest("#soloReset,#reset"))clearWanted("reset");},{capture:true});
   const loop=now=>{try{step(now);paint(game);}catch{}requestAnimationFrame(loop);};
   requestAnimationFrame(loop);

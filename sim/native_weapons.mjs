@@ -44,11 +44,20 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
   function publish(){const view=typeof document==="undefined"?null:document.getElementById("viewport");if(view){view.dataset.footWeapon=state.foot;view.dataset.droneExtendedWeapon=state.drone;}}
   function aim(clientX,clientY){
     const cam=game.world.camera;if(!cam?.eye||!cam?.target)return null;
-    if(Number.isFinite(clientX)&&Number.isFinite(clientY)&&game.world.pickGameplay){
+    const locked=typeof document!=="undefined"&&(document.pointerLockElement===game.world.renderer?.canvas||document.pointerLockElement===document.getElementById("viewport"));
+    // Locked play aims through the crosshair, never the stale click point.
+    const usePoint=!locked&&Number.isFinite(clientX)&&Number.isFinite(clientY);
+    if(usePoint&&game.world.pickGameplay){
       const hit=game.world.pickGameplay(clientX,clientY,{ignoreId:selfId(game.mode)});
-      if(hit?.ray?.direction)return {origin:[...hit.ray.origin],direction:unit(hit.ray.direction)};
+      if(hit?.ray?.direction)return muzzle(hit.ray.origin,unit(hit.ray.direction));
     }
-    return {origin:[...cam.eye],direction:unit(sub(cam.target,cam.eye))};
+    return muzzle(cam.eye,unit(sub(cam.target,cam.eye)));
+  }
+  // The eye sits inside the player's head. Start the round in front of the body
+  // so the first hit is the target, not yourself.
+  function muzzle(origin,direction){
+    const d=unit(direction),push=game.mode==="foot"?0.55:0.2;
+    return {origin:add(origin,d,push),direction:d};
   }
   function impact(hit,kind,direction){
     if(!hit?.point)return;
