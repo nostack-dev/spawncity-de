@@ -75,6 +75,8 @@ function damageLocalTarget(kind,amount=25,source="world"){return kind==="player"
 function registerLocalDamageHit(hit,{damage=25,source="hit"}={}){const kind=damageTargetKindFromHit(hit);if(!kind)return false;const before=kind==="player"?currentPlayerHp():droneHp,after=damageLocalTarget(kind,damage,source),view=viewport();if(view){view.dataset.localDamageTarget=kind;view.dataset.localDamageHits=String((Number(view.dataset.localDamageHits)||0)+1);}announce("arondight:combat-damage",{damage:Math.max(0,before-Number(after||0)),hp:after,source,target:kind});return true;}
 
 function sync(now=performance.now()){
+  // native page: native_vitals.mjs owns pilot / drone health and this HUD
+  if(globalThis.__nativeVitalsActive){requestAnimationFrame(sync);return;}
   const bridgeHp=bridgePlayerHp();if(bridgeHp!==null&&bridgeHp!==playerHp){playerHp=bridgeHp;if(playerHp<=0)markPlayerDeath("combat");else revivePlayer();}
   if(droneDestroyed&&now>=droneReadyAt)makeReplacementReady();
   const b=bridge();if(b&&b.registerLocalVehicleHit!==registerLocalDamageHit)b.registerLocalVehicleHit=registerLocalDamageHit;
