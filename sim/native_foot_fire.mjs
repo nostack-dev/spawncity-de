@@ -11,6 +11,7 @@ import {nativeBulletImpact} from "./native_world_impacts.mjs";
 import {hitNativeAnimals,shootNativeAnimal} from "./native_animals.mjs";
 import {hitNativeMilitary,shootNativeMilitary} from "./native_military.mjs";
 import {hitNativeZombies,shootNativeZombie} from "./native_zombies.mjs";
+import {hitNativeFlak,shootNativeFlak} from "./native_flak.mjs";
 import {listNativeThreats,applyThreatDamage} from "./native_threats.mjs";
 import {applyCowDamage} from "./native_world_life.mjs";
 import {markNativeImpact} from "./native_world_life.mjs";
@@ -114,6 +115,7 @@ export function gatherActors(origin,dir,range){
   {const an=hitNativeAnimals(origin,dir,range);if(an)hits.push({...an,key:`animal:${an.index}`});}
   {const mi=hitNativeMilitary(origin,dir,range);if(mi)hits.push({...mi,key:`military:${mi.t.toFixed(2)}`});}
   {const zn=hitNativeZombies(origin,dir,range);if(zn)hits.push({...zn,key:`zn:${zn.id}`});}
+  {const fl=hitNativeFlak(origin,dir,range);if(fl)hits.push(fl);}
   // production sandbox enemies (COP / SWAT / HEAVY)
   for(const e of liveNativeSandboxEnemies()){
     push(raySphere(origin,dir,[e.x,e.y,e.z+1.1*e.t.scale],.45*e.t.scale,range),{key:`enemy:${e.id}`,kind:"enemy",id:e.id});
@@ -200,6 +202,7 @@ function wound(hit,weapon,dir){
   if(hit.kind==="animal")return shootNativeAnimal(hit.index,dir)?{hit:true}:null;
   if(hit.kind==="military")return shootNativeMilitary(hit,dir)?{hit:true}:null;
   if(hit.kind==="zombie-night")return shootNativeZombie(hit.id,dir)?{hit:true}:null;
+  if(hit.kind==="flak")return shootNativeFlak(hit,weapon)?{hit:true}:null;
   if(hit.kind==="soldier"||hit.kind==="zombie"){
     const result=applyThreatDamage(hit.id,head?100:BODY_SHOT*times);
     if(head&&result)announceHeadshot({weapon,target:hit.kind});

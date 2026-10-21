@@ -70,7 +70,18 @@ export function installNativeCityLife(game,snapshot){
   globalThis.__arondightProceduralPopulation={
     people:()=>people,
     roads:()=>routes,
-    knockdown(id){const a=people.find(p=>p.id===id);if(!a||!a.alive)return null;a.alive=false;a.knocked=true;globalThis.__arondightWantedSystem?.reportCrime?.({id:`person-${id}`,kind:"person-hit",severity:1});return "down";}
+    knockdown(id){const a=people.find(p=>p.id===id);if(!a||!a.alive)return null;a.alive=false;a.knocked=true;globalThis.__arondightWantedSystem?.reportCrime?.({id:`person-${id}`,kind:"person-hit",severity:1});return "down";},
+    // traffic as the tow service (native_tow_service.mjs) sees it, production contract:
+    // where each car is, how fast, upright, on / off its route (native traffic rides its lane)
+    vehicles(){const out=[];for(const car of cars){if(!car.alive)continue;const at=carPose(car);if(!at)continue;
+      out.push({id:car.id,kind:car.bus?"bus":"car",x:at.x,y:at.y,z:car.bus?1.48:.49,yaw:at.yaw,speed:car.towed?0:car.speed,up:1,parked:false,driven:false,towed:Boolean(car.towed),offRoute:0,hasRoute:true});}return out;},
+    // where this car belongs: its own lane on its own route, some way along its driving direction
+    lanePose(id,ahead=25){const car=cars.find(c=>c.id===id&&c.alive);if(!car)return null;const s=Math.max(3,Math.min(car.route.length-3,car.s+car.dir*ahead)),at=pointOn(car.route,s,laneOf(car));return at?{x:at.x,y:at.y,yaw:at.yaw+(car.dir<0?Math.PI:0)}:null;},
+    towBegin(id){const car=cars.find(c=>c.id===id&&c.alive);if(!car||car.towed)return false;car.towed=true;car.towPose=null;return true;},
+    // the tow truck carries the car (production sets the towed body's pose)
+    towPose(id,{x,y,yaw}={}){const car=cars.find(c=>c.id===id&&c.alive);if(!car?.towed||!Number.isFinite(x)||!Number.isFinite(y))return false;car.towPose={x,y,yaw:Number(yaw)||0};return true;},
+    towEnd(id,{x,y}={}){const car=cars.find(c=>c.id===id);if(!car||!car.towed)return false;car.towed=false;car.towPose=null;
+      if(Number.isFinite(x)&&Number.isFinite(y)){const j=projectOnRoute(car.route,x,y,{});if(Number.isFinite(j?.s))car.s=Math.max(0,Math.min(car.route.length,j.s));}return true;}
   };
   return {people:people.length,cars:cars.length,routes:routes.length,lamps:lampCount};
 }
@@ -86,12 +97,18 @@ function laneOf(car){
   const w=/motorway|trunk|primary|secondary/.test(cls)?1.25:/service|living/.test(cls)?.64:.88;
   return (car.paint&1?1:-1)*w*(car.dir<0?-1:1);
 }
+// a car on its lane, or hanging behind the tow truck
+function carPose(car){
+  if(car.towed&&car.towPose)return {x:car.towPose.x,y:car.towPose.y,yaw:car.towPose.yaw};
+  const at=pointOn(car.route,car.s,laneOf(car));if(!at)return null;
+  return {x:at.x,y:at.y,yaw:at.yaw+(car.dir<0?Math.PI:0)};
+}
 export function nativePeople(){return people;}
 export function nativeTraffic(){
   const out=[];
   for(const car of cars){
     if(!car.alive)continue;
-    const at=pointOn(car.route,car.s,laneOf(car));if(!at)continue;
+    const at=car.towed&&car.towPose?car.towPose:pointOn(car.route,car.s,laneOf(car));if(!at)continue;
     out.push({id:car.id,bus:car.bus,x:at.x,y:at.y,z:.45,yaw:at.yaw,hp:car.hp,maxHp:car.maxHp});
   }
   return out;
@@ -216,7 +233,14 @@ export function tickNativeCityLife(game,now=performance.now()){
       }
       continue;
     }
-    car.s+=car.dir*car.speed*dt;
+    if(car.towed&&car.towPose){
+      // hooked behind the tow truck (native_tow_service)
+      const tp=car.towPose,kind=car.bus?"bus":"car";
+      bins[kind][0].push(...fromTRS([tp.x,tp.y,car.bus?1.48:.49],yawQuat(tp.yaw),[1,1,1]));
+      bins[kind][1].push(...(PAINTS[car.paint]||PAINTS[0]),1);
+      continue;
+    }
+    if(!car.towed)car.s+=car.dir*car.speed*dt;
     if(car.s<0||car.s>car.route.length)car.dir*=-1;
     const at=pointOn(car.route,car.s,laneOf(car));if(!at)continue;
     if(car.criticalAt&&now-carSmokeAt>180){carSmokeAt=now;game?.world?.effects?.emit?.({kind:"smoke",position:[at.x,at.y,1.1],velocity:[0,0,.8],lifeMs:700,size:.4});}

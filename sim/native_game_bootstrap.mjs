@@ -64,6 +64,9 @@ import {installNativeFighterJets,tickNativeFighterJets} from "./native_fighter_j
 import {installNativeJoggerChain,tickNativeJoggerChain} from "./native_jogger_chain.mjs";
 import {installNativeMilitary,tickNativeMilitary} from "./native_military.mjs";
 import {installNativeZombies,tickNativeZombies} from "./native_zombies.mjs";
+import {installNativeRace,tickNativeRace,setNativeRaceWorld} from "./native_race.mjs";
+import {installNativeTowService,tickNativeTowService} from "./native_tow_service.mjs";
+import {installNativeFlak,tickNativeFlak} from "./native_flak.mjs";
 import {installWorldMapFull} from "./native_world_map.mjs";
 import "./police_sirens.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
@@ -238,6 +241,7 @@ async function loadRealWorld(game){
    snapshotUrl:demo?"./osm/demo-konstanz.json":null
   });
   if(training)installNativeTrainingProps(game);else{removeNativeTrainingProps(game);const v=document.getElementById("viewport");if(v)v.dataset.worldMode="real";}
+  setNativeRaceWorld(training);
   if(game.closed||epoch!==osmEpoch)return;
   const shown=await game.updateOsmFeatures(result);
   if(shown?.cancelled||epoch!==osmEpoch)return false;
@@ -334,6 +338,9 @@ async function prepareEngine(){
   installNativeJoggerChain(game);
   installNativeMilitary(game);
   installNativeZombies(game);
+  installNativeRace(game);
+  installNativeTowService(game);
+  installNativeFlak(game);
   installWorldMapFull(game);
   globalThis.__nativeListener=()=>game.world?.camera?.eye||null;
   globalThis.__nativeCamera=()=>game.world?.camera||null;
@@ -348,7 +355,7 @@ async function prepareEngine(){
   game.beforeFrame=()=>{applyNativeDayNight(game.world?.renderer);return input.sample();};
   const motor=new HybridMotorSound(viewport);
   addEventListener("pointerdown",()=>motor.ensure(),{once:true});
-  game.afterFrame=(frame,now)=>{weapons.tick(now);tickNativeSandbox(now);tickNativeWorldImpacts(now);tickNativeSceneLighting(now);tickNativeAnimals(now);tickNativeFighterJets(now);tickNativeJoggerChain(now);tickNativeMilitary(now);tickNativeZombies(now);tickNativeVehicleEntry();tickNativeJetHud();syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
+  game.afterFrame=(frame,now)=>{weapons.tick(now);tickNativeSandbox(now);tickNativeWorldImpacts(now);tickNativeSceneLighting(now);tickNativeAnimals(now);tickNativeFighterJets(now);tickNativeJoggerChain(now);tickNativeMilitary(now);tickNativeZombies(now);tickNativeRace(now);tickNativeTowService(now);tickNativeFlak(now);tickNativeVehicleEntry();tickNativeJetHud();syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
    button.addEventListener("click",()=>{
     globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);

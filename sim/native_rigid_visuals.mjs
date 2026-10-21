@@ -109,8 +109,9 @@ export class NativeRigidVisuals{
    // rendering its torso *inside the local camera* hides the entire city.
    // Skip only its visual mesh; never skip or replace its physics body.
    if(this.hiddenBodyIds.has(String(body.id))){skipped++;continue;}
-   // bodies with their own presentation (the army's tank is native_military)
-   if(/^mil-/.test(String(body.id))){skipped++;continue;}
+   // bodies with their own presentation (the army's tank is native_military,
+   // the yellow tow truck native_tow_service)
+   if(/^(mil-|tow-truck-)/.test(String(body.id))){skipped++;continue;}
    if(!saneExtents(body.halfExtents)){skipped++;continue;}
    const pose=this.physics.renderPose(body.id);
    if(!validPose(pose)){skipped++;continue;}
