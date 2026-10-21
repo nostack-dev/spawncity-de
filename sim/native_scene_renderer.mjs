@@ -9,6 +9,9 @@ import {screenRay,pickNativeMeshes} from "./native_scene_picking.mjs";
 import {nativeBuildBvh} from "./native_scene_bvh.mjs";
 import {NativeSunShadowMap} from "./native_sun_shadow.mjs";
 import {NativeSkyPass} from "./native_sky_pass.mjs";
+// Colour arrays baked from the original Three.js models are already linear.
+const LINEAR_COLOR_ARRAYS=new WeakSet();
+export function markLinearColors(...arrays){for(const a of arrays)if(a&&typeof a==="object")LINEAR_COLOR_ARRAYS.add(a);return arrays[0];}
 export const NATIVE_SCENE_RENDERER_VERSION="native-webgl2-sun-shadows-v7-production-facades";
 const VERT="#version 300 es\n"+[
 "precision highp float;",
@@ -31,7 +34,7 @@ const VERT="#version 300 es\n"+[
 "uniform mat4 uBones[32];",
 "uniform mat4 uViewProjection;",
 "out vec3 vWorld,vNormal,vColor;",
-"out vec2 vUV,vWallUV;out float vOpacity;out vec4 vFacade;",
+"out vec2 vUV,vWallUV;out float vOpacity;out vec4 vFacade;out float vPaint;",
 "void main(){",
 "  mat4 model=mat4(iModel0,iModel1,iModel2,iModel3);",
 "  vec4 local=vec4(aPosition,1.0);",
@@ -45,7 +48,8 @@ const VERT="#version 300 es\n"+[
 "  vec4 p=model*local;",
 "  vWorld=p.xyz;",
 "  vNormal=normalize(mat3(iNormal0,iNormal1,iNormal2)*localNormal);",
-"  vColor=uPaint==1&&aColor.b>aColor.r*2.0&&aColor.b>.08?iTint.rgb:aColor*iTint.rgb;vOpacity=iTint.a;vUV=aUV;",
+"  vPaint=uPaint==1&&aColor.b>aColor.r*2.0&&aColor.b>.08?1.0:0.0;",
+"  vColor=vPaint>0.5?iTint.rgb:aColor*iTint.rgb;vOpacity=iTint.a;vUV=aUV;",
 "  float wallSpan=abs(aNormal.x)>0.5?length(iModel1.xyz):length(iModel0.xyz);",
 "  vWallUV=vec2(aUV.x*wallSpan,aUV.y*length(iModel2.xyz));",
 "  vFacade=aFacade;",
@@ -54,7 +58,7 @@ const VERT="#version 300 es\n"+[
 const FRAG="#version 300 es\n"+[
 "precision highp float;",
 "precision highp sampler2DShadow;",
-"in vec3 vWorld,vNormal,vColor;in vec2 vUV,vWallUV;in float vOpacity;in vec4 vFacade;",
+"in vec3 vWorld,vNormal,vColor;in vec2 vUV,vWallUV;in float vOpacity;in vec4 vFacade;in float vPaint;",
 "uniform vec4 uMaterial;",
 "uniform vec3 uSunDirection,uSunColor,uSkyColor,uGroundColor,uEye,uFogColor;",
 "uniform float uFogDensity,uExposure,uAlphaCutoff;",
@@ -63,7 +67,8 @@ const FRAG="#version 300 es\n"+[
 "uniform mat4 uSunShadowProjection;",
 "uniform float uSunShadowBias;",
 "uniform int uSunShadowEnabled;",
-"uniform int uHasTexture,uUnlit,uFacade,uTerrain,uPaint;",
+"uniform int uHasTexture,uUnlit,uFacade,uTerrain,uPaint,uLinearColor;",
+"uniform vec2 uPbr;",
 "uniform int uPointLightCount;",
 "uniform vec4 uPointPosRange[6],uPointColorIntensity[6];",
 "out vec4 outColor;",
@@ -89,7 +94,10 @@ const FRAG="#version 300 es\n"+[
 "  vec4 texel=uHasTexture==1?texture(uTexture,vUV):vec4(1.0);",
 "  float alpha=clamp(vOpacity*uMaterial.a*texel.a,0.0,1.0);",
 "  if(alpha<uAlphaCutoff)discard;",
-"  vec3 base=srgbToLinear(max(vec3(0.0),vColor*uMaterial.rgb*texel.rgb));",
+"  // Palette colours are sRGB hex values; meshes baked from the original Three",
+"  // models already carry Three's linear colours (paint tints stay sRGB).",
+"  vec3 rawBase=max(vec3(0.0),vColor*uMaterial.rgb*texel.rgb);",
+"  vec3 base=uLinearColor==1&&vPaint<0.5?rawBase:srgbToLinear(rawBase);",
 "  vec3 n=normalize(vNormal),sun=normalize(uSunDirection);",
 "  if(uFacade==1&&vFacade.x==0.0&&abs(n.z)<0.6){",
 "    float floorH=3.2;",
@@ -198,7 +206,21 @@ const FRAG="#version 300 es\n"+[
 "  // Lambert BRDF albedo/PI for the sun and hemisphere light, plus the sky",
 "  // IBL at environmentIntensity 0.9. Unlit materials keep their colour.",
 "  const float PI=3.141592653589793;",
-"  vec3 rgb=uUnlit==1?base:base*((uSunColor*ndl*shadow+hemis+point*PI)/PI+envIrradiance(n)*0.9);",
+"  float rough=clamp(uPbr.x,0.04,1.0),metal=clamp(uPbr.y,0.0,1.0);",
+"  vec3 rgb=uUnlit==1?base:base*(1.0-metal)*((uSunColor*ndl*shadow+hemis+point*PI)/PI+envIrradiance(n)*0.9);",
+"  if(uUnlit!=1&&(metal>0.0||rough<0.95)){",
+"    // MeshStandardMaterial specular: Schlick Fresnel with roughness against",
+"    // the sky environment, plus a GGX-shaped sun highlight.",
+"    vec3 V=normalize(uEye-vWorld),R=reflect(-V,n);",
+"    float NdV=clamp(dot(n,V),0.0,1.0);",
+"    vec3 F0=mix(vec3(0.04),base,metal);",
+"    vec3 F=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NdV,5.0);",
+"    vec3 envR=mix(envIrradiance(R),mix(vec3(0.52,0.66,0.86),vec3(0.05,0.2,0.62),clamp(R.z,0.0,1.0)),1.0-rough);",
+"    rgb+=F*envR*0.9;",
+"    vec3 H=normalize(sun+V);float a2=rough*rough*rough*rough;float NdH=clamp(dot(n,H),0.0,1.0);",
+"    float d=a2/(PI*pow(NdH*NdH*(a2-1.0)+1.0,2.0));",
+"    rgb+=F*uSunColor*ndl*shadow*min(d,40.0)*0.25;",
+"  }",
 "  // Glass mirrors the sky (production: smooth, partly metallic PBR glass",
 "  // plus a Fresnel sky term), so windows read light, not black.",
 "  if(facGlass>0.0){",
@@ -283,7 +305,8 @@ function validate(input){
  }
  let facade=null;
  if(input.facade){facade=typed("facade",input.facade,4);if(facade.length!==count*4)throw Error("facade attribute count mismatch");}
- return {p,normals,colors,uvs,facade,indices,skin,...instances(input.instances)};
+ const linearColors=LINEAR_COLOR_ARRAYS.has(input.colors);
+ return {p,normals,colors,uvs,facade,linearColors,indices,skin,...instances(input.instances)};
 }
 function program(gl){
  const shader=(type,src)=>{
@@ -294,7 +317,7 @@ function program(gl){
  const v=shader(gl.VERTEX_SHADER,VERT),f=shader(gl.FRAGMENT_SHADER,FRAG),p=gl.createProgram();
  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){const e=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw Error("native program: "+e);}
- const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uTerrain","uPaint","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
+ const uniforms=["uViewProjection","uMaterial","uLinearColor","uPbr","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uTerrain","uPaint","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
  return {handle:p,u:Object.fromEntries(uniforms.map(k=>[k,gl.getUniformLocation(p,k)]))};
 }
 export class NativeSceneRenderer{
@@ -571,6 +594,8 @@ export class NativeSceneRenderer{
    gl.uniform4fv(u.uMaterial,new Float32Array(mat.color));
    gl.uniform1f(u.uAlphaCutoff,mat.alphaMode==="mask"?(mat.alphaCutoff??.5):0);
    gl.uniform1i(u.uUnlit,mat.unlit?1:0);gl.uniform1i(u.uFacade,mat.facade?1:0);
+   gl.uniform1i(u.uLinearColor,m.data.linearColors||mat.linearColors?1:0);
+   gl.uniform2f(u.uPbr,Number.isFinite(mat.roughness)?mat.roughness:1,Number.isFinite(mat.metalness)?mat.metalness:0);
    gl.uniform1i(u.uTerrain,mat.terrain?1:0);gl.uniform1i(u.uPaint,mat.paint?1:0);gl.uniform1i(u.uHasTexture,m.texture?1:0);
    gl.uniform1i(u.uSkinEnabled,d.skin?1:0);if(d.skin)gl.uniformMatrix4fv(u["uBones[0]"],false,d.skin.bones);
    if(m.texture){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,m.texture);}

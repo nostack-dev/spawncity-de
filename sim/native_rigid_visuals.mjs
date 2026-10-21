@@ -145,7 +145,7 @@ export class NativeRigidVisuals{
    }
    const instances={transforms:new Float32Array(batch.transforms),tints:new Float32Array(batch.tints)};
    if(this.active.has(name))this.renderer.updateInstances(name,instances);
-   else{this.renderer.upsert(name,{...geometry,instances,material:{doubleSided:kind==="jet"||kind==="drone"||kind==="human",alphaMode:"opaque"}});this.active.add(name);}
+   else{this.renderer.upsert(name,{...geometry,instances,material:{doubleSided:kind==="jet"||kind==="drone"||kind==="human",alphaMode:"opaque",...(kind==="car"||kind==="bus"?{roughness:.32,metalness:.28}:{})}});this.active.add(name);}
    // Only commit a new collision-target index AFTER the GPU accepted that
    // exact instance order. A failed upload must not make shots hit another car.
    this.instanceIds.set(name,batch.ids);

@@ -3,6 +3,7 @@
 // origin is the grip, so the forward offset also clears the stock past the
 // near plane. Scoped, the rifle is hidden, same as the live scope.
 import {NATIVE_VIEWMODEL_MESHES} from "./native_viewmodel_meshes.mjs";
+import {markLinearColors} from "./native_scene_renderer.mjs";
 
 const ID="viewmodel/weapon";
 const HOLD={
@@ -23,7 +24,7 @@ function bytes(b64){
 }
 function geometry(name){
   const src=NATIVE_VIEWMODEL_MESHES[name]||NATIVE_VIEWMODEL_MESHES.smg;
-  if(!decoded.has(src))decoded.set(src,{positions:bytes(src.positions),normals:bytes(src.normals),colors:bytes(src.colors)});
+  if(!decoded.has(src))decoded.set(src,{positions:bytes(src.positions),normals:bytes(src.normals),colors:markLinearColors(bytes(src.colors))});
   return decoded.get(src);
 }
 function unit(v){const l=Math.hypot(v[0],v[1],v[2])||1;return [v[0]/l,v[1]/l,v[2]/l];}
@@ -38,7 +39,7 @@ export function syncNativeViewmodel(game){
   const key=NATIVE_VIEWMODEL_MESHES[name]?name:"smg";
   if(shown!==key){
     const geo=geometry(key);
-    renderer.upsert(ID,{...geo,material:{color:[1,1,1,1],doubleSided:true,castShadow:false,frustumCulled:false}});
+    renderer.upsert(ID,{...geo,material:{color:[1,1,1,1],doubleSided:true,castShadow:false,frustumCulled:false,roughness:.45,metalness:.2}});
     shown=key;
   }
   const hold=HOLD[key]||HOLD.smg;

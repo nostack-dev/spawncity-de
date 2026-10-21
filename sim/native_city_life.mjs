@@ -224,7 +224,7 @@ export function tickNativeCityLife(game,now=performance.now()){
     if(!data.length){if(drawn[kind]){renderer.remove(id);drawn[kind]=false;}continue;}
     const instances={transforms:new Float32Array(data),tints:new Float32Array(tint)};
     if(drawn[kind])renderer.updateInstances(id,instances);
-    else{renderer.upsert(id,{...geos[kind],instances,material:{doubleSided:true,castShadow:false,paint:true}});drawn[kind]=true;}
+    else{renderer.upsert(id,{...geos[kind],instances,material:{doubleSided:true,castShadow:false,paint:true,roughness:.32,metalness:.28}});drawn[kind]=true;}
   }
 }
 export function blastNativeCity(center,radius,falloff,exposure){
