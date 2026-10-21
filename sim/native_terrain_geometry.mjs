@@ -21,7 +21,7 @@ export function buildNativeTerrainTile({x0,y0,step=5,cells=32,heightAt,albedoAt=
   if(!Number.isFinite(dx)||!Number.isFinite(dy))throw Error("non-finite terrain normal");
   const len=Math.hypot(dx,dy,2*step)||1;
   normals[k]=-dx/len;normals[k+1]=-dy/len;normals[k+2]=2*step/len;
-  const c=albedoAt?albedoAt(x,y,z):[.42,.52,.35];
+  const c=albedoAt?albedoAt(x,y,z):[.369,.478,.243]; // production ground 0x5e7a3e
   if(!c||c.length<3)throw Error("invalid terrain albedo");
   for(let a=0;a<3;a++)colors[k+a]=clamp(Number(c[a])||0,0,1);
   uvs[index*2]=i/cells;uvs[index*2+1]=j/cells;
