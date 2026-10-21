@@ -33,7 +33,7 @@ function add(a,b,s=1){return [a[0]+b[0]*s,a[1]+b[1]*s,a[2]+b[2]*s];}
 export function syncNativeViewmodel(game){
   const renderer=game?.world?.renderer,cam=game?.world?.camera;
   const scoped=Boolean(globalThis.__arondightAds?.scoped)||document.body.classList.contains("scope-active");
-  const onFoot=game?.mode==="foot"&&!globalThis.__arondightPlayerDamageModel?.dead&&cam?.eye&&cam?.target&&!scoped;
+  const onFoot=game?.mode==="foot"&&!globalThis.__arondightPlayerDamageModel?.dead&&cam?.eye&&cam?.target&&!scoped&&!globalThis.__nativeCameraOverrideActive;
   if(!renderer||!onFoot){if(shown){renderer?.remove?.(ID);shown=null;}return;}
   const name=String(globalThis.__arondightFootWeapons?.mode||"smg");
   const key=NATIVE_VIEWMODEL_MESHES[name]?name:"smg";

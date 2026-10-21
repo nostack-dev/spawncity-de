@@ -121,7 +121,8 @@ function addTrail(x,y,force){const last=live.trail[live.trail.length-1];if(!forc
 // camera hook; smoothed exactly like production.
 let camInit=false;const camSmooth=[0,0,0],lookSmooth=[0,0,0];
 function cameraOverride(){
-  if(!(live.active&&live.cam!=="eye"&&live.shown))return null;
+  globalThis.__nativeCameraOverrideActive=Boolean(live.active&&live.cam!=="eye"&&live.shown);
+  if(!globalThis.__nativeCameraOverrideActive)return null;
   const p=live.shown,h=live.heading,fx=Math.sin(h),fy=Math.cos(h),gz=ground(p.x,p.y),fast=clamp(live.speedAvg/12,0,1);
   let pos,look,up,fov;
   if(live.cam==="follow"){const back=9+10*fast,upz=6+6*fast;pos=[p.x-fx*back,p.y-fy*back,gz+upz];look=[p.x+fx*(6+10*fast),p.y+fy*(6+10*fast),gz+1];up=[0,0,1];fov=62;}
