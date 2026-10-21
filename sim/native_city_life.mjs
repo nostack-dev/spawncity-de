@@ -70,18 +70,24 @@ export function installNativeCityLife(game,snapshot){
   };
   return {people:people.length,cars:cars.length,routes:routes.length,lamps:lampCount};
 }
-function pointOn(route,s){
+function pointOn(route,s,lane=0){
   const seg=route.segments.find(g=>s>=g.start&&s<=g.start+g.d)||route.segments.at(-1);
   if(!seg)return null;
   const t=Math.max(0,Math.min(1,(s-seg.start)/seg.d));
-  return {x:seg.a[0]+seg.dx*t,y:seg.a[1]+seg.dy*t,yaw:Math.atan2(seg.dy,seg.dx)};
+  const nx=-seg.dy/seg.d,ny=seg.dx/seg.d;
+  return {x:seg.a[0]+seg.dx*t+nx*lane,y:seg.a[1]+seg.dy*t+ny*lane,yaw:Math.atan2(seg.dy,seg.dx)};
+}
+function laneOf(car){
+  const cls=String(car.route.roadClass||"");
+  const w=/motorway|trunk|primary|secondary/.test(cls)?1.25:/service|living/.test(cls)?.64:.88;
+  return (car.paint&1?1:-1)*w*(car.dir<0?-1:1);
 }
 export function nativePeople(){return people;}
 export function nativeTraffic(){
   const out=[];
   for(const car of cars){
     if(!car.alive)continue;
-    const at=pointOn(car.route,car.s);if(!at)continue;
+    const at=pointOn(car.route,car.s,laneOf(car));if(!at)continue;
     out.push({id:car.id,bus:car.bus,x:at.x,y:at.y,z:.45,yaw:at.yaw,hp:car.hp,maxHp:car.maxHp});
   }
   return out;
@@ -194,7 +200,7 @@ export function tickNativeCityLife(game,now=performance.now()){
     if(!car.alive)continue;
     if(car.criticalAt&&now>=car.criticalAt){
       car.alive=false;car.criticalAt=0;
-      const at=pointOn(car.route,car.s);
+      const at=pointOn(car.route,car.s,laneOf(car));
       if(at){
         const yaw=at.yaw+(car.dir<0?Math.PI:0);
         carBooms.push({id:car.id,x:at.x,y:at.y,z:car.bus?1.2:.45,yaw,velocity:[Math.cos(at.yaw)*car.speed*car.dir,Math.sin(at.yaw)*car.speed*car.dir,0]});
@@ -203,7 +209,7 @@ export function tickNativeCityLife(game,now=performance.now()){
     }
     car.s+=car.dir*car.speed*dt;
     if(car.s<0||car.s>car.route.length)car.dir*=-1;
-    const at=pointOn(car.route,car.s);if(!at)continue;
+    const at=pointOn(car.route,car.s,laneOf(car));if(!at)continue;
     if(car.criticalAt&&now-carSmokeAt>180){carSmokeAt=now;game?.world?.effects?.emit?.({kind:"smoke",position:[at.x,at.y,1.1],velocity:[0,0,.8],lifeMs:700,size:.4});}
     // Original meshes are already in metres. Sedan wheels sit 0.37 m under
     // the origin, bus wheels 1.36 m. Road surface is about 0.11 m.
@@ -233,7 +239,7 @@ export function blastNativeCity(center,radius,falloff,exposure){
   }
   for(const car of cars){
     if(!car.alive)continue;
-    const at=pointOn(car.route,car.s);if(!at)continue;
+    const at=pointOn(car.route,car.s,laneOf(car));if(!at)continue;
     const dist=Math.hypot(at.x-center[0],at.y-center[1],.45-(center[2]||0));
     if(dist>=radius)continue;
     const f=falloff(dist)*(exposure?.(at.x,at.y,.45)??1);
