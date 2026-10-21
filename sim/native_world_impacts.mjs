@@ -221,7 +221,7 @@ export function tickNativeWorldImpacts(now=performance.now()){
   // chips
   const live=[];for(const c of chips){if(c.life<=0)continue;c.life-=dt;if(c.life<=0)continue;c.v[2]-=9.81*dt;for(let k=0;k<3;k++)c.p[k]+=c.v[k]*dt;const g=ground(c.p[0],c.p[1]);
     if(c.p[2]<g+c.size*.5){c.p[2]=g+c.size*.5;c.v=c.v.map(x=>x*.35);c.v[2]=Math.abs(c.v[2])*.3;}c.angle+=c.spin*dt;live.push(c);}
-  if(live.length){const tr=new Float32Array(live.length*16),ti=new Float32Array(live.length*4);live.forEach((c,i)=>{tr.set(axisAngle(c.axis,c.angle,c.size*Math.min(1,c.life*3),c.p),i*16);ti.set([...c.c,1],i*4);});
+  if(live.length){const tr=new Float32Array(live.length*16),ti=new Float32Array(live.length*4);live.forEach((c,i)=>{tr.set(axisAngle(c.axis,c.angle,Math.max(.01,c.size*Math.min(1,c.life*3)),c.p),i*16);ti.set([...c.c,1],i*4);});
     r.upsert("impacts/chips",{...CUBE,instances:{transforms:tr,tints:ti},material:{castShadow:false,roughness:.9}});chipsShown=true;}
   else if(chipsShown){r.remove("impacts/chips");chipsShown=false;}
   if(decalsDirty){decalsDirty=false;const list=decals.filter(Boolean),tr=new Float32Array(list.length*16),ti=new Float32Array(list.length*4);
