@@ -151,7 +151,7 @@ export class NativeWorldPresenter{
     dt,mode:this.flightCameraMode,motors:this.flight.motorOmega,
     ...this.flightCameraSettings
    });
-   if(this.flightCameraActive)this.camera={eye:flightFrame.eye,target:flightFrame.target,up:flightFrame.up,
+   if(this.flightCameraActive&&this.gameplayState?.mode==="drone")this.camera={eye:flightFrame.eye,target:flightFrame.target,up:flightFrame.up,
      fov:flightFrame.fov,near:flightFrame.near,far:flightFrame.far};
   }
   if(this.gameplayState){

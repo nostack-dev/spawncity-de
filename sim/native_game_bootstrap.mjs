@@ -187,7 +187,7 @@ async function launch(){
   }
   for(const node of document.querySelectorAll("[data-mode]")){
    node.addEventListener("click",()=>{
-    try{game.setMode(node.dataset.mode);input.sample();setModePressed(game.mode);}
+    try{game.setMode(node.dataset.mode);input.sample();setModePressed(game.mode);node.blur();}
     catch(error){report(error.message,true);}
    });
   }

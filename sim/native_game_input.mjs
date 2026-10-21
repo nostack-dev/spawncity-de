@@ -111,7 +111,7 @@ export class NativeGameInput{
    // These listeners only cover the modes that module leaves to the vehicle.
    listen(win,"keydown",e=>{
     if(this.closed||e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
-    if(e.target?.closest?.("input,textarea,select,[contenteditable=true],button"))return;
+    if(e.target?.closest?.("input,textarea,select,[contenteditable=true]"))return;
     const mode=runtime.mode;
     const move=new Set(["KeyW","KeyA","KeyS","KeyD","Space","ShiftLeft","ShiftRight","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
     if(move.has(e.code)){this.keys.add(e.code);e.preventDefault?.();return;}
@@ -122,10 +122,17 @@ export class NativeGameInput{
    });
    listen(win,"keyup",e=>this.keys.delete(e.code));
    listen(win,"mousemove",e=>{
-    if(this.closed||runtime.mode!=="drone")return;
-    if(!this.doc.pointerLockElement&&!e.buttons)return;
-    this.mouseStick.x=clamp((this.mouseStick.x||0)+e.movementX/80,-1,1);
-    this.mouseStick.y=clamp((this.mouseStick.y||0)+e.movementY/80,-1,1);
+    if(this.closed)return;
+    const locked=this.doc.pointerLockElement===this.canvas||this.doc.pointerLockElement?.id==="viewport";
+    if(!locked&&!e.buttons)return;
+    const dx=Number(e.movementX)||0,dy=Number(e.movementY)||0;
+    if(runtime.mode==="drone"){
+     this.mouseStick.x=clamp((this.mouseStick.x||0)+dx/80,-1,1);
+     this.mouseStick.y=clamp((this.mouseStick.y||0)+dy/80,-1,1);
+    }else{
+     this.yaw=wrapFpsAngleRad(this.yaw+dx*.0022);
+     this.pitch=clamp(this.pitch-dy*.0018,-FPS_PITCH_LIMIT_RAD,FPS_PITCH_LIMIT_RAD);
+    }
    });
    listen(win,"blur",()=>this.releaseInputs());
    return;
