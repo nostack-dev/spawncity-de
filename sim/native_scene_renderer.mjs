@@ -68,11 +68,28 @@ const FRAG="#version 300 es\n"+[
 "uniform vec4 uPointPosRange[6],uPointColorIntensity[6];",
 "out vec4 outColor;",
 "float fh(float n){return fract(sin(n*127.1)*43758.5453);}",
+"vec3 srgbToLinear(vec3 c){return mix(c/12.92,pow((c+0.055)/1.055,vec3(2.4)),step(0.04045,c));}",
+"vec3 linearToSrgb(vec3 c){return mix(c*12.92,1.055*pow(c,vec3(1.0/2.4))-0.055,step(0.0031308,c));}",
+"// Three r16x ACESFilmicToneMapping (exposure / 0.6, RRT+ODT fit), as production.",
+"vec3 rrtOdt(vec3 v){vec3 a=v*(v+0.0245786)-0.000090537;vec3 b=v*(0.983729*v+0.4329510)+0.238081;return a/b;}",
+"vec3 acesFilmic(vec3 c){",
+" const mat3 inM=mat3(vec3(0.59719,0.07600,0.02840),vec3(0.35458,0.90834,0.13383),vec3(0.04823,0.01566,0.83777));",
+" const mat3 outM=mat3(vec3(1.60475,-0.10208,-0.00327),vec3(-0.53108,1.10813,-0.07276),vec3(-0.07367,-0.00605,1.07602));",
+" c*=uExposure/0.6;c=inM*c;c=rrtOdt(c);c=outM*c;return clamp(c,0.0,1.0);",
+"}",
+"// Production image-based light: the PMREM of the sky gradient dome over the",
+"// 0x5b6450 ground disc (stylized_world_style.mjs buildEnvironment), diffuse.",
+"vec3 envIrradiance(vec3 n){",
+" vec3 zen=vec3(0.05,0.2,0.62),hor=vec3(0.52,0.66,0.86),gnd=vec3(0.105,0.127,0.084);",
+" vec3 sky=mix(hor,zen,0.35);",
+" float w=clamp(n.z*0.5+0.5,0.0,1.0);",
+" return mix(gnd,sky,smoothstep(0.0,1.0,w));",
+"}",
 "void main(){",
 "  vec4 texel=uHasTexture==1?texture(uTexture,vUV):vec4(1.0);",
 "  float alpha=clamp(vOpacity*uMaterial.a*texel.a,0.0,1.0);",
 "  if(alpha<uAlphaCutoff)discard;",
-"  vec3 base=max(vec3(0.0),vColor*uMaterial.rgb*texel.rgb);",
+"  vec3 base=srgbToLinear(max(vec3(0.0),vColor*uMaterial.rgb*texel.rgb));",
 "  vec3 n=normalize(vNormal),sun=normalize(uSunDirection);",
 "  if(uFacade==1&&vFacade.x==0.0&&abs(n.z)<0.6){",
 "    float floorH=3.2;",
@@ -163,7 +180,7 @@ const FRAG="#version 300 es\n"+[
 "   vec3 uvz=clip.xyz/clip.w*0.5+0.5;",
 "   if(uvz.x>0.0&&uvz.x<1.0&&uvz.y>0.0&&uvz.y<1.0&&uvz.z>0.0)",
 "    shadow=texture(uSunShadowMap,vec3(uvz.xy,uvz.z-uSunShadowBias));",
-"   shadow=mix(0.42,1.0,shadow);",
+
 "  }",
 "  vec3 point=vec3(0.0);",
 "  if(uUnlit!=1){",
@@ -177,21 +194,27 @@ const FRAG="#version 300 es\n"+[
 "    point+=uPointColorIntensity[i].rgb*(uPointColorIntensity[i].a*0.12)*attenuation*diffuse;",
 "   }",
 "  }",
-"  vec3 rgb=base*(uUnlit==1?vec3(1.0):hemis+uSunColor*ndl*shadow+point)*uExposure;",
+"  // Production MeshStandardMaterial lighting (Three r16x, physical units):",
+"  // Lambert BRDF albedo/PI for the sun and hemisphere light, plus the sky",
+"  // IBL at environmentIntensity 0.9. Unlit materials keep their colour.",
+"  const float PI=3.141592653589793;",
+"  vec3 rgb=uUnlit==1?base:base*((uSunColor*ndl*shadow+hemis+point*PI)/PI+envIrradiance(n)*0.9);",
 "  // Glass mirrors the sky (production: smooth, partly metallic PBR glass",
 "  // plus a Fresnel sky term), so windows read light, not black.",
 "  if(facGlass>0.0){",
 "    vec3 V=normalize(uEye-vWorld);float fr=pow(1.0-abs(dot(V,n)),3.0);",
-"    vec3 skyRefl=mix(uSkyColor,uFogColor,0.45)*uExposure*1.05;",
-"    rgb=mix(rgb,skyRefl,facGlass*(0.42+0.4*fr));",
+"    vec3 skyRefl=mix(vec3(0.52,0.66,0.86),vec3(0.05,0.2,0.62),clamp(reflect(-V,n).z,0.0,1.0)*0.6)*0.9;",
+"    rgb=mix(rgb,skyRefl,facGlass*(0.45+0.4*fr));",
 "    rgb+=facGlass*mix(vec3(0.05,0.07,0.09),vec3(0.32,0.4,0.5),fr);",
 "  }",
-"  // Production grade: ACES, then a little saturation and contrast.",
-"  rgb=(rgb*(2.51*rgb+0.03))/(rgb*(2.43*rgb+0.59)+0.14);",
+"  // Production grade (stylized_world_style.mjs CustomToneMapping), then sRGB.",
+"  rgb=acesFilmic(rgb);",
 "  float luma=dot(rgb,vec3(0.2126,0.7152,0.0722));",
 "  rgb=mix(vec3(luma),rgb,1.14);",
 "  rgb=mix(rgb,rgb*rgb*(3.0-2.0*rgb),0.22);",
 "  rgb+=vec3(0.016,0.006,-0.014)*smoothstep(0.35,1.0,luma)+vec3(-0.006,0.0,0.012)*(1.0-smoothstep(0.0,0.3,luma));",
+"  rgb=linearToSrgb(clamp(rgb,0.0,1.0));",
+"  // Three applies FogExp2 after the colour-space conversion.",
 "  float fog=1.0-exp(-pow(uFogDensity*length(vWorld-uEye),2.0));",
 "  rgb=mix(rgb,uFogColor,clamp(fog,0.0,1.0));",
 "  outColor=vec4(clamp(rgb,0.0,1.0),alpha);",
@@ -285,10 +308,12 @@ export class NativeSceneRenderer{
   this.fov=Math.PI/3;this.near=.05;this.far=1800;
   this.sunDirection=[-.45,-.52,.72];
   // Production day: sun 0xfff2e0 at 2.8, hemisphere 0xc4dcff / 0x6b5e48 at 0.85.
-  this.sunColor=[2.8,2.657,2.458];
-  this.skyColor=[.654,.734,.85];this.groundColor=[.357,.314,.24];
-  this.fogColor=[.718,.788,.863];
-  this.fogDensity=.00085;this.exposure=1.05;this.stats=null;
+  // Linear light colours x intensity, as Three uploads them: sun 0xfff2e0 x2.8,
+  // hemisphere 0xc4dcff / 0x6b5e48 x0.85, FogExp2 0xb7c9dc at .00085, exposure 1.
+  this.sunColor=[2.8,2.47,2.11];
+  this.skyColor=[.469,.609,.85];this.groundColor=[.125,.094,.054];
+  this.fogColor=[.474,.584,.716];
+  this.fogDensity=.00085;this.exposure=1;this.stats=null;
   this.pointLights={count:0,posRange:new Float32Array(24),colorIntensity:new Float32Array(24)};
   this.shadow=null;this.shadowConfig=shadows&&shadows!==false?{...shadows}:null;
   this.sceneRevision=0;this.shadowRevision=0;this.shadowCache=null;

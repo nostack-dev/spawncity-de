@@ -168,7 +168,10 @@ async function resolveStartOrigin(){
  if(chosen?.coords){
   return {origin:{lon:chosen.coords.longitude,lat:chosen.coords.latitude},label:globalThis.__arondightStartPlace.get()?.name||"chosen place",source:"place"};
  }
- const fix=cachedFix||await requestLocation({reason:"start",force:!cachedFix});
+ // Blocked location never delays START (production starts at once); only an
+ // undecided prompt waits for the player's answer.
+ if(!cachedFix)await readPermission();
+ const fix=cachedFix||(permissionState==="denied"?null:await requestLocation({reason:"start",force:true}));
  if(fix)return {origin:fix,label:"your GPS location",source:"gps"};
  report(permissionState==="denied"?deniedHint():"GPS unavailable · switching to real Konstanz demo");
  return {origin:NATIVE_DEMO_CITY.origin,label:NATIVE_DEMO_CITY.name,source:"demo"};
