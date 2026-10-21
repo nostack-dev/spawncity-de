@@ -67,6 +67,7 @@ import {installNativeZombies,tickNativeZombies} from "./native_zombies.mjs";
 import {installNativeRace,tickNativeRace,setNativeRaceWorld} from "./native_race.mjs";
 import {installNativeTowService,tickNativeTowService} from "./native_tow_service.mjs";
 import {installNativeFlak,tickNativeFlak} from "./native_flak.mjs";
+import {installNativeBuildingInteriors,tickNativeBuildingInteriors} from "./native_building_interiors.mjs";
 import {installWorldMapFull} from "./native_world_map.mjs";
 import "./police_sirens.mjs";
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
@@ -257,6 +258,7 @@ async function loadRealWorld(game){
   const life2=installNativeWorldLife(game,result);
   installNativeThreats();
   installNativePlaces(game,result);
+  try{installNativeBuildingInteriors(game,result);}catch(error){console.warn("interiors",error);}
   // Authoritative Box3D has chosen the real mapped footpath; give the ONE
   // existing desktop/touch/gamepad input owner the same initial heading.
   // Never override a user's own pointer/mouse look after they have turned.
@@ -341,6 +343,7 @@ async function prepareEngine(){
   installNativeRace(game);
   installNativeTowService(game);
   installNativeFlak(game);
+  installNativeBuildingInteriors(game);
   installWorldMapFull(game);
   globalThis.__nativeListener=()=>game.world?.camera?.eye||null;
   globalThis.__nativeCamera=()=>game.world?.camera||null;
@@ -355,7 +358,7 @@ async function prepareEngine(){
   game.beforeFrame=()=>{applyNativeDayNight(game.world?.renderer);return input.sample();};
   const motor=new HybridMotorSound(viewport);
   addEventListener("pointerdown",()=>motor.ensure(),{once:true});
-  game.afterFrame=(frame,now)=>{weapons.tick(now);tickNativeSandbox(now);tickNativeWorldImpacts(now);tickNativeSceneLighting(now);tickNativeAnimals(now);tickNativeFighterJets(now);tickNativeJoggerChain(now);tickNativeMilitary(now);tickNativeZombies(now);tickNativeRace(now);tickNativeTowService(now);tickNativeFlak(now);tickNativeVehicleEntry();tickNativeJetHud();syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
+  game.afterFrame=(frame,now)=>{weapons.tick(now);tickNativeSandbox(now);tickNativeWorldImpacts(now);tickNativeSceneLighting(now);tickNativeAnimals(now);tickNativeFighterJets(now);tickNativeJoggerChain(now);tickNativeMilitary(now);tickNativeZombies(now);tickNativeBuildingInteriors(now);tickNativeRace(now);tickNativeTowService(now);tickNativeFlak(now);tickNativeVehicleEntry();tickNativeJetHud();syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);tickNativeCombat(game);const flight=game.flight;motor.update({motorOmega:flight?.motorOmega||[0,0,0,0],motorTorque:flight?.motorTorque||[0,0,0,0],propTorque:flight?.propTorque||[0,0,0,0],position:()=>flight?.position?.()||[0,0,0],p:flight?.p||{propD:.127}},{x:0,y:0,z:0});updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
    button.addEventListener("click",()=>{
     globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);

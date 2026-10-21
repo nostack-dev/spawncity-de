@@ -73,6 +73,16 @@ const FRAG="#version 300 es\n"+[
 "uniform float uEnvIntensity;",
 "uniform int uPointLightCount;",
 "uniform vec4 uPointPosRange[6],uPointColorIntensity[6];",
+"// Walkable interiors (native_building_interiors.mjs, production CUTOUT_GLSL):",
+"// doorway / roof-hatch openings cut into facade surfaces, and the facade modes",
+"// 1 = interior wall (window panes are openings), 2 = interior glass (panes only).",
+"uniform int uFacadeMode,uCutN;",
+"uniform vec4 uCutA[6],uCutB[6];",
+"bool facadeCutout(vec3 P,bool roofHoles){",
+"  for(int i=0;i<6;i++){if(i>=uCutN)break;vec4 a=uCutA[i],b=uCutB[i];",
+"    if(b.w<0.5){vec2 d=a.zw-a.xy;float L=length(d);vec2 dir=d/max(L,1e-4);vec2 r=P.xy-a.xy;float t=dot(r,dir),s=abs(r.x*dir.y-r.y*dir.x);if(t>0.0&&t<L&&s<b.z&&P.z>b.x&&P.z<b.y)return true;}",
+"    else if(roofHoles){vec2 r=P.xy-a.xy,vd=a.zw,ud=vec2(-vd.y,vd.x);float u=dot(r,ud),v=dot(r,vd);if(u>0.0&&u<b.z&&v>0.0&&v<b.w-1.0&&P.z>b.x&&P.z<b.y)return true;}}",
+"  return false;}",
 "layout(location=0) out vec4 outColor;",
 "// Linear pre-tone-map colour for the production neon bloom (native_bloom_pass).",
 "layout(location=1) out vec4 outHdr;",
@@ -100,6 +110,7 @@ const FRAG="#version 300 es\n"+[
 "  vec4 texel=uHasTexture==1?texture(uTexture,vUV):vec4(1.0);",
 "  float alpha=clamp(vOpacity*uMaterial.a*texel.a,0.0,1.0);",
 "  if(alpha<uAlphaCutoff)discard;",
+"  if(uCutN>0&&vFacade.x!=0.0&&facadeCutout(vWorld,uFacadeMode==0))discard;",
 "  // Palette colours are sRGB hex values; meshes baked from the original Three",
 "  // models already carry Three's linear colours (paint tints stay sRGB).",
 "  vec3 rawBase=max(vec3(0.0),vColor*uMaterial.rgb*texel.rgb);",
@@ -141,7 +152,7 @@ const FRAG="#version 300 es\n"+[
 "  // Production facades (world_city_buildings.mjs FACADE_GLSL): ground-floor",
 "  // shop band with storefront glass and awnings, framed windows with sills,",
 "  // glass curtain walls on towers, pilasters, grime near the ground.",
-"  float facGlass=0.0;",
+"  float facGlass=0.0;vec3 baseIn=base;",
 "  if(vFacade.x>0.0&&abs(n.z)<0.5){",
 "    float sdq=floor(vFacade.z*997.0+0.5)/997.0;",
 "    float u=vUV.x,len=vFacade.x,z=vUV.y,H=vFacade.y,floorH=vFacade.w;",
@@ -180,6 +191,8 @@ const FRAG="#version 300 es\n"+[
 "  }else if(vFacade.x<-0.5&&vFacade.x>-1.5&&n.z>0.5){",
 "    float t=fract(sin(dot(floor(vWorld.xy*0.7),vec2(12.99,78.23)))*43758.5);base*=0.88+0.12*t;",
 "  }",
+"  if(uFacadeMode==1){if(facGlass>0.5)discard;base=baseIn;facGlass=0.0;}",
+"  else if(uFacadeMode==2){if(facGlass<0.5)discard;alpha=0.10+0.45*pow(1.0-abs(dot(normalize(uEye-vWorld),n)),3.0);}",
 "  float ndl=max(dot(n,sun),0.0);",
 "  vec3 hemis=mix(uGroundColor,uSkyColor,clamp(n.z*0.5+0.5,0.0,1.0));",
 "  float shadow=1.0;",
@@ -318,7 +331,7 @@ function program(gl){
  const v=shader(gl.VERTEX_SHADER,VERT),f=shader(gl.FRAGMENT_SHADER,FRAG),p=gl.createProgram();
  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){const e=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw Error("native program: "+e);}
- const uniforms=["uViewProjection","uMaterial","uLinearColor","uPbr","uEnvIntensity","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uTerrain","uPaint","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
+ const uniforms=["uViewProjection","uMaterial","uLinearColor","uPbr","uEnvIntensity","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uTerrain","uPaint","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]","uFacadeMode","uCutN","uCutA[0]","uCutB[0]"];
  return {handle:p,u:Object.fromEntries(uniforms.map(k=>[k,gl.getUniformLocation(p,k)]))};
 }
 export class NativeSceneRenderer{
@@ -339,6 +352,7 @@ export class NativeSceneRenderer{
   this.fogColor=[.474,.584,.716];
   this.fogDensity=.00085;this.exposure=1;this.stats=null;
   this.pointLights={count:0,posRange:new Float32Array(24),colorIntensity:new Float32Array(24)};
+  this.facadeCuts={count:0,a:new Float32Array(24),b:new Float32Array(24)};
   this.shadow=null;this.shadowConfig=shadows&&shadows!==false?{...shadows}:null;
   this.sceneRevision=0;this.shadowRevision=0;this.shadowCache=null;
   this.onLost=e=>{e.preventDefault();this.lost=true;this.bloom?.dispose({contextLost:true});this.shadow?.dispose({contextLost:true});this.sky?.dispose({contextLost:true});this.shadow=null;this.shadowCache=null;};
@@ -395,6 +409,14 @@ export class NativeSceneRenderer{
   this.pointLights.count=frame.count;
   this.pointLights.posRange.set(frame.posRange);
   this.pointLights.colorIntensity.set(frame.colorIntensity);
+ }
+ // Facade openings (doorways, roof hatch) of the walkable building:
+ // [{a:[x0,y0,x1,y1]|[ox,oy,vx,vy],b:[z0,z1,halfWidth|W,0|L+1]}], at most 6.
+ setFacadeCutouts(list=[]){
+  const cuts=this.facadeCuts??={count:0,a:new Float32Array(24),b:new Float32Array(24)};
+  const rows=(Array.isArray(list)?list:[]).filter(c=>c?.a?.length===4&&c?.b?.length===4&&[...c.a,...c.b].every(Number.isFinite)).slice(0,6);
+  cuts.a.fill(0);cuts.b.fill(0);rows.forEach((c,i)=>{cuts.a.set(c.a,i*4);cuts.b.set(c.b,i*4);});
+  cuts.count=rows.length;this.sceneRevision++;return rows.length;
  }
  upsert(id,input){
   if(this.disposed)throw Error("disposed");
@@ -573,6 +595,7 @@ export class NativeSceneRenderer{
   gl.uniform1i(u.uPointLightCount,this.pointLights.count);
   gl.uniform4fv(u["uPointPosRange[0]"],this.pointLights.posRange);
   gl.uniform4fv(u["uPointColorIntensity[0]"],this.pointLights.colorIntensity);
+  {const cuts=this.facadeCuts;gl.uniform1i(u.uCutN,cuts?.count||0);if(cuts?.count){gl.uniform4fv(u["uCutA[0]"],cuts.a);gl.uniform4fv(u["uCutB[0]"],cuts.b);}}
   gl.uniform1i(u.uSunShadowEnabled,this.shadow?1:0);gl.uniform1i(u.uSunShadowMap,1);
   if(this.shadow){
    gl.uniformMatrix4fv(u.uSunShadowProjection,false,this.shadow.matrix);
@@ -598,7 +621,7 @@ export class NativeSceneRenderer{
    const d=m.data,mat=m.material;
    gl.uniform4fv(u.uMaterial,new Float32Array(mat.color));
    gl.uniform1f(u.uAlphaCutoff,mat.alphaMode==="mask"?(mat.alphaCutoff??.5):0);
-   gl.uniform1i(u.uUnlit,mat.unlit?1:0);gl.uniform1i(u.uFacade,mat.facade?1:0);
+   gl.uniform1i(u.uUnlit,mat.unlit?1:0);gl.uniform1i(u.uFacade,mat.facade?1:0);gl.uniform1i(u.uFacadeMode,mat.facadeMode|0);
    gl.uniform1i(u.uLinearColor,m.data.linearColors||mat.linearColors?1:0);
    gl.uniform2f(u.uPbr,Number.isFinite(mat.roughness)?mat.roughness:1,Number.isFinite(mat.metalness)?mat.metalness:0);
    gl.uniform1i(u.uTerrain,mat.terrain?1:0);gl.uniform1i(u.uPaint,mat.paint?1:0);gl.uniform1i(u.uHasTexture,m.texture?1:0);
