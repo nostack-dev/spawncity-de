@@ -153,7 +153,7 @@ async function launch(){
   const canvas=document.createElement("canvas");
   canvas.id="nativeCanvas";canvas.setAttribute("aria-label","SpawnCity WebGL2 game");
   canvas.tabIndex=0;viewport.append(canvas);canvas.focus();
-  canvas.addEventListener("pointerdown",()=>{canvas.focus();if(document.pointerLockElement!==viewport)viewport.requestPointerLock?.();});
+  canvas.addEventListener("pointerdown",()=>{canvas.focus();globalThis.__arondightHadLockUntil=performance.now()+1500;if(document.pointerLockElement!==viewport)viewport.requestPointerLock?.();});
   report("Initializing one native GPU and original Flight Core…");
   game=new NativeGameRuntime(canvas,{
    b3,flightCoreFactory:FlightCoreFactory,

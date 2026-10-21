@@ -257,7 +257,7 @@ export function installDesktopControls(){
   // ESC (the browser's own mouse release) opens the pause menu, like any shooter: no
   // "press ESC, then hunt for a button" dance. Closing the menu with a click captures the
   // mouse again right away.
-  document.addEventListener("pointerlockchange",()=>{if(!locked()){lmb=false;rmb=false;droneFire(false);endLook();keys.clear();if(desktop&&inGame()&&!playerDown()&&!wantMenu&&!quietUnlock())setTimeout(()=>{if(!locked()&&inGame()&&!playerDown()&&!quietUnlock())globalThis.__arondightQuitConfirm?.open?.();},0); /* Esc releases the mouse: ask "back to the main menu?" (Tab / M open the menu) */}wantMenu=false;syncOverlay();});
+  document.addEventListener("pointerlockchange",()=>{if(!locked()){lmb=false;rmb=false;droneFire(false);endLook();if(desktop&&inGame()&&document.pointerLockElement==null&&!playerDown()&&!wantMenu&&!quietUnlock()&&performance.now()>(Number(globalThis.__arondightHadLockUntil)||0))setTimeout(()=>{if(!locked()&&inGame()&&!playerDown()&&!quietUnlock())globalThis.__arondightQuitConfirm?.open?.();},0);}wantMenu=false;syncOverlay();});
   document.addEventListener("click",e=>{if(desktop&&e.target?.closest?.("#gameMenuStart"))requestLock();},true);
   document.addEventListener("close",e=>{if(desktop&&e.target?.matches?.("dialog.phone-settings-dialog")&&inGame())requestLock();},true);
   window.addEventListener("blur",releaseAll);

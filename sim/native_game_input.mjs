@@ -111,19 +111,22 @@ export class NativeGameInput{
    // These listeners only cover the modes that module leaves to the vehicle.
    listen(win,"keydown",e=>{
     if(this.closed||e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
-    if(e.target?.closest?.("input,textarea,select,[contenteditable=true]"))return;
+    if(e.target?.closest?.("input,textarea,select,[contenteditable=true],button"))return;
     const mode=runtime.mode;
     const move=new Set(["KeyW","KeyA","KeyS","KeyD","Space","ShiftLeft","ShiftRight","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"]);
-    if(move.has(e.code)){this.keys.add(e.code);if(mode!=="drone")e.preventDefault?.();return;}
-    if(mode==="drone")return;
-    if(e.code==="KeyV"&&mode==="foot"){try{runtime.setMode("drone");}catch{}e.preventDefault?.();return;}
-    if(e.code==="KeyF"||e.code==="KeyE"){
-     try{runtime.setMode(mode==="foot"?"car":"foot");}catch{}
-     e.preventDefault?.();return;
-    }
+    if(move.has(e.code)){this.keys.add(e.code);e.preventDefault?.();return;}
+    if(e.code==="KeyV"){try{runtime.setMode(mode==="foot"?"drone":"foot");}catch{}e.preventDefault?.();return;}
+    if(e.code==="KeyF"){try{runtime.setMode(mode==="car"?"foot":"car");}catch{}e.preventDefault?.();return;}
+    if(e.code==="KeyJ"){try{runtime.setMode(mode==="jet"?"drone":"jet");}catch{}e.preventDefault?.();return;}
     if(e.code==="KeyC"){this.cycleCamera();e.preventDefault?.();}
    });
    listen(win,"keyup",e=>this.keys.delete(e.code));
+   listen(win,"mousemove",e=>{
+    if(this.closed||runtime.mode!=="drone")return;
+    if(!this.doc.pointerLockElement&&!e.buttons)return;
+    this.mouseStick.x=clamp((this.mouseStick.x||0)+e.movementX/80,-1,1);
+    this.mouseStick.y=clamp((this.mouseStick.y||0)+e.movementY/80,-1,1);
+   });
    listen(win,"blur",()=>this.releaseInputs());
    return;
   }
@@ -251,9 +254,12 @@ export class NativeGameInput{
     this.prevArm=Boolean(pad.arm);this.prevCam=Boolean(pad.camera);
     base.arm=this.arm;
    }else if(d?.active){
-    applyGameStick(base,"left",d.left);
-    applyGameStick(base,"right",d.right);
-    this.steerHeight(Number(d.heightAxis)||0);
+    const left={x:(d.left?.x||0)+(held("KeyD")?1:0)-(held("KeyA")?1:0),y:(d.left?.y||0)+(held("KeyS")?1:0)-(held("KeyW")?1:0)};
+    const right={x:(d.right?.x||0)+(this.mouseStick.x||0)+(held("ArrowRight")?1:0)-(held("ArrowLeft")?1:0),y:(d.right?.y||0)+(this.mouseStick.y||0)+(held("ArrowDown")?1:0)-(held("ArrowUp")?1:0)};
+    applyGameStick(base,"left",left);
+    applyGameStick(base,"right",right);
+    this.mouseStick.x*=.8;this.mouseStick.y*=.8;
+    this.steerHeight((Number(d.heightAxis)||0)+(held("Space")?1:0)-(held("ShiftLeft")||held("ShiftRight")?1:0));
     base.groundClearance=this.clearance;
     if(d.arm&&!this.prevArm)this.arm=!this.arm;
     if(d.camera&&!this.prevCam)this.cycleCamera();
