@@ -93,10 +93,8 @@ async function loadRealWorld(game,{source="demo"}={}){
  const epoch=++osmEpoch;
  activeOsm?.abort();
  const controller=new AbortController();activeOsm=controller;
- // A non-GPS visitor must get a REAL, playable city, not a flat empty
- // render that can still pass a GPU draw-count-only smoke test.
- // The predefined demo is explicitly labelled; it NEVER claims to be near
- // the player. Geolocation is requested ONLY if "gps" was chosen on Start.
+ // Production starts at the player's GPS position. Konstanz is only the
+ // labelled fallback when GPS is denied or the player picks the demo.
  let origin=NATIVE_DEMO_CITY.origin;
  let label=NATIVE_DEMO_CITY.name;
  if(source==="gps"){
@@ -304,7 +302,7 @@ async function startGame(){
  starting=true;
  holdMenus(8000);
  startButton.disabled=true;startButton.textContent="LOADING";
- const worldSource=$("worldSource")?.value==="gps"?"gps":"demo";
+ const worldSource=$("worldSource")?.value==="demo"?"demo":"gps";
  try{
   if(!session.worldLoaded||worldSource!==session.worldSource){
    setMenuStatus(worldSource==="gps"?"LOCATING":"BUILDING CITY");
