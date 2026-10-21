@@ -14,7 +14,7 @@ const SPAWN_MIN=170,SPAWN_MAX=320,HOOK_M=7.5,TOW_SPEED=9,DRIVE_SPEED=14;
 const EARTH=6378137;
 const toMeters=(lon0,lat0,lon,lat)=>[(lon-lon0)*Math.PI/180*EARTH*Math.max(.01,Math.cos(lat0*Math.PI/180)),(lat-lat0)*Math.PI/180*EARTH];
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
-let doors=[],race=null,truck=null,inside=null,drawn={};
+let doors=[],race=null,truck=null,inside=null,drawn={},activeGame=null,placesKeys=false;
 const DOOR_W=1.8,DOORS_R=95,RACE_LAPS=3;
 function player(){const p=globalThis.__arondightWalkMode?.position;return p?[p.x,p.y]:[0,0];}
 function paint(renderer,id,geo,data){
@@ -31,7 +31,8 @@ function doorMesh(){
 }
 const DOOR=doorMesh();
 export function installNativePlaces(game,snapshot){
-  const origin=snapshot?.origin;if(!origin)return;
+  const origin=snapshot?.origin;if(!origin||!game)return;
+  activeGame=game;
   doors=[];
   for(const b of snapshot.buildings||[]){
     const ring=b.geometry?.coordinates?.[0];if(!ring||ring.length<4)continue;
@@ -54,18 +55,26 @@ export function installNativePlaces(game,snapshot){
   globalThis.__buildingInteriors={version:"walkable-buildings-v1",doors:()=>doors,PLANKS:6};
   globalThis.__arondightRace={version:"native-race-v1",laps:RACE_LAPS,get lap(){return race?.lap||0;}};
   globalThis.__towService={version:"tow-truck-dispatch-v1",dispatch(){return spawnTruck();}};
-  addEventListener("keydown",e=>{
-    if(e.code==="KeyR"&&race&&!race.started){race.started=true;race.lap=0;race.armed=true;return;}
-    const p=player();
-    if(inside){game.rigids.setPose("player-foot",{position:[inside.x,inside.y,1]});inside=null;return;}
-    const door=doors.find(d=>Math.hypot(d.x-p[0],d.y-p[1])<2.4);
-    if(!door)return;
-    inside={x:p[0],y:p[1]};
-    door.floor=Math.min((door.floor||0)+1,door.levels.length-1);
-    const z=door.levels[door.floor];
-    game.rigids.setPose("player-foot",{position:[door.in[0],door.in[1],z]});
-  });
+  if(!placesKeys){placesKeys=true;addEventListener("keydown",onPlaceKey);}
   return {doors:doors.length,race:Boolean(race)};
+}
+function onPlaceKey(e){
+  const game=activeGame;if(!game||e.repeat||e.metaKey||e.ctrlKey||e.altKey)return;
+  if(e.target?.closest?.("input,textarea,select,[contenteditable=true]"))return;
+  const menu=document.getElementById("gameMenu");
+  if((menu&&!menu.hidden)||document.querySelector("dialog[open],#quitConfirmDialog,#worldOptionsPanel:not([hidden]),#changelogPanel:not([hidden])"))return;
+  if(e.code==="KeyR"&&game.mode==="car"&&race&&!race.started){race.started=true;race.lap=0;race.armed=true;return;}
+  // Production interact is E. Every other key is flight, look or a weapon — never a door.
+  if(e.code!=="KeyE")return;
+  const p=player();
+  if(inside){game.rigids.setPose("player-foot",{position:[inside.x,inside.y,1]});inside=null;e.preventDefault();return;}
+  const door=doors.find(d=>Math.hypot(d.x-p[0],d.y-p[1])<2.4);
+  if(!door)return;
+  inside={x:p[0],y:p[1]};
+  door.floor=Math.min((door.floor||0)+1,door.levels.length-1);
+  const z=door.levels[door.floor];
+  game.rigids.setPose("player-foot",{position:[door.in[0],door.in[1],z]});
+  e.preventDefault();
 }
 function spawnTruck(){
   if(truck)return true;

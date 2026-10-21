@@ -8,7 +8,6 @@ import {installNativeWeapons} from "./native_weapons.mjs";
 import {syncNativeViewmodel} from "./native_viewmodels.mjs";
 import {installNativeVitals} from "./native_vitals.mjs";
 import {installNativeWanted} from "./native_wanted.mjs";
-import {openQuitConfirm} from "./quit_confirm.mjs";
 import "./neon_ui_theme.mjs";
 import "./mobile_gameplay_ui.mjs";
 import "./immersive_soundscape.mjs";
@@ -49,13 +48,13 @@ try{
   mountAudioSettings({dialog:settings.dialog});
 }catch(error){console.warn("settings",error);}
 if(!viewport||!startButton||!menu||!status)throw Error("SpawnCity native boot requires its real fullscreen UI");
-let session=null,launching=false,reported=0,lastStatus="";
+let session=null,launching=false,prepared=false,starting=false,booting=true,reported=0,lastStatus="";
 let activeOsm=null,osmEpoch=0;
 function report(message,error=false){
  const text=String(message);
  if(text===lastStatus&&!error)return;
  lastStatus=text;status.textContent=text;status.style.color=error?"#ffaaa7":"#a3ffbe";
- if(!menu.hidden)menuStatus.textContent=text;
+ if(!menu.hidden&&!starting&&!booting)menuStatus.textContent=text;
 }
 function setModePressed(mode){
  for(const node of document.querySelectorAll("[data-mode]"))
@@ -101,7 +100,7 @@ async function loadRealWorld(game,{source="demo"}={}){
  if(source==="gps"){
   const fix=await preciseGeoLocation();
   if(!fix){
-   if(game.closed)return;
+   if(game.closed)return false;
    report("GPS denied · switching to real Konstanz demo");
   }else{
    origin=fix;label="your GPS location";
@@ -117,7 +116,7 @@ async function loadRealWorld(game,{source="demo"}={}){
   });
   if(game.closed||epoch!==osmEpoch)return;
   const shown=await game.updateOsmFeatures(result);
-  if(shown?.cancelled||epoch!==osmEpoch)return;
+  if(shown?.cancelled||epoch!==osmEpoch)return false;
   const life=installNativeCityLife(game,result);
   installNativeHudMap(game,result);
   setNativeHudSources({people:nativePeople,cops:nativeCops});
@@ -137,6 +136,7 @@ async function loadRealWorld(game,{source="demo"}={}){
   report(label+" · "+result.buildings.length+" real OSM buildings · "+
     result.roads.length+" roads · "+shown.collision.prismCount+" Box3D colliders · "+
     (life?.people||0)+" people · "+(life?.cars||0)+" cars · "+(life?.lamps||0)+" lamps");
+  return true;
  }catch(error){
   if(!game.closed&&epoch===osmEpoch&&!controller.signal.aborted){
    // A failed external OSM service must be visible and retryable. Never
@@ -144,19 +144,48 @@ async function loadRealWorld(game,{source="demo"}={}){
    console.warn("Native OpenStreetMap unavailable",error);
    report("OSM connection failed · tap CITY to retry real map",true);
   }
+  return false;
  }finally{if(epoch===osmEpoch)activeOsm=null;}
 }
-async function launch(){
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function startupMode(){try{const mode=new URLSearchParams(location.search).get("start");return mode==="drone"?"drone":"foot";}catch{return"foot";}}
+function holdMenus(ms=8000){const until=performance.now()+ms;globalThis.__arondightQuietUnlockUntil=until;globalThis.__arondightHadLockUntil=until;}
+function menuCover(on){viewport?.toggleAttribute("inert",Boolean(on));document.getElementById("toolbar")?.toggleAttribute("inert",Boolean(on));}
+function setMenuStatus(text){if(menuStatus)menuStatus.textContent=text;}
+function applyStartupPlayerMode(game){
+ const mode=startupMode();
+ try{game.setMode(mode);}catch(error){report(error.message,true);}
+ if(mode==="foot")globalThis.__arondightFootWeapons?.setMode?.("glock");
+ game.world?.setFlightCameraMode?.("fpv");
+ const camera=$("cameraButton");if(camera)camera.textContent="FPV";
+ setModePressed(game.mode);
+ if(viewport){viewport.dataset.autoFlightStart=mode==="foot"?"foot":"fpv";viewport.dataset.autoStartupPlayerMode=String(game.mode||mode);viewport.dataset.autoStartupFootWeapon="glock";viewport.dataset.autoStartupContract="foot-pistol-fresh-v1";}
+}
+function showMenu(){
+ starting=false;
+ holdMenus(2000);
+ try{document.exitPointerLock?.();}catch{}
+ const worldPanel=document.getElementById("worldOptionsPanel"),log=document.getElementById("changelogPanel");
+ if(worldPanel)worldPanel.hidden=true;if(log)log.hidden=true;
+ try{if(settings?.dialog?.open)settings.dialog.close();}catch{}
+ document.body.classList.remove("solo-flight");
+ if(menu){menu.classList.remove("gm-leaving");menu.hidden=false;}
+ menuCover(true);
+ if(startButton){startButton.disabled=!prepared;startButton.textContent=prepared?"START":"LOADING";}
+ setMenuStatus(prepared?"READY":"PREPARING");
+}
+async function prepareEngine(){
  if(launching||session)return;
- launching=true;startButton.disabled=true;startButton.textContent="STARTING";
+ launching=true;startButton.disabled=true;startButton.textContent="LOADING";setMenuStatus("PREPARING");
+ menuCover(true);
  let game=null,input=null;
  try{
   report("Initializing original Erin Catto Box3D WebAssembly…");
   const b3=await Box3DFactory();
   const canvas=document.createElement("canvas");
   canvas.id="nativeCanvas";canvas.setAttribute("aria-label","SpawnCity WebGL2 game");
-  canvas.tabIndex=0;viewport.append(canvas);canvas.focus();
-  canvas.addEventListener("pointerdown",()=>{canvas.focus();globalThis.__arondightHadLockUntil=performance.now()+1500;if(document.pointerLockElement!==viewport)viewport.requestPointerLock?.();});
+  canvas.tabIndex=-1;viewport.append(canvas);
+  canvas.addEventListener("pointerdown",()=>{if(menu&&!menu.hidden)return;canvas.focus();globalThis.__arondightHadLockUntil=performance.now()+1500;if(document.pointerLockElement!==viewport)viewport.requestPointerLock?.();});
   report("Initializing one native GPU and original Flight Core…");
   game=new NativeGameRuntime(canvas,{
    b3,flightCoreFactory:FlightCoreFactory,
@@ -166,14 +195,9 @@ async function launch(){
   installNativeSession(game);
   installNativeCombat();
   try{installNativeModeOverlay();}catch(error){console.warn("overlay",error);}
-  const actions=document.getElementById("soloTopbarActions");
-  if(actions){
-    const open=document.createElement("button");
-    open.type="button";open.textContent="SETTINGS";
-    open.addEventListener("click",()=>settings?.dialog?.showModal());
-    actions.appendChild(open);
-  }
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});
+  for(const button of document.querySelectorAll("#mobileGameplayDock button,#mobileGameplayMode,#mobileGameplayReset,#mobileGameplayMultiplayer,#gameExitButton,#toolbar button"))
+   button.tabIndex=-1;
   const vitals=installNativeVitals(game);
   const wanted=installNativeWanted(game);
   game.beforeFrame=()=>input.sample();
@@ -208,17 +232,16 @@ async function launch(){
    $("cameraButton").textContent=next==="follow"?"FOLLOW":next==="fpv"?"FPV":"THIRD";
    report("Camera "+next.toUpperCase());
   });
-  $("soloExit")?.addEventListener("click",event=>{
-   if(event.isTrusted){openQuitConfirm();return;}
-   location.reload();
-  });
+  let exit=$("soloExit");
+  if(!exit){exit=document.createElement("button");exit.id="soloExit";exit.type="button";exit.hidden=true;document.body.appendChild(exit);}
+  exit.addEventListener("click",()=>showMenu());
   $("soloReset")?.addEventListener("click",()=>{
    globalThis.__arondightPlayerDamageModel?.reset?.();
    globalThis.__arondightDroneDamageModel?.reset?.();
    wanted.clear("reset");
+   applyStartupPlayerMode(game);
    report("Reset");
   });
-  addEventListener("keydown",event=>{if(event.code==="Escape"&&!event.repeat)openQuitConfirm();});
   $("fullscreenButton")?.addEventListener("click",async()=>{
    try{
     if(document.fullscreenElement)await document.exitFullscreen();
@@ -226,11 +249,9 @@ async function launch(){
    }catch(error){report("Fullscreen not permitted on this browser");}
   });
   await game.start();
-  const worldSource=$("worldSource")?.value==="gps"?"gps":"demo";
-  session={game,input,canvas,worldSource,weapons};
-  // Chromium-only diagnostic snapshot for *rendered* scene validation.
-  // Nothing is exposed to users; test observations come from actual
-  // Box3D actors and WebGL2 draw state, never from fabricated fixtures.
+  session={game,input,canvas,worldSource:"demo",worldLoaded:false,weapons};
+  globalThis.__arondightApplyStartMode=()=>applyStartupPlayerMode(game);
+  applyStartupPlayerMode(game);
   if(navigator.webdriver)window.__spawncityNativeProbe=()=>{
    const world=game.world,camera=world.camera;
    const car=game.rigids.pose("player-car");
@@ -259,34 +280,80 @@ async function launch(){
     backlogMs:game.backlogMs,rigidSteps:game.rigidSteps
    };
   };
-  menu.hidden=true;
-  globalThis.__arondightQuietUnlockUntil=performance.now()+4000;
-  document.body.classList.add("solo-flight");
-  document.documentElement.dataset.engine="native-webgl2";
-  viewport.dataset.renderer="native-webgl2-only";
-  setModePressed("drone");
+  prepared=true;booting=false;
   $("armButton")?.setAttribute("aria-pressed","true");
   report("Native WebGL2 · real 1 kHz Flight Core running");
-  void loadRealWorld(game,{source:worldSource});
+  startButton.disabled=false;startButton.textContent="START";setMenuStatus("READY");
  }catch(error){
   console.error("native bootstrap",error);
   input?.dispose();await game?.dispose?.().catch(()=>{});
   viewport.querySelector("#nativeCanvas")?.remove();
+  session=null;prepared=false;booting=false;
   report("Start failed: "+(error?.message||error),true);
   startButton.textContent="RETRY";startButton.disabled=false;
+  startButton.onclick=()=>location.reload();
  }finally{launching=false;}
 }
-startButton.disabled=false;
+async function startGame(){
+ if(starting||launching)return;
+ if(!prepared||!session)return;
+ if(document.body.classList.contains("solo-flight")&&menu?.hidden)return;
+ starting=true;
+ holdMenus(8000);
+ startButton.disabled=true;startButton.textContent="LOADING";
+ const worldSource=$("worldSource")?.value==="gps"?"gps":"demo";
+ try{
+  if(!session.worldLoaded||worldSource!==session.worldSource){
+   setMenuStatus(worldSource==="gps"?"LOCATING":"BUILDING CITY");
+   const loaded=await loadRealWorld(session.game,{source:worldSource});
+   if(loaded){session.worldLoaded=true;session.worldSource=worldSource;}
+  }
+  setMenuStatus("PREPARING");
+  applyStartupPlayerMode(session.game);
+  session.input?.sample?.();
+  if(menu&&!menu.hidden){menu.classList.add("gm-leaving");await wait(350);}
+  if(menu){menu.hidden=true;menu.classList.remove("gm-leaving");}
+  menuCover(false);
+  document.body.classList.add("solo-flight");
+  document.documentElement.dataset.engine="native-webgl2";
+  viewport.dataset.renderer="native-webgl2-only";
+  session.canvas?.focus?.();
+  startButton.disabled=false;startButton.textContent="START";
+ }catch(error){
+  console.warn("game startup preparation continued after non-fatal failure",error);
+  setMenuStatus("STARTING");
+  if(menu){menu.hidden=true;menu.classList.remove("gm-leaving");}
+  menuCover(false);
+  document.body.classList.add("solo-flight");
+  document.documentElement.dataset.engine="native-webgl2";
+  startButton.disabled=false;startButton.textContent="START";
+ }finally{starting=false;}
+}
 const sound=$("soundSwitch"),music=$("musicSwitch");
 const paintAudio=()=>{const s=loadAudioSettings();if(sound)sound.dataset.on=s.soundEnabled?"1":"0";if(music)music.dataset.on=s.musicEnabled?"1":"0";};
 paintAudio();
 sound?.addEventListener("click",()=>{const s=loadAudioSettings();saveAudioSettings({...s,soundEnabled:!s.soundEnabled});paintAudio();});
 music?.addEventListener("click",()=>{const s=loadAudioSettings();saveAudioSettings({...s,musicEnabled:!s.musicEnabled});paintAudio();});
-startButton.addEventListener("click",launch);
-startButton.addEventListener("pointerdown",event=>{if(event.button===0)launch();});
+startButton.addEventListener("click",()=>{if(startButton.textContent==="RETRY"){location.reload();return;}void startGame();});
 addEventListener("keydown",event=>{
-  if(!menu.hidden&&(event.code==="Enter"||event.code==="Space")&&event.target===document.body)launch();
-});
+  if(event.metaKey||event.ctrlKey||event.altKey)return;
+  const target=event.target;
+  const typing=target instanceof Element&&target.closest("input,textarea,select,[contenteditable=true]");
+  if(typing)return;
+  const modal=document.querySelector("dialog[open],#quitConfirmDialog");
+  if(modal&&target instanceof Node&&modal.contains(target))return;
+  const title=menu&&!menu.hidden;
+  if(title){
+   const panel=document.querySelector("#worldOptionsPanel:not([hidden]),#changelogPanel:not([hidden])");
+   if(panel)return;
+   if(target instanceof Element&&target.closest("#toolbar,#mobileGameplayDock,#gameExitButton,#viewport")){event.preventDefault();return;}
+   if(!event.repeat&&(event.code==="Enter"||event.code==="Space")&&(target===document.body||target===startButton)&&prepared&&!starting){event.preventDefault();void startGame();}
+   return;
+  }
+  if(target instanceof Element&&target.closest("button,a,[role=button],#toolbar,#mobileGameplayDock,#gameExitButton")){
+   if(event.code!=="Escape"&&event.code!=="Tab"){event.preventDefault();target.blur?.();session?.canvas?.focus?.();}
+  }
+},true);
 document.addEventListener("visibilitychange",()=>{
  const game=session?.game;if(!game)return;
  if(document.hidden){game.stop();session.input.releaseInputs();}
@@ -297,3 +364,5 @@ window.addEventListener("pagehide",()=>{
  if(!session)return;
  const {game,input,weapons}=session;session=null;weapons?.dispose();input.dispose();void game.dispose();
 });
+menuCover(true);
+void prepareEngine();

@@ -14,8 +14,9 @@ font:600 12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;text-shadow:0 
 #hud strong{font-size:13px;font-weight:800;letter-spacing:.08em}#hud span{font-size:10px;letter-spacing:.14em;color:#9fb4c6}
 #telemetry{margin-top:2px;color:#d5e2ee99;font-size:10px;max-width:42vw}
 #status{margin-top:2px;color:#d7ffe6;max-width:46vw;font-size:12px}
-#gameMenu{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:#010806ee}
-#gameMenu[hidden]{display:none}
+#gameMenu{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:#0b0d10;color:#eef0f2;overflow:hidden;transition:opacity .35s ease}
+#gameMenu[hidden]{display:none!important}
+#gameMenu.gm-leaving{opacity:0;pointer-events:none}
 .gm-center{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
 .gm-title{display:flex;gap:10px;justify-content:center;font:900 italic 56px/1 Inter,system-ui,sans-serif;letter-spacing:.04em;color:#f4f7f8}
 .gm-title span:last-child{color:#ffb02e}
@@ -58,17 +59,17 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
 <div id="cross" aria-hidden="true"></div>
 <div id="hud" aria-live="polite"><strong>SPAWNCITY</strong> <span>WEBGL2</span><div id="telemetry">READY</div><div id="status">Real Box3D · 1 kHz Flight Core</div></div>
 <div id="sticks" aria-hidden="true"><div class="joystick" id="stickLeft">MOVE</div><div class="joystick" id="stickRight">LOOK</div></div>
-<div id="help">WASD fly · MOUSE look · click to capture · V foot · F car · J jet · LMB fire</div>
+<div id="help">WASD move · mouse look · LMB fire · V drone · F car · E door · Tab menu · Esc quit</div>
 <div id="toolbar" role="toolbar" aria-label="Game mode and camera">
 <div id="weaponBar" role="group" aria-label="Weapon">
-<button type="button" data-drone-weapon="gun">GUN</button>
-<button type="button" data-drone-weapon="missile">ROCKETS</button>
-<button type="button" data-drone-weapon="guided">GUIDED</button>
+<button type="button" tabindex="-1" data-drone-weapon="gun">GUN</button>
+<button type="button" tabindex="-1" data-drone-weapon="missile">ROCKETS</button>
+<button type="button" tabindex="-1" data-drone-weapon="guided">GUIDED</button>
 </div>
-<button data-mode="drone" aria-pressed="true">DRONE</button><button data-mode="foot" aria-pressed="false">FOOT</button>
-<button data-mode="car" aria-pressed="false">CAR</button><button data-mode="jet" aria-pressed="false">JET</button>
-<button id="armButton" aria-pressed="false">ARM</button><button id="cameraButton">CAMERA</button><button id="cityButton" title="Reload real OpenStreetMap city">CITY</button>
-<button id="fullscreenButton" title="Fullscreen">⛶</button>
+<button type="button" tabindex="-1" data-mode="drone" aria-pressed="true">DRONE</button><button type="button" tabindex="-1" data-mode="foot" aria-pressed="false">FOOT</button>
+<button type="button" tabindex="-1" data-mode="car" aria-pressed="false">CAR</button><button type="button" tabindex="-1" data-mode="jet" aria-pressed="false">JET</button>
+<button type="button" tabindex="-1" id="armButton" aria-pressed="false">ARM</button><button type="button" tabindex="-1" id="cameraButton">CAMERA</button><button type="button" tabindex="-1" id="cityButton" title="Reload real OpenStreetMap city">CITY</button>
+<button type="button" tabindex="-1" id="fullscreenButton" title="Fullscreen">⛶</button>
 </div>
 <a id="osmAttribution" href="https://www.openstreetmap.org/copyright"
  target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
@@ -77,8 +78,8 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
 <div class="gm-center" id="welcome">
 <div class="gm-title" aria-label="SpawnCity"><span>SPAWN</span><span>CITY</span></div>
 <div class="gm-sub">DRONE · CARS · ZOMBIES</div>
-<button id="gameMenuStart" type="button">START</button>
-<div id="gameMenuStatus" role="status">READY</div>
+<button id="gameMenuStart" type="button" disabled>LOADING</button>
+<div id="gameMenuStatus" role="status">PREPARING</div>
 <select id="worldSource" aria-label="Choose the source of real OpenStreetMap buildings">
 <option value="demo">Real OSM demo: Konstanz · no GPS</option>
 <option value="gps">My location · request GPS permission</option>
