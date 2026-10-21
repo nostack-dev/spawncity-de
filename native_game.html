@@ -35,7 +35,8 @@ font:600 12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;text-shadow:0 
 display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;padding:8px 12px;border-radius:18px;background:#071523c9;
 border:1px solid #9dc4ef37;z-index:5;max-width:calc(100vw - 16px);backdrop-filter:blur(12px)}
 #toolbar button{background:#153148;border:1px solid #345775;border-radius:10px;padding:10px 13px;font-size:12px;font-weight:800;min-width:38px}
-#toolbar button[aria-pressed=true]{background:#ffb42d;color:#162136;border-color:#ffb42d}
+/* Production chrome is the solo top bar. The native debug bar stays out of the live view. */
+body.solo-flight #toolbar,body.solo-flight #help,body.solo-flight #hud{display:none!important}
 #armButton{background:#6d2929!important}#armButton[aria-pressed=true]{background:#f5bd29!important}
 #sticks{display:none;position:fixed;inset:0;pointer-events:none;z-index:2}
 .joystick{position:absolute;bottom:18%;border:2px dashed #daeafd50;border-radius:50%;width:84px;height:84px;
