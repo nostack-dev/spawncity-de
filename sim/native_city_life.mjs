@@ -55,6 +55,7 @@ function pointOn(route,s){
   const t=Math.max(0,Math.min(1,(s-seg.start)/seg.d));
   return {x:seg.a[0]+seg.dx*t,y:seg.a[1]+seg.dy*t,yaw:Math.atan2(seg.dy,seg.dx)};
 }
+export function nativePeople(){return people;}
 export function hitNativePeople(origin,dir,range){
   if(!people.length)return null;
   let best=null,bestT=range;

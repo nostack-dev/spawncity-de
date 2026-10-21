@@ -23,6 +23,9 @@ import {mountPlayerControlSettings} from "./control_settings.mjs";
 import {mountAudioSettings} from "./audio_settings.mjs";
 import {installNativeModeOverlay} from "./native_mode_overlay.mjs";
 import {buildingLaunchPointClear} from "./world_building_collision_physics.mjs";
+import {installNativeHudMap,tickNativeHudMap,setNativeHudSources} from "./native_hud_map.mjs";
+import {nativePeople} from "./native_city_life.mjs";
+import {nativeCops} from "./native_police_ground.mjs";
 import {installNativeCityLife,tickNativeCityLife} from "./native_city_life.mjs";
 import {installNativePolice,tickNativePolice} from "./native_police_ground.mjs";
 import {installNativeWorldLife,tickNativeWorldLife} from "./native_world_life.mjs";
@@ -108,6 +111,8 @@ async function loadRealWorld(game,{source="demo"}={}){
   const shown=await game.updateOsmFeatures(result);
   if(shown?.cancelled||epoch!==osmEpoch)return;
   const life=installNativeCityLife(game,result);
+  installNativeHudMap(game,result);
+  setNativeHudSources({people:nativePeople,cops:nativeCops});
   installNativePolice();
   const life2=installNativeWorldLife(game,result);
   installNativeThreats();
@@ -163,7 +168,7 @@ async function launch(){
   const vitals=installNativeVitals(game);
   const wanted=installNativeWanted(game);
   game.beforeFrame=()=>input.sample();
-  game.afterFrame=(frame,now)=>{weapons.tick(now);syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);updateTelemetry(game,now);};
+  game.afterFrame=(frame,now)=>{weapons.tick(now);syncNativeViewmodel(game);vitals.sync(now);tickNativeCityLife(game,now);tickNativePolice(game,now);tickNativeWorldLife(game,now);tickNativeThreats(game,now);tickNativePlaces(game,now);tickNativeSession(game);tickNativeHudMap(game);updateTelemetry(game,now);};
   for(const button of document.querySelectorAll("[data-drone-weapon]")){
    button.addEventListener("click",()=>{
     globalThis.__arondightDroneWeapons?.setMode?.(button.dataset.droneWeapon);

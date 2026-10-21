@@ -27,6 +27,7 @@ function nearestRoadPoint(x,y){
 export function installNativePolice(){
   globalThis.__arondightPoliceGround={units:()=>units,version:"gta-police-cruisers+officers-v1"};
 }
+export function nativeCops(){return units.flatMap(u=>u.cops.map(c=>({...c,alive:c.hp>0})));}
 export function tickNativePolice(game,now=performance.now()){
   const renderer=game?.world?.renderer;if(!renderer?.upsert)return;
   const n=stars(),p=player(),onFoot=game?.mode==="foot";
