@@ -66,6 +66,13 @@ export class NativeGameInput{
   if(this.main){
    installNativeFlightTouch();
    import("./xbox_control_mode.mjs");
+   // Production drone HUD buttons: CAMERA cycles the view (Xbox VIEW clicks
+   // it too), ARM arms / disarms, KILL cuts the motors.
+   const camBtn=this.doc.getElementById?.("soloCamera"),armBtn=this.doc.getElementById?.("soloArm"),killBtn=this.doc.getElementById?.("soloKill");
+   camBtn?.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();this.cycleCamera();});
+   armBtn?.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();this.arm=!this.arm;});
+   killBtn?.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();this.arm=false;});
+   for(const b of [camBtn,armBtn,killBtn])b?.addEventListener("pointerdown",e=>e.stopPropagation());
    const jump=this.doc.getElementById?.("footJump");
    jump?.addEventListener("pointerdown",e=>{this.jumpHeld=true;e.preventDefault();});
    for(const type of ["pointerup","pointercancel"])jump?.addEventListener(type,()=>{this.jumpHeld=false;});
@@ -208,6 +215,14 @@ export class NativeGameInput{
   const m=this.runtime.world?.flightCameraMode??"follow";
   const next=m==="follow"?"fpv":m==="fpv"?"third":"follow";
   this.runtime.world?.setFlightCameraMode?.(next);
+  const label=this.doc?.getElementById?.("soloCamera");if(label)label.textContent=next.toUpperCase();
+ }
+ syncDroneHud(){
+  const d=this.doc;if(!d?.getElementById)return;
+  const arm=d.getElementById("soloArm"),state=d.getElementById("soloState"),cam=d.getElementById("soloCamera");
+  if(arm){const t=this.arm?"DISARM":"ARM";if(arm.textContent!==t)arm.textContent=t;arm.setAttribute("aria-pressed",String(this.arm));}
+  if(state){const t=this.arm?"ARMED":"DISARMED";if(state.textContent!==t)state.textContent=t;}
+  const mode=String(this.runtime.world?.flightCameraMode||"").toUpperCase();if(cam&&mode&&cam.textContent!==mode)cam.textContent=mode;
  }
  steerHeight(axis){
   let agl=null,vz=0;
@@ -229,7 +244,7 @@ export class NativeGameInput{
   }
  }
  sampleMain(){
-  this.syncModeClasses();
+  this.syncModeClasses();this.syncDroneHud();
   if(globalThis.__arondightPlayerDamageModel?.dead){
    this.runtime.setControls({arm:false,gameMode:true,groundClearance:this.clearance,throttle:0,roll:0,pitch:0,yaw:0,bodyPitch:0,
     foot:{forward:0,strafe:0,yaw:this.yaw,pitch:this.pitch,sprint:false,jump:false},
