@@ -12,7 +12,7 @@ import {installNativeRagdoll,spawnNativeRagdoll,tickNativeRagdoll} from "./nativ
 import {installNativeCarDebris,tickNativeCarDebris} from "./native_car_debris.mjs";
 
 const PERSON_CAP=100,CAR_CAP=48,BUS_CAP=6,CAR_SPEED=8;
-const PAINTS=[[.86,.86,.88],[.22,.24,.28],[.55,.16,.16],[.18,.32,.55],[.72,.7,.64],[.12,.14,.16],[.42,.46,.4],[.78,.62,.28]];
+const PAINTS=[[.92,.92,.9],[.16,.17,.19],[.62,.12,.12],[.18,.34,.62],[.78,.76,.7],[.08,.09,.1],[.34,.4,.3],[.82,.58,.22]];
 let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawnCars=false,routes=[],carBooms=[],carSmokeAt=0;
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
 function playerPos(){
@@ -212,7 +212,7 @@ export function tickNativeCityLife(game,now=performance.now()){
   }
   if(!data.length){if(drawnCars){renderer.remove("traffic/cars");drawnCars=false;}return;}
   const transforms=new Float32Array(data),tint=new Float32Array(tints);
-  if(!drawnCars){renderer.upsert("traffic/cars",{...ORIGINAL_SEDAN,instances:{transforms,tints:tint},material:{doubleSided:true,castShadow:false}});drawnCars=true;}
+  if(!drawnCars){renderer.upsert("traffic/cars",{...ORIGINAL_SEDAN,instances:{transforms,tints:tint},material:{doubleSided:true,castShadow:false,paint:true}});drawnCars=true;}
   else renderer.updateInstances("traffic/cars",{transforms,tints:tint});
 }
 export function blastNativeCity(center,radius,falloff,exposure){

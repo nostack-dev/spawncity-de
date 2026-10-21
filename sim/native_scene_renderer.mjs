@@ -26,7 +26,7 @@ const VERT="#version 300 es\n"+[
 "layout(location=11) in vec3 iNormal2;",
 "layout(location=12) in vec4 aJoints;",
 "layout(location=13) in vec4 aWeights;",
-"uniform int uSkinEnabled;",
+"uniform int uSkinEnabled,uPaint;",
 "uniform mat4 uBones[32];",
 "uniform mat4 uViewProjection;",
 "out vec3 vWorld,vNormal,vColor;",
@@ -44,7 +44,7 @@ const VERT="#version 300 es\n"+[
 "  vec4 p=model*local;",
 "  vWorld=p.xyz;",
 "  vNormal=normalize(mat3(iNormal0,iNormal1,iNormal2)*localNormal);",
-"  vColor=aColor*iTint.rgb;vOpacity=iTint.a;vUV=aUV;",
+"  vColor=uPaint==1&&aColor.b>aColor.r*2.0&&aColor.b>.08?iTint.rgb:aColor*iTint.rgb;vOpacity=iTint.a;vUV=aUV;",
 "  float wallSpan=abs(aNormal.x)>0.5?length(iModel1.xyz):length(iModel0.xyz);",
 "  vWallUV=vec2(aUV.x*wallSpan,aUV.y*length(iModel2.xyz));",
 "  gl_Position=uViewProjection*p;",
@@ -61,7 +61,7 @@ const FRAG="#version 300 es\n"+[
 "uniform mat4 uSunShadowProjection;",
 "uniform float uSunShadowBias;",
 "uniform int uSunShadowEnabled;",
-"uniform int uHasTexture,uUnlit,uFacade,uTerrain;",
+"uniform int uHasTexture,uUnlit,uFacade,uTerrain,uPaint;",
 "uniform int uPointLightCount;",
 "uniform vec4 uPointPosRange[6],uPointColorIntensity[6];",
 "out vec4 outColor;",
@@ -208,7 +208,7 @@ function program(gl){
  const v=shader(gl.VERTEX_SHADER,VERT),f=shader(gl.FRAGMENT_SHADER,FRAG),p=gl.createProgram();
  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){const e=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw Error("native program: "+e);}
- const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uTerrain","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
+ const uniforms=["uViewProjection","uMaterial","uSunDirection","uSunColor","uSkyColor","uGroundColor","uEye","uFogColor","uFogDensity","uExposure","uAlphaCutoff","uTexture","uHasTexture","uUnlit","uFacade","uTerrain","uPaint","uSkinEnabled","uBones[0]","uSunShadowMap","uSunShadowProjection","uSunShadowBias","uSunShadowEnabled","uPointLightCount","uPointPosRange[0]","uPointColorIntensity[0]"];
  return {handle:p,u:Object.fromEntries(uniforms.map(k=>[k,gl.getUniformLocation(p,k)]))};
 }
 export class NativeSceneRenderer{
@@ -474,7 +474,7 @@ export class NativeSceneRenderer{
    gl.uniform4fv(u.uMaterial,new Float32Array(mat.color));
    gl.uniform1f(u.uAlphaCutoff,mat.alphaMode==="mask"?(mat.alphaCutoff??.5):0);
    gl.uniform1i(u.uUnlit,mat.unlit?1:0);gl.uniform1i(u.uFacade,mat.facade?1:0);
-   gl.uniform1i(u.uTerrain,mat.terrain?1:0);gl.uniform1i(u.uHasTexture,m.texture?1:0);
+   gl.uniform1i(u.uTerrain,mat.terrain?1:0);gl.uniform1i(u.uPaint,mat.paint?1:0);gl.uniform1i(u.uHasTexture,m.texture?1:0);
    gl.uniform1i(u.uSkinEnabled,d.skin?1:0);if(d.skin)gl.uniformMatrix4fv(u["uBones[0]"],false,d.skin.bones);
    if(m.texture){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,m.texture);}
    if(mat.doubleSided)gl.disable(gl.CULL_FACE);else{gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);}
