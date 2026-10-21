@@ -24,6 +24,15 @@ import "./share_button.mjs";
 import "./thumb_layout.mjs";
 import "./quit_confirm.mjs";
 import "./settings_help.mjs";
+// Production page modules without any renderer: rule votes, time-of-day sync,
+// EMP button layout, player push, street voices, animal audio, feedback box.
+import "./game_rules_sync.mjs";
+import "./day_night_sync.mjs";
+import "./emp_button_layout.mjs";
+import "./player_push.mjs";
+import "./street_voices.mjs";
+import "./animal_audio.mjs";
+import "./suggestion_box.mjs";
 import "./gameplay_final_ui_dock.mjs";
 import "./edge_hud_layout.mjs";
 import "./drone_weapon_modes.mjs";
