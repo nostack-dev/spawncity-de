@@ -1,13 +1,14 @@
 // The live city, on native. People are the original pedestrian_agents.
 // Cars ride the original traffic routes. No invented crowd.
 import {buildTrafficRoute} from "./world_traffic_routes.mjs";
-import {createPedestrianNetwork,seedRouteAgents,stepAgent,frighten,provoke} from "./pedestrian_agents.mjs";
+import {createPedestrianNetwork,seedRouteAgents,stepAgent,frighten,provoke,projectOnRoute} from "./pedestrian_agents.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeStreetLamps} from "./native_street_lamps.mjs";
 import {ORIGINAL_SEDAN} from "./native_original_vehicles.mjs";
 import {fromTRS} from "./native_render_math.mjs";
 import {NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
 import {isCriticalDamage,criticalDetonationAt,accelerateCriticalDetonation} from "./critical_damage_logic.mjs";
+import {installNativeRagdoll,spawnNativeRagdoll,tickNativeRagdoll} from "./native_ragdoll.mjs";
 
 const PERSON_CAP=100,CAR_CAP=42,BUS_CAP=8,CAR_SPEED=8;
 let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawnCars=false,routes=[],carBooms=[],carSmokeAt=0;
@@ -19,6 +20,7 @@ function playerPos(){
   return pose?[pose[0],pose[1],pose[2]]:[0,0,2];
 }
 export function installNativeCityLife(game,snapshot){
+  installNativeRagdoll(game);
   const origin=snapshot?.origin||NATIVE_DEMO_CITY.origin;
   routes=[];
   for(const road of snapshot?.roads||[]){
@@ -69,6 +71,29 @@ export function nativeTraffic(){
   return out;
 }
 export function takeNativeCarBooms(){return carBooms.splice(0);}
+function dropPerson(a,impulse,fatal){
+  if(!a||a.down)return;
+  a.down=true;a.knocked=true;a.v=0;
+  if(fatal)a.alive=false;
+  spawnNativeRagdoll({
+    position:[a.x,a.y,(Number(a.z)||0)+.05],yaw:(Number(a.yaw)||0)-Math.PI/2,
+    impulse,seed:a.id,id:a.id,
+    recover:fatal?null:{onUp:({x,y,yaw})=>{
+      a.down=false;
+      if(!a.alive||a.removed)return;
+      a.knocked=false;a.x=x;a.y=y;
+      if(Number.isFinite(yaw))a.yaw=yaw;
+      if(Array.isArray(a.legs))a.legs.length=0;
+      a.leader=null;a.state="wait";a.waitUntil=performance.now()+600;
+      const route=net?.get?.(a.route);
+      if(route){const j=projectOnRoute(route,x,y,{});if(Number.isFinite(j?.s))a.s=j.s;}
+    }}
+  });
+}
+function shotImpulse(dir){
+  const hx=Number(dir?.[0])||0,hy=Number(dir?.[1])||0,h=Math.hypot(hx,hy)||1;
+  return [hx/h*2.6,hy/h*2.6,1.7];
+}
 export function applyPersonDamage(id,{times=1,each=34,head=false,dir=[0,1,0],melee=false,momentumNs=30}={}){
   const a=people.find(p=>p.id===id);
   if(!a||!a.alive||a.knocked)return null;
@@ -81,6 +106,10 @@ export function applyPersonDamage(id,{times=1,each=34,head=false,dir=[0,1,0],mel
     else{const step=Math.min(.6,.22*k);a.x+=dir[0]/hd*step;a.y+=dir[1]/hd*step;a.v=0;provoke(a,performance.now(),{punched:true});}
     frightenAround(a.x,a.y,12,performance.now(),1);
     globalThis.__arondightWantedSystem?.reportCrime?.({id:`assault-${id}-${Math.round(performance.now())}`,kind:result==="dead"?"person":"person-hit",severity:1});
+    if(result!=="hit"){
+      const push=result==="dead"?1.8:2;
+      dropPerson(a,[dir[0]/hd*push*k,dir[1]/hd*push*k,result==="dead"?.8:.9],result==="dead");
+    }
     return {result,hp:a.hp};
   }
   const shot=head?100:each;let applied=0;
@@ -89,10 +118,13 @@ export function applyPersonDamage(id,{times=1,each=34,head=false,dir=[0,1,0],mel
     a.hp=(Number.isFinite(a.hp)?a.hp:100)-shot;applied++;
     if(a.hp<=0){a.alive=false;a.knocked=true;}
   }
-  provoke(a,performance.now(),{shot:true,by:{x:a.x-dir[0],y:a.y-dir[1]}});
+  const fatal=!a.alive;
+  if(!fatal){a.knocked=true;a.v=0;}
+  dropPerson(a,shotImpulse(dir),fatal);
+  provoke(a,performance.now(),{shot:true,by:{x:a.x-(dir[0]||0),y:a.y-(dir[1]||0)}});
   frightenAround(a.x,a.y,16,performance.now(),1.2);
   globalThis.__arondightWantedSystem?.reportCrime?.({id:`person-${id}-${Math.round(performance.now())}`,kind:"person-hit",severity:1});
-  return {result:a.alive&&!a.knocked?"hit":"dead",hp:a.hp,applied};
+  return {result:fatal?"dead":"down",hp:a.hp,applied};
 }
 export function applyVehicleShot(id,amount){
   const car=cars.find(c=>c.id===id&&c.alive);if(!car||!(amount>0))return null;
@@ -116,12 +148,8 @@ export function hitNativePeople(origin,dir,range){
     if(px*px+py*py+pz*pz<.45*.45){best=a;bestT=t;}
   }
   if(!best)return null;
-  best.hp=(best.hp??100)-34;
-  const reaction=provoke(best,performance.now(),{shot:true,by:{x:origin[0],y:origin[1]}});
-  if(best.hp<=0){best.alive=false;best.knocked=true;}
-  frightenAround(best.x,best.y,16,performance.now(),1.2);
-  globalThis.__arondightWantedSystem?.reportCrime?.({id:`person-${best.id}-${Math.round(performance.now())}`,kind:"person-hit",severity:1});
-  return {id:best.id,point:[origin[0]+dir[0]*bestT,origin[1]+dir[1]*bestT,origin[2]+dir[2]*bestT],reaction};
+  const hit=applyPersonDamage(best.id,{times:1,each:34,dir});
+  return {id:best.id,point:[origin[0]+dir[0]*bestT,origin[1]+dir[1]*bestT,origin[2]+dir[2]*bestT],reaction:hit?.result};
 }
 function frightenAround(x,y,radius,now,strength=1){
   for(const a of people){
@@ -136,6 +164,7 @@ if(typeof window!=="undefined"){
   });
 }
 export function tickNativeCityLife(game,now=performance.now()){
+  tickNativeRagdoll(game,now);
   if(!net)return;
   const dt=Math.min(.05,Math.max(0,(now-(last||now))/1000));last=now;
   const p=playerPos();
@@ -171,11 +200,7 @@ export function blastNativeCity(center,radius,falloff,exposure){
     if(dist>=radius)continue;
     const f=falloff(dist)*(exposure?.(person.x,person.y,1.1)??1);
     if(f<=.22)continue;
-    person.hp=(person.hp??100)-34;
-    provoke(person,performance.now(),{shot:true,by:{x:center[0],y:center[1]}});
-    if(person.hp<=0){person.alive=false;person.knocked=true;}
-    frightenAround(person.x,person.y,16,performance.now(),1.2);
-    globalThis.__arondightWantedSystem?.reportCrime?.({id:`blast-${person.id}-${Math.round(performance.now())}`,kind:"person-hit",severity:1});
+    applyPersonDamage(person.id,{times:1,each:34,dir:[person.x-center[0],person.y-center[1],0]});
   }
   for(const car of cars){
     if(!car.alive)continue;
