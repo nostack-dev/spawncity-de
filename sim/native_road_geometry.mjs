@@ -43,7 +43,7 @@ export function* nativeRoadGeometrySteps(features,{project=null,heightAt=()=>0,c
  const marking=(a,b,z,col)=>{
   const dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);if(len<3)return;
   const ux=dx/len,uy=dy/len;
-  for(let t=1;t+3<len;t+=7)band([a[0]+ux*t,a[1]+uy*t],[a[0]+ux*(t+3),a[1]+uy*(t+3)],.18,z,col);
+  for(let t=1;t+3<len;t+=7)band([a[0]+ux*t,a[1]+uy*t],[a[0]+ux*(t+3),a[1]+uy*(t+3)],.42,z,col);
  };
  for(const feature of(Array.isArray(features)?features:[])){
   processed++;

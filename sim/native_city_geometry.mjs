@@ -3,7 +3,7 @@
 // Polygon roofing (concave + holes) uses in-repo ISC Earcut v3.0.2.
 import earcut,{deviation as earcutDeviation} from "./vendor/earcut.mjs";
 export const NATIVE_CITY_GEOMETRY_VERSION="osm-city-chunks-webgl2-v1";
-const WALLS=[[.79,.75,.68],[.72,.66,.55],[.56,.33,.27],[.61,.60,.58],[.85,.82,.76],[.66,.49,.37],[.49,.52,.57],[.80,.72,.60]];
+const WALLS=[[.86,.78,.66],[.78,.62,.48],[.62,.38,.32],[.72,.70,.66],[.90,.86,.80],[.70,.52,.40],[.55,.58,.62],[.84,.76,.64],[.68,.64,.58],[.80,.74,.62]];
 const ROOFS=[[.29,.30,.32],[.23,.24,.25],[.43,.26,.20],[.33,.34,.36]];
 const area=ring=>ring.reduce((s,p,i)=>{const q=ring[(i+1)%ring.length];return s+p[0]*q[1]-q[0]*p[1];},0)*.5;
 const hash=text=>{let n=2166136261;for(const c of String(text)){n=Math.imul(n^c.charCodeAt(0),16777619);}return n>>>0;};
@@ -66,8 +66,18 @@ export function* nativeCityChunkSteps(footprints,{chunkSize=320,maxBuildings=260
      const a=ring[i],b=ring[(i+1)%ring.length],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
      if(len<.02)continue;
      const normal=[dy/len,-dx/len,0],a0=[a[0],a[1],base],b0=[b[0],b[1],base],a1=[a[0],a[1],top],b1=[b[0],b[1],top];
+     const shade=0.72+0.28*((Math.floor(len*1.7)+Math.floor((base+top)*.3))&1);
+     const pane=[wallColor[0]*shade*.45+.08,wallColor[1]*shade*.5+.12,wallColor[2]*shade*.55+.16];
      appendTriangle(batch,a0,b0,b1,normal,wallColor,[0,0],[len,0],[len,wallHeight]);
      appendTriangle(batch,a0,b1,a1,normal,wallColor,[0,0],[len,wallHeight],[0,wallHeight]);
+     // A second, slightly inset band so windows read even when the facade shader is far.
+     if(wallHeight>2.4&&len>1.6){
+      const z0=base+wallHeight*.28,z1=base+wallHeight*.62,push=.06;
+      const lift=(p,z)=>[p[0]+normal[0]*push,p[1]+normal[1]*push,z];
+      appendTriangle(batch,lift(a,z0),lift(b,z0),lift(b,z1),normal,pane,[0,0],[len,0],[len,1]);
+      appendTriangle(batch,lift(a,z0),lift(b,z1),lift(a,z1),normal,pane,[0,0],[len,1],[0,1]);
+      batch.triangles+=2;triangles+=2;
+     }
      batch.triangles+=2;triangles+=2;
     }
     batch.buildings++;built++;

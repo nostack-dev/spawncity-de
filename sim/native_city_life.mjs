@@ -191,7 +191,7 @@ export function tickNativeCityLife(game,now=performance.now()){
     if(car.s<0||car.s>car.route.length)car.dir*=-1;
     const at=pointOn(car.route,car.s);if(!at)continue;
     if(car.criticalAt&&now-carSmokeAt>180){carSmokeAt=now;game?.world?.effects?.emit?.({kind:"smoke",position:[at.x,at.y,1.1],velocity:[0,0,.8],lifeMs:700,size:.4});}
-    data.push(...fromTRS([at.x,at.y,.45],yawQuat(at.yaw),car.bus?[1.6,3.2,1]:[1,1,1]));
+    data.push(...fromTRS([at.x,at.y,.62],yawQuat(at.yaw),car.bus?[1.6,3.2,1.15]:[1.15,1.15,1.15]));
   }
   if(!data.length){if(drawnCars){renderer.remove("traffic/cars");drawnCars=false;}return;}
   const transforms=new Float32Array(data);
