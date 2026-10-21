@@ -25,14 +25,22 @@ function paint(renderer,id,geo,data){
 export function installNativeSession(game){
   timeline=new VsPoseTimeline();
   peers=new NativePeerVisuals(game.world.renderer,{timeline,connected:()=>Boolean(finder?.active),mode:()=>"drone"});
-  const button=document.createElement("button");
-  button.type="button";button.id="gameMenuShare";button.textContent="MULTIPLAYER";
-  document.getElementById("welcome")?.append(button);
+  // Production has no MULTIPLAYER entry on the title screen: the in-game MULTI
+  // button (mobile_gameplay_ui.mjs) clicks the hidden #lanVsButton. Same here.
+  let button=document.getElementById("lanVsButton");
+  if(!button){
+    button=document.createElement("button");
+    button.type="button";button.id="lanVsButton";button.hidden=true;button.textContent="VS";
+    document.body.append(button);
+  }
   button.addEventListener("click",async()=>{
-    if(finder)return;
+    if(finder){
+      try{finder.stop();}catch{}
+      finder=null;button.textContent="VS";return;
+    }
     finder=new LanVsFinder({onPose:(pose)=>timeline.push(pose)});
     try{await finder.start(["spawncity-native"]);button.textContent="IN ROOM";}
-    catch(error){button.textContent="OFFLINE";console.warn("native session",error);}
+    catch(error){button.textContent="OFFLINE";finder=null;console.warn("native session",error);}
   });
   if(navigator.geolocation){
     gps={x:0,y:0,on:false};

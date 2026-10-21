@@ -19,6 +19,8 @@ import "./sniper_scope.mjs";
 import "./native_ads.mjs";
 import "./native_mode_overlay.mjs";
 import "./world_options_menu.mjs";
+import "./changelog_menu.mjs";
+import "./share_button.mjs";
 import "./gameplay_final_ui_dock.mjs";
 import "./edge_hud_layout.mjs";
 import "./drone_weapon_modes.mjs";
