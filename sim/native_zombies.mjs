@@ -4,8 +4,10 @@
 // melee claws, groans, points for every hit and kill, the round / points HUD
 // and banners, the rounds' pacing and the collapse at dawn are production's.
 // The walls of the city are respected (wall-following around buildings).
-// Barricaded doors need the walkable interiors, which the native page does
-// not have yet: the dead fight the player in the street.
+// Buildings are shelters (native_building_interiors.mjs): every door carries
+// a barricade of planks; the dead smash them plank by plank before the door
+// swings open for them, then hunt the player indoors (resolveMove /
+// feetHeightAt). The player spends points to nail planks back (REPAIR / F).
 import {wantedPointInRing} from "./wanted_system_logic.mjs";
 import {getSharedCombatAudioContext,playCombatAudio} from "./combat_audio_bank.mjs";
 import {worldOption,WORLD_OPTIONS_EVENT} from "./world_options.mjs";
@@ -13,7 +15,8 @@ import {ORIGINAL_HUMAN} from "./native_actor_meshes.mjs";
 import {spawnNativeRagdoll} from "./native_ragdoll.mjs";
 import {syncInstanced,packMatrices} from "./native_instanced.mjs";
 export const ZOMBIE_NIGHTS_VERSION="cod-zombie-nights-v1-native";
-const CAP=28,HP0=100,HIT_DMG=34,MELEE_DMG=11,MELEE_MS=1150,HIT_PTS=10,KILL_PTS=60,SPAWN_MIN=34,SPAWN_MAX=70,REPAIR_COST=10;
+const CAP=28,HP0=100,HIT_DMG=34,MELEE_DMG=11,MELEE_MS=1150,PLANK_MS=3400,HIT_PTS=10,KILL_PTS=60,SPAWN_MIN=34,SPAWN_MAX=70,REPAIR_COST=10;
+const doorNextBreak=new Map(),interiors=()=>globalThis.__buildingInteriors||null;
 const ZSKIN=[[.54,.6,.47],[.49,.55,.44],[.58,.63,.51],[.44,.49,.4]];
 let game=null,installed=false,zombies=[],active=false,round=0,toSpawn=0,nextSpawn=0,roundBreakUntil=0,points=0,lastFrame=performance.now(),serial=0,zombiesEnabled=worldOption("zombies"),lastUi=0,drawn=false;
 const viewport=()=>document.getElementById("viewport");
@@ -28,30 +31,50 @@ function unseen(x,y){const cam=game?.world?.camera;if(!cam?.eye)return true;cons
 function hud(){
   let h=document.getElementById("zombieHud");if(h)return h;const view=viewport();if(!view)return null;h=document.createElement("div");h.id="zombieHud";h.innerHTML=`<div class="zh-round"></div><div class="zh-points"></div><div class="zh-banner"></div><button id="zombieRepair" type="button">REPAIR · ${REPAIR_COST}</button>`;view.appendChild(h);
   const st=document.createElement("style");st.dataset.zombieHud="v1";st.textContent=`#zombieHud{position:absolute;inset:0;pointer-events:none;z-index:19;font-family:Inter,system-ui,sans-serif;color:#fff}#zombieHud[hidden]{display:none}#zombieHud .zh-round{position:absolute;left:max(14px,var(--solo-safe-left,env(safe-area-inset-left)));bottom:calc(max(16px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + min(25vw,148px) + 90px);font:900 34px/1 "Barlow Condensed",Inter,sans-serif;color:#b3121b;text-shadow:0 2px 0 #000,0 0 12px #f004;letter-spacing:.04em}#zombieHud .zh-points{position:absolute;right:max(14px,var(--solo-safe-right,env(safe-area-inset-right)));bottom:calc(max(16px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + min(25vw,148px) + 96px);font:800 20px/1 Inter,sans-serif;color:#f4d27a;text-shadow:0 2px 0 #000}#zombieHud .zh-banner{position:absolute;left:50%;top:22%;transform:translateX(-50%);font:900 28px/1.1 "Barlow Condensed",Inter,sans-serif;letter-spacing:.12em;color:#e8e2d0;text-shadow:0 2px 6px #000;opacity:0;transition:opacity .6s;text-align:center;white-space:nowrap}#zombieHud .zh-banner[data-on="1"]{opacity:1}#zombieRepair{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(max(14px,var(--solo-safe-bottom,env(safe-area-inset-bottom))) + 120px);height:44px;padding:0 18px;border-radius:12px;border:2px solid #f4d27a;background:#1a1408e0;color:#f4d27a;font:900 14px/1 Inter,sans-serif;letter-spacing:.08em;pointer-events:auto;display:none}#zombieRepair[data-show="1"]{display:block}`;
-  document.head.appendChild(st);return h;
+  document.head.appendChild(st);
+  h.querySelector("#zombieRepair").addEventListener("pointerdown",e=>{e.preventDefault();e.stopPropagation();repairNearest();});addEventListener("keydown",e=>{if(e.code==="KeyF"&&!e.repeat&&active){repairNearest();}});return h;
 }
 let bannerTimer=0;function banner(text,ms=3200){const h=hud();if(!h)return;const b=h.querySelector(".zh-banner");b.textContent=text;b.dataset.on="1";clearTimeout(bannerTimer);bannerTimer=setTimeout(()=>{b.dataset.on="0";},ms);}
-function renderHud(){const h=hud();if(!h)return;const show=active||points>0;if(h.hidden===show)h.hidden=!show;h.querySelector(".zh-round").textContent=active?"I".repeat(Math.min(5,round))+(round>5?` ${round}`:""):"";h.querySelector(".zh-points").textContent=`${points}`;}
+function renderHud(){const h=hud();if(!h)return;const show=active||points>0;if(h.hidden===show)h.hidden=!show;h.querySelector(".zh-round").textContent=active?"I".repeat(Math.min(5,round))+(round>5?` ${round}`:""):"";h.querySelector(".zh-points").textContent=`${points}`;
+  const d=nearDoor();const btn=h.querySelector("#zombieRepair"),want=active&&d&&d.planks<(interiors()?.PLANKS??6)?"1":"0";if(btn.dataset.show!==want)btn.dataset.show=want;if(want==="1")btn.disabled=points<REPAIR_COST;}
+// ------------------------------------------------------------ doors / barricades (production)
+function nearDoor(){const p=globalThis.__arondightWalkMode?.position;if(!p||game?.mode!=="foot")return null;let best=null;for(const d of interiors()?.doors?.()||[]){const dd=Math.hypot(p.x-d.cx,p.y-d.cy);if(dd<3.2&&(!best||dd<best.dd))best={...d,dd};}return best;}
+function repairNearest(){const d=nearDoor();if(!d||points<REPAIR_COST)return false;if(interiors()?.repairPlank?.(d.i)){points-=REPAIR_COST;renderHud();try{const c=getSharedCombatAudioContext();if(c?.state==="running")playCombatAudio(c,"bounce",{gain:.4,playbackRate:.7});}catch{}return true;}return false;}
+function doorFor(z){let best=null;for(const d of interiors()?.doors?.()||[]){const dd=Math.hypot(z.x-d.cx,z.y-d.cy);if(!best||dd<best.dd)best={...d,dd};}return best;}
 let lastGroan=0;function groan(z,now){if(now-lastGroan<900)return;const pl=playerTarget()?.position;if(!pl)return;const d=Math.hypot(pl.x-z.x,pl.y-z.y);if(d>30)return;lastGroan=now;try{const c=getSharedCombatAudioContext();if(c?.state==="running")playCombatAudio(c,"scream",{gain:clamp(.25/(1+d*.12),.02,.22),playbackRate:.42+Math.random()*.12,minIntervalMs:400});}catch{}}
 // ------------------------------------------------------------ zombies
 function spawnOne(player,now){
-  for(let k=0;k<14;k++){const a=Math.random()*Math.PI*2,r=SPAWN_MIN+Math.random()*(SPAWN_MAX-SPAWN_MIN),x=player.position.x+Math.cos(a)*r,y=player.position.y+Math.sin(a)*r;if(insideBuilding(x,y))continue;if(!unseen(x,y))continue;
+  for(let k=0;k<14;k++){const a=Math.random()*Math.PI*2,r=SPAWN_MIN+Math.random()*(SPAWN_MAX-SPAWN_MIN),x=player.position.x+Math.cos(a)*r,y=player.position.y+Math.sin(a)*r;if(insideBuilding(x,y)||interiors()?.insideActive?.(x,y))continue;if(!unseen(x,y))continue;
     const fast=round>=3&&Math.random()<Math.min(.55,.12*(round-2));if(zombies.length>=CAP)return false;
-    zombies.push({id:`z${(++serial).toString(36)}`,skin:serial%4,x,y,z:ground(x,y),yaw:Math.atan2(player.position.y-y,player.position.x-x),hp:HP0+round*12,speed:fast?3+Math.random()*1.1:.85+Math.random()*.7+round*.06,state:"chase",nextHit:0,born:now,sp:0,phase:Math.random()});return true;}
+    zombies.push({id:`z${(++serial).toString(36)}`,skin:serial%4,x,y,z:ground(x,y),yaw:Math.atan2(player.position.y-y,player.position.x-x),hp:HP0+round*12,speed:fast?3+Math.random()*1.1:.85+Math.random()*.7+round*.06,state:"chase",nextHit:0,nextPlank:0,inside:false,born:now,sp:0,phase:Math.random()});return true;}
   return false;
 }
-function moveToward(z,tx,ty,dt){
+function moveToward(z,tx,ty,dt,{indoor=false}={}){
   const dx=tx-z.x,dy=ty-z.y,d=Math.hypot(dx,dy);if(d<.05){z.sp=0;return d;}const step=Math.min(d,z.speed*dt);let ang=Math.atan2(dy,dx);
-  const free=a=>{const nx=z.x+Math.cos(a)*Math.max(step,.35),ny=z.y+Math.sin(a)*Math.max(step,.35);return !insideBuilding(nx,ny);};
-  let ok=false;if(free(ang)&&(!z.side||free(ang+z.side*.35))){ok=true;if(z.side&&(z.freeSince||=performance.now())&&performance.now()-z.freeSince>600){z.side=0;}}
-  else{z.freeSince=0;z.side||=(Math.random()<.5?1:-1);for(let pass=0;pass<2&&!ok;pass++){for(let k=1;k<=9;k++){const a=ang+z.side*k*.35;if(free(a)){ang=a;ok=true;break;}}if(!ok)z.side=-z.side;}}
-  if(ok){z.x+=Math.cos(ang)*step;z.y+=Math.sin(ang)*step;}z.sp=ok?step/Math.max(dt,1e-3):0;z.z=ground(z.x,z.y);
+  if(indoor){const I=interiors(),feet=z.z;const r=I?.resolveMove?.({x:z.x,y:z.y},{x:z.x+Math.cos(ang)*step,y:z.y+Math.sin(ang)*step},feet);const nx=r?.x??z.x+Math.cos(ang)*step,ny=r?.y??z.y+Math.sin(ang)*step;z.sp=Math.hypot(nx-z.x,ny-z.y)/Math.max(dt,1e-3);z.x=nx;z.y=ny;const h=I?.feetHeightAt?.(z.x,z.y,feet);z.z=Number.isFinite(h)?h:ground(z.x,z.y);}
+  else{// wall following (bug algorithm): when the straight way is blocked, keep
+    // turning to one committed side along the wall until the way is free again
+    const free=a=>{const nx=z.x+Math.cos(a)*Math.max(step,.35),ny=z.y+Math.sin(a)*Math.max(step,.35);return !insideBuilding(nx,ny)&&!(interiors()?.insideActive?.(nx,ny)&&!z.entering);};
+    let ok=false;if(free(ang)&&(!z.side||free(ang+z.side*.35))){ok=true;if(z.side&&(z.freeSince||=performance.now())&&performance.now()-z.freeSince>600){z.side=0;}}
+    else{z.freeSince=0;z.side||=(Math.random()<.5?1:-1);for(let pass=0;pass<2&&!ok;pass++){for(let k=1;k<=9;k++){const a=ang+z.side*k*.35;if(free(a)){ang=a;ok=true;break;}}if(!ok)z.side=-z.side;}}
+    if(ok){z.x+=Math.cos(ang)*step;z.y+=Math.sin(ang)*step;}z.sp=ok?step/Math.max(dt,1e-3):0;z.z=ground(z.x,z.y);}
   z.yaw+=angleTo(z.yaw,ang)*Math.min(1,dt*8);return d;
 }
 function stepZombie(z,player,now,dt){
-  const px=player.position.x,py=player.position.y;moveToward(z,px,py,dt);z.state="chase";
+  const I=interiors(),pIn=Boolean(I?.playerInside?.()),px=player.position.x,py=player.position.y;
+  if(z.entering&&z.enterAt){const ix=z.enterAt[0],iy=z.enterAt[1],dd=Math.hypot(ix-z.x,iy-z.y),st=Math.min(dd,Math.max(1.2,z.speed)*dt);z.state="enter";if(dd>1e-3){z.x+=(ix-z.x)/dd*st;z.y+=(iy-z.y)/dd*st;z.yaw+=angleTo(z.yaw,Math.atan2(iy-z.y,ix-z.x))*Math.min(1,dt*8);}z.sp=st/Math.max(dt,1e-3);const h=I?.feetHeightAt?.(z.x,z.y,z.z);z.z=Number.isFinite(h)?h:ground(z.x,z.y);if(dd<.25){z.entering=false;z.enterAt=null;z.inside=Boolean(I?.insideActive?.(z.x,z.y));}}
+  else if(pIn&&!z.inside){const d=doorFor(z);if(d){const ox=d.cx+d.nx*1.15,oy=d.cy+d.ny*1.15;const dist=moveToward(z,ox,oy,dt);
+      if(dist<.9){z.yaw+=angleTo(z.yaw,Math.atan2(-d.ny,-d.nx))*Math.min(1,dt*8);
+        if(d.planks>0){z.state="breach";z.sp=0;/* a barricade holds: one plank per door every PLANK_MS however many of them pound on it */if(now>=z.nextPlank&&now>=(doorNextBreak.get(d.i)||0)){z.nextPlank=now+PLANK_MS*(.8+Math.random()*.5);doorNextBreak.set(d.i,now+PLANK_MS*.9);I.damagePlank?.(d.i);z.swing=now;}}
+        else{z.state="enter";z.entering=true;z.enterAt=[d.cx-d.nx*1.8,d.cy-d.ny*1.8];}}
+      else z.state="chase";}else moveToward(z,px,py,dt);}
+  else if(z.inside){z.state="chase";if(!I?.insideActive?.(z.x,z.y)){z.inside=false;}else moveToward(z,px,py,dt,{indoor:true});}
+  else{moveToward(z,px,py,dt);z.state="chase";}
+  // melee
   const dd=Math.hypot(px-z.x,py-z.y),dz=Math.abs(((player.position.z||1.68)-1.68)-z.z);
-  if(dd<1.35&&dz<1.3){z.state="attack";if(now>=z.nextHit){z.nextHit=now+MELEE_MS;z.swing=now;player.model?.damage?.(MELEE_DMG,"zombie");window.dispatchEvent(new CustomEvent("arondight:combat-damage",{detail:{damage:MELEE_DMG,source:"zombie",target:"player"}}));}}
+  // nobody is clawed through an intact barricade
+  const walled=pIn&&!z.inside&&!z.entering&&(()=>{const d=doorFor(z);return Boolean(d&&d.planks>0);})();
+  if(dd<1.35&&dz<1.3&&!walled){z.state="attack";if(now>=z.nextHit){z.nextHit=now+MELEE_MS;z.swing=now;player.model?.damage?.(MELEE_DMG,"zombie");window.dispatchEvent(new CustomEvent("arondight:combat-damage",{detail:{damage:MELEE_DMG,source:"zombie",target:"player"}}));}}
   if(Math.random()<dt*.25)groan(z,now);
 }
 function killZombie(z,dir=null,award=true,{silent=false}={}){
@@ -100,5 +123,5 @@ export function installNativeZombies(runtime){
   addEventListener("arondight:world-explosion",onExplosion);
   addEventListener(WORLD_OPTIONS_EVENT,()=>{const on=worldOption("zombies");if(on===zombiesEnabled)return;zombiesEnabled=on;if(!on)removeAllZombies();});
   addEventListener("arondight:world-reset",()=>{zombies=[];points=0;if(active){round=0;nextRound(performance.now());}});
-  globalThis.__zombies={get active(){return active;},get round(){return round;},get points(){return points;},get list(){return zombies;},force(on=true){globalThis.__zombieForce=on;},version:ZOMBIE_NIGHTS_VERSION};
+  globalThis.__zombies={get active(){return active;},get round(){return round;},get points(){return points;},get list(){return zombies;},atDoor(x,y){return zombies.some(z=>z.entering&&Math.hypot(z.x-x,z.y-y)<2.6);},force(on=true){globalThis.__zombieForce=on;},version:ZOMBIE_NIGHTS_VERSION};
 }
