@@ -54,6 +54,8 @@ function setData(key,value){const v=view();if(v)v.dataset[key]=String(value);}
 
 export function createNativeOrdnance(game,{aim,footWeapon=()=>"smg",droneWeapon=()=>"gun"}={}){
   const rounds=[];
+  // rockets / missiles in flight light what they pass (native_scene_lighting)
+  globalThis.__nativeOrdnanceRounds=()=>rounds.filter(r=>r.kind!=="grenade"&&r.kind!=="bomb"&&Array.isArray(r.pos)).map(r=>r.pos);
   let lastGrenade=-Infinity,lastRocket=-Infinity,lastMissile=-Infinity,secondaryLeft=4,lastJetRocket=-Infinity,lastJetBomb=-Infinity,jetRocketSide=1;
   function cast(origin,direction,distance){
     const hit=game.rigids?.raycast?.(origin,direction,distance);

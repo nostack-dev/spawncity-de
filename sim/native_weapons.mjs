@@ -13,6 +13,7 @@ import {addGlassCrack,addWallSoot,addWallBreach} from "./native_combat.mjs";
 import {hitNativeThreats} from "./native_threats.mjs";
 import {hitNativeSandbox,damageNativeSandboxEnemy} from "./native_sandbox.mjs";
 import {nativeBulletImpact} from "./native_world_impacts.mjs";
+import {nativeTracerGlint} from "./native_scene_lighting.mjs";
 import {createNativeOrdnance} from "./native_ordnance.mjs";
 import {createNativeFootFire} from "./native_foot_fire.mjs";
 import {takeNativeCarBooms} from "./native_city_life.mjs";
@@ -84,6 +85,7 @@ export function installNativeWeapons(game,{armed=()=>false}={}){
     if(hit.id&&hit.id!==selfId(game.mode))game.rigids.applyImpulse(hit.id,bulletImpulse(direction,kind),{point:hit.point});
   }
   function tracer(from,to,mode,weapon,speed){
+    nativeTracerGlint(from,to);
     nativeFireShot(game,{from,to,mode,weapon,speed});
   }
   function shootHitscan(now,range,kind,clientX,clientY){

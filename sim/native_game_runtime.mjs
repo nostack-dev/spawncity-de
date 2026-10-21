@@ -59,6 +59,8 @@ export class NativeGameRuntime{
    })});
   this.footInput={forward:0,strafe:0,sprint:false,jump:false,yaw:0,pitch:0};
   this.footMotion=createFootMotion();
+  // jetpack_audio / scene lighting read the production __arondightJetpack state
+  globalThis.__arondightJetpack=this.footMotion;
   this.carInput={pedal:0,steer:0,handbrake:true};
   this.jetInput={lift:0,yawIn:0,pitchIn:0,rollIn:0,brake:0};
   this.spectator=false;

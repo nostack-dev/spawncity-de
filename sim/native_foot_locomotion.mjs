@@ -35,6 +35,8 @@ export function stepFootMotion(state,{now=0,dt=1/60,jumpHeld=false,grounded=fals
   if(pressed){
     if(!grounded&&jetpackOn()&&state.fuel>=.06){
       state.burstLeft=FOOT_JET_BURST_S;state.used=true;
+      // production player_walk_mode_v4 startJet: jetpack_audio plays the ignition
+      try{globalThis.dispatchEvent?.(new CustomEvent("arondight:player-jetpack",{detail:{fuel:state.fuel}}));}catch{}
       if(vz<0)out.dvz+=(vz*.35-vz);
     }else if(grounded){state.pending=true;state.queuedAt=now;}
   }

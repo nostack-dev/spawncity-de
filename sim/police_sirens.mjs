@@ -12,7 +12,7 @@ const CAR_GAIN=.06,DRONE_GAIN=.032,AUDIBLE_M=260,SOUND_MPS=343;
 let installed=false,settings=loadAudioSettings(),car=null,drone=null,last=performance.now();
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const bridge=()=>globalThis.__arondightRealWorld||null;
-function listener(){const b=bridge(),c=b?.presentedCamera?.()||b?.threeCamera;return c?.position||null;}
+function listener(){const b=bridge(),c=b?.presentedCamera?.()||b?.threeCamera;if(c?.position)return c.position;const e=globalThis.__nativeListener?.();return e?{x:e[0],y:e[1],z:e[2]}:null;}
 function level(){if(!settings.soundEnabled)return 0;return clamp((Number(settings.fxVolume)||0)/72,0,1.4);}
 
 function voice(ctx,kind){
@@ -27,8 +27,8 @@ function voice(ctx,kind){
   return{kind,out,lp,oscs,lastD:null,doppler:1,gain:0};
 }
 function nearest(points,at){let best=null,bd=Infinity;for(const p of points){const d=Math.hypot(p.x-at.x,p.y-at.y,(p.z||0)-at.z);if(d<bd){bd=d;best=p;}}return best?{p:best,d:bd}:null;}
-function cruisers(){const out=[];for(const u of globalThis.__policeGroundUnits?.units||[]){if(!u?.lights||u.state==="wreck"||u.state==="abandoned"||u.state==="leave"||u.car?.group?.userData?.playerDriven)continue;const p=u.pose?.position;if(p)out.push({x:p[0],y:p[1],z:p[2]+.9});}return out;}
-function drones(){const out=[];for(const d of globalThis.__arondightWantedSystem?.drones||[]){if(!d?.active||d.retreating||d.empDisabled)continue;const p=d.root?.position;if(p)out.push({x:p.x,y:p.y,z:p.z});}return out;}
+function cruisers(){const out=[];if(!globalThis.__policeGroundUnits&&globalThis.__arondightPoliceGround?.units){for(const u of globalThis.__arondightPoliceGround.units()||[])if((u.hp??180)>0&&Number.isFinite(u.x))out.push({x:u.x,y:u.y,z:(Number(u.z)||0)+.9});return out;}for(const u of globalThis.__policeGroundUnits?.units||[]){if(!u?.lights||u.state==="wreck"||u.state==="abandoned"||u.state==="leave"||u.car?.group?.userData?.playerDriven)continue;const p=u.pose?.position;if(p)out.push({x:p[0],y:p[1],z:p[2]+.9});}return out;}
+function drones(){const out=[];for(const d of globalThis.__arondightWantedSystem?.drones||[]){if(!d?.active||d.retreating||d.empDisabled)continue;const p=d.root?.position;if(p)out.push({x:p.x,y:p.y,z:p.z});else if(Array.isArray(d.pos))out.push({x:d.pos[0],y:d.pos[1],z:d.pos[2]});}return out;}
 
 function drive(v,target,at,ctx,dt,base,pitchAt){
   const t=ctx.currentTime;let g=0;

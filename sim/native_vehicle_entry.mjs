@@ -151,4 +151,9 @@ function tickChute(dt){
   }
 }
 let lastTick=0;
-export function tickNativeVehicleEntry(){const now=performance.now(),dt=lastTick?Math.min(.1,(now-lastTick)/1000):1/60;lastTick=now;tickChute(dt);render(false);}
+// production arondight:vehicle-mode (car_radio, sirens, audio follow it)
+let lastVehicleMode="foot";
+function announceVehicle(){const m=game?.mode;if(!m||m===lastVehicleMode)return;const was=lastVehicleMode;lastVehicleMode=m;
+  try{if(was==="car"||was==="jet")window.dispatchEvent(new CustomEvent("arondight:vehicle-mode",{detail:{active:false,id:was==="car"?"player-car":"player-jet",jet:was==="jet"}}));
+    if(m==="car"||m==="jet")window.dispatchEvent(new CustomEvent("arondight:vehicle-mode",{detail:{active:true,id:m==="car"?"player-car":"player-jet",jet:m==="jet"}}));}catch{}}
+export function tickNativeVehicleEntry(){const now=performance.now(),dt=lastTick?Math.min(.1,(now-lastTick)/1000):1/60;lastTick=now;tickChute(dt);announceVehicle();render(false);}
