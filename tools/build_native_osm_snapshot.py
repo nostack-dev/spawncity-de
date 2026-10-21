@@ -69,7 +69,12 @@ def convert_osm(xml, url):
         building, road = bool(tags.get("building")), bool(tags.get("highway"))
         water = bool(tags.get("waterway")) or tags.get("natural") == "water"
         pasture = tags.get("landuse") in {"meadow", "grassland", "farmland"}
-        if not building and not road and not water and not pasture:
+        # Ground areas drawn like production world_city_roads: parks, woods,
+        # pitches, sand (native_ground_areas.mjs classifies them).
+        area = (tags.get("leisure") in {"park", "garden", "pitch", "playground", "recreation_ground", "track", "dog_park"}
+                or tags.get("landuse") in {"grass", "forest", "recreation_ground", "village_green", "cemetery", "allotments"}
+                or tags.get("natural") in {"wood", "scrub", "sand", "beach", "grassland"})
+        if not building and not road and not water and not pasture and not area:
             continue
         refs = [nd.attrib.get("ref") for nd in way.findall("nd")]
         if any(ref not in nodes for ref in refs):

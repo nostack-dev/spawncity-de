@@ -55,6 +55,7 @@ import {installNativeSession,tickNativeSession} from "./native_session.mjs";
 import {installNativeCombat,tickNativeCombat} from "./native_combat.mjs";
 import {installNativeVehicleEntry,tickNativeVehicleEntry} from "./native_vehicle_entry.mjs";
 import {applyNativeDayNight} from "./native_day_night.mjs";
+import {installNativeGroundAreas} from "./native_ground_areas.mjs";
 import {installNativeJetHud,tickNativeJetHud} from "./native_jet_hud.mjs";
 import {HybridMotorSound} from "./motor_sound.mjs";
 export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1";
@@ -212,6 +213,7 @@ async function loadRealWorld(game){
   installNativeHudMap(game,result);
   setNativeHudSources({people:nativePeople,cops:nativeCops});
   installNativePolice();
+  try{installNativeGroundAreas(game,result);}catch(error){console.warn("ground areas",error);}
   const life2=installNativeWorldLife(game,result);
   installNativeThreats();
   installNativePlaces(game,result);

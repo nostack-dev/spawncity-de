@@ -1,3 +1,4 @@
+import {nativeAreaClass} from "./native_ground_areas.mjs";
 // Real OpenStreetMap source for the native engine. Only genuine Overpass
 // ways; NEVER synthetic buildings/roads, no MapLibre second WebGL context.
 // Loads publicly available OSM ways for a selected demo city, or an explicitly
@@ -19,7 +20,7 @@ const clamp=(n,lo,hi)=>Math.min(hi,Math.max(lo,n));
 export function nativeOverpassQuery({lon,lat},radiusM=metres){
  if(!isLL(Number(lon),Number(lat))||!Number.isFinite(radiusM)||radiusM<100||radiusM>1500)
   throw Error("native OSM query requires finite GPS fix and bounded radius");
- return '[out:json][timeout:18];(way["building"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["highway"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["waterway"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["natural"="water"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["landuse"~"meadow|grassland|farmland"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+'););out geom;';
+ return '[out:json][timeout:18];(way["building"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["highway"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["waterway"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["natural"="water"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["landuse"~"meadow|grassland|farmland|grass|forest|recreation_ground|village_green|cemetery|allotments"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["leisure"~"park|garden|pitch|playground|recreation_ground|track"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+');way["natural"~"wood|scrub|sand|beach|grassland"](around:'+Math.round(radiusM)+','+Number(lat).toFixed(7)+','+Number(lon).toFixed(7)+'););out geom;';
 }
 const height=(tags)=>{
  const explicit=parseFloat(String(tags?.height??""));
@@ -29,7 +30,7 @@ const height=(tags)=>{
 };
 export function parseNativeOverpass(json,{maxBuildings=1300,maxRoads=800}={}){
  if(!Array.isArray(json?.elements))throw Error("OSM requires actual Overpass JSON");
- const buildings=[],roads=[],water=[],pastures=[],seen=new Set();
+ const buildings=[],roads=[],water=[],pastures=[],areas=[],seen=new Set();
  for(const e of json.elements){
   if(e?.type!=="way"||!Array.isArray(e.geometry)||!e.geometry.length)continue;
   const tags=e.tags??{},id="osm-way-"+String(e.id);
@@ -54,8 +55,12 @@ export function parseNativeOverpass(json,{maxBuildings=1300,maxRoads=800}={}){
    pastures.push({id,properties:props,geometry:{type:"Polygon",coordinates:[coordinates]}});
    seen.add(id);
   }
+  // Closed park / wood / pitch / sand / water rings become ground areas.
+  const cls=nativeAreaClass(tags);
+  if(cls&&!tags.building&&!tags.highway&&areas.length<600&&coordinates.length>=4&&ringKey(coordinates[0])===ringKey(coordinates.at(-1)))
+   areas.push({id:"area-"+id,class:cls,properties:props,geometry:{type:"Polygon",coordinates:[coordinates]}});
  }
- return {buildings,roads,water,pastures,source:"openstreetmap-overpass",synthetic:false};
+ return {buildings,roads,water,pastures,areas,source:"openstreetmap-overpass",synthetic:false};
 }
 export async function fetchNativeOsm(origin,{fetchImpl=globalThis.fetch,
  endpoints=DEFAULT_ENDPOINTS,timeoutMs=16000,radiusM=metres,signal=null,
