@@ -32,8 +32,11 @@ export const NATIVE_BROWSER_BOOT_VERSION="single-repo-no-three-full-game-boot-v1
 const $=id=>document.getElementById(id);
 const viewport=$("viewport"),startButton=$("gameMenuStart"),menu=$("gameMenu"),
  status=$("status"),menuStatus=$("gameMenuStatus"),telemetry=$("telemetry");
-const settings=mountPlayerControlSettings({parent:document.getElementById("welcome"),buttonText:"SETTINGS"});
-mountAudioSettings({dialog:settings.dialog});
+let settings=null;
+try{
+  settings=mountPlayerControlSettings({parent:document.getElementById("welcome"),buttonText:"SETTINGS"});
+  mountAudioSettings({dialog:settings.dialog});
+}catch(error){console.warn("settings",error);}
 if(!viewport||!startButton||!menu||!status)throw Error("SpawnCity native boot requires its real fullscreen UI");
 let session=null,launching=false,reported=0,lastStatus="";
 let activeOsm=null,osmEpoch=0;
@@ -147,13 +150,13 @@ async function launch(){
    onError:error=>{console.error("native game",error);report("Native engine halted: "+error.message,true);}
   });
   input=new NativeGameInput(game,{canvas});
-  installNativeSession(game);
-  installNativeModeOverlay();
+  try{installNativeSession(game);}catch(error){console.warn("session",error);}
+  try{installNativeModeOverlay();}catch(error){console.warn("overlay",error);}
   const actions=document.getElementById("soloTopbarActions");
   if(actions){
     const open=document.createElement("button");
     open.type="button";open.textContent="SETTINGS";
-    open.addEventListener("click",()=>settings.dialog.showModal());
+    open.addEventListener("click",()=>settings?.dialog?.showModal());
     actions.appendChild(open);
   }
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});
@@ -251,11 +254,16 @@ async function launch(){
   console.error("native bootstrap",error);
   input?.dispose();await game?.dispose?.().catch(()=>{});
   viewport.querySelector("#nativeCanvas")?.remove();
-  report("Start failed: "+error.message,true);
+  report("Start failed: "+(error?.message||error),true);
   startButton.textContent="RETRY";startButton.disabled=false;
  }finally{launching=false;}
 }
-startButton.disabled=false;startButton.addEventListener("click",launch);
+startButton.disabled=false;
+startButton.addEventListener("click",launch);
+startButton.addEventListener("pointerdown",event=>{if(event.button===0)launch();});
+addEventListener("keydown",event=>{
+  if(!menu.hidden&&(event.code==="Enter"||event.code==="Space")&&event.target===document.body)launch();
+});
 document.addEventListener("visibilitychange",()=>{
  const game=session?.game;if(!game)return;
  if(document.hidden){game.stop();session.input.releaseInputs();}
