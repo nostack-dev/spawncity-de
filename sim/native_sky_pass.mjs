@@ -20,13 +20,13 @@ void main() {
  // separately animated or invented world-space sky object.
  float h=max(-0.6,min(1.6,uHorizon));
  float elevation=clamp((vUv.y-h)*2.0,0.0,1.0);
- vec3 dusk=vec3(.72,.78,.82);
- vec3 azure=vec3(.17,.34,.53);
- vec3 zenith=vec3(.045,.12,.255);
- vec3 sky=mix(dusk,azure,smoothstep(0.0,.46,elevation));
- sky=mix(sky,zenith,smoothstep(.36,1.0,elevation)*.6);
- float mist=1.0-smoothstep(-.035,.13,vUv.y-h);
- vec3 color=mix(sky,vec3(.48,.57,.62),mist*.7);
+ vec3 horizon=vec3(.788,.863,.937);
+ vec3 azure=vec3(.173,.435,.769);
+ vec3 zenith=vec3(.11,.28,.55);
+ vec3 sky=mix(horizon,azure,smoothstep(0.0,.55,elevation));
+ sky=mix(sky,zenith,smoothstep(.4,1.0,elevation)*.45);
+ float mist=1.0-smoothstep(-.02,.16,vUv.y-h);
+ vec3 color=mix(sky,vec3(.718,.788,.863),mist*.55);
  outColor=vec4(color,1.0);
 }`;
 export class NativeSkyPass{

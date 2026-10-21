@@ -118,6 +118,7 @@ const FRAG="#version 300 es\n"+[
 "   vec3 uvz=clip.xyz/clip.w*0.5+0.5;",
 "   if(uvz.x>0.0&&uvz.x<1.0&&uvz.y>0.0&&uvz.y<1.0&&uvz.z>0.0)",
 "    shadow=texture(uSunShadowMap,vec3(uvz.xy,uvz.z-uSunShadowBias));",
+"   shadow=mix(0.42,1.0,shadow);",
 "  }",
 "  vec3 point=vec3(0.0);",
 "  if(uUnlit!=1){",
@@ -132,7 +133,12 @@ const FRAG="#version 300 es\n"+[
 "   }",
 "  }",
 "  vec3 rgb=base*(uUnlit==1?vec3(1.0):hemis+uSunColor*ndl*shadow+point)*uExposure;",
+"  // Production grade: ACES, then a little saturation and contrast.",
 "  rgb=(rgb*(2.51*rgb+0.03))/(rgb*(2.43*rgb+0.59)+0.14);",
+"  float luma=dot(rgb,vec3(0.2126,0.7152,0.0722));",
+"  rgb=mix(vec3(luma),rgb,1.14);",
+"  rgb=mix(rgb,rgb*rgb*(3.0-2.0*rgb),0.22);",
+"  rgb+=vec3(0.016,0.006,-0.014)*smoothstep(0.35,1.0,luma)+vec3(-0.006,0.0,0.012)*(1.0-smoothstep(0.0,0.3,luma));",
 "  float fog=1.0-exp(-pow(uFogDensity*length(vWorld-uEye),2.0));",
 "  rgb=mix(rgb,uFogColor,clamp(fog,0.0,1.0));",
 "  outColor=vec4(clamp(rgb,0.0,1.0),alpha);",
@@ -220,9 +226,12 @@ export class NativeSceneRenderer{
   this.meshes=new Map();this.lost=false;this.disposed=false;
   this.eye=[0,-18,8];this.target=[0,0,2];this.up=[0,0,1];
   this.fov=Math.PI/3;this.near=.05;this.far=1800;
-  this.sunDirection=[-.45,-.52,.72];this.sunColor=[.9,.82,.73];
-  this.skyColor=[.48,.58,.7];this.groundColor=[.26,.27,.26];this.fogColor=[.68,.8,.88];
-  this.fogDensity=.00085;this.exposure=1;this.stats=null;
+  this.sunDirection=[-.45,-.52,.72];
+  // Production day: sun 0xfff2e0 at 2.8, hemisphere 0xc4dcff / 0x6b5e48 at 0.85.
+  this.sunColor=[2.8,2.657,2.458];
+  this.skyColor=[.654,.734,.85];this.groundColor=[.357,.314,.24];
+  this.fogColor=[.718,.788,.863];
+  this.fogDensity=.00085;this.exposure=1.05;this.stats=null;
   this.pointLights={count:0,posRange:new Float32Array(24),colorIntensity:new Float32Array(24)};
   this.shadow=null;this.shadowConfig=shadows&&shadows!==false?{...shadows}:null;
   this.sceneRevision=0;this.shadowRevision=0;this.shadowCache=null;
