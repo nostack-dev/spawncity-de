@@ -6,6 +6,7 @@ import {announceHeadshot} from "./headshot_feedback.mjs";
 import {bulletImpulse} from "./ballistics.mjs";
 import {nativePeople,applyPersonDamage,nativeTraffic,applyVehicleShot} from "./native_city_life.mjs";
 import {liveNativeCops,applyCopDamage,scanReadyCruisers,applyCruiserDamage} from "./native_police_ground.mjs";
+import {liveNativeSandboxEnemies,damageNativeSandboxEnemy} from "./native_sandbox.mjs";
 import {listNativeThreats,applyThreatDamage} from "./native_threats.mjs";
 import {applyCowDamage} from "./native_world_life.mjs";
 import {markNativeImpact} from "./native_world_life.mjs";
@@ -101,6 +102,10 @@ export function gatherActors(origin,dir,range){
   for(const actor of listNativeThreats()){
     push(raySphere(origin,dir,[actor.x,actor.y,1.1],.4,range),{key:`threat:${actor.id}`,kind:actor.kind,id:actor.id});
   }
+  // production sandbox enemies (COP / SWAT / HEAVY)
+  for(const e of liveNativeSandboxEnemies()){
+    push(raySphere(origin,dir,[e.x,e.y,e.z+1.1*e.t.scale],.45*e.t.scale,range),{key:`enemy:${e.id}`,kind:"enemy",id:e.id});
+  }
   for(const cow of globalThis.__arondightCows?.list?.()||[]){
     if(cow.dead||cow.hidden||!cow.id)continue;
     push(raySphere(origin,dir,[cow.x,cow.y,.8],.7,range),{key:`cow:${cow.id}`,kind:"cow",id:cow.id});
@@ -166,6 +171,7 @@ function coneHit(dir,reach){
   for(const a of nativePeople())if(a.alive&&!a.knocked)consider(a.x,a.y,()=>({kind:"person",id:a.id}),.35);
   for(const c of globalThis.__arondightCows?.list?.()||[])if(!c.dead&&!c.hidden&&c.id)consider(c.x,c.y,()=>({kind:"cow",id:c.id}),.8);
   for(const cop of liveNativeCops())consider(cop.x,cop.y,()=>({kind:"cop",cop}),.35);
+  for(const e of liveNativeSandboxEnemies())consider(e.x,e.y,()=>({kind:"enemy",id:e.id}),.35);
   return best;
 }
 function wound(hit,weapon,dir){
@@ -177,6 +183,7 @@ function wound(hit,weapon,dir){
     return result;
   }
   if(hit.kind==="cop")return applyCopDamage(hit.cop,head?100:COP_SHOT*times);
+  if(hit.kind==="enemy")return damageNativeSandboxEnemy(hit.id,1)?{hit:true}:null;
   if(hit.kind==="soldier"||hit.kind==="zombie"){
     const result=applyThreatDamage(hit.id,head?100:BODY_SHOT*times);
     if(head&&result)announceHeadshot({weapon,target:hit.kind});
@@ -285,6 +292,7 @@ export function createNativeFootFire(game,{aim,tracer,schedule=null}={}){
       if(landed.kind==="person")applyPersonDamage(landed.id,{melee:true,each:dmg,dir,momentumNs:ns});
       else if(landed.kind==="cow")applyCowDamage(landed.id,Math.round(dmg*.4));
       else if(landed.kind==="cop")applyCopDamage(landed.cop,dmg);
+      else if(landed.kind==="enemy")damageNativeSandboxEnemy(landed.id,1);
       else if(landed.kind==="soldier"||landed.kind==="zombie")applyThreatDamage(landed.id,dmg);
       setData("walkPunch",`${landed.kind}@${Number(landed.t||0).toFixed(2)}`);
       setData("walkPunchHand",h?"left":"right");
@@ -314,6 +322,7 @@ export function createNativeFootFire(game,{aim,tracer,schedule=null}={}){
         if(landed.kind==="person")applyPersonDamage(landed.id,{melee:true,each:KNIFE_DMG,dir,momentumNs:12});
         else if(landed.kind==="cow")applyCowDamage(landed.id,40);
         else if(landed.kind==="cop")applyCopDamage(landed.cop,KNIFE_DMG);
+        else if(landed.kind==="enemy")damageNativeSandboxEnemy(landed.id,1);
         else if(landed.kind==="soldier"||landed.kind==="zombie")applyThreatDamage(landed.id,KNIFE_DMG);
         setData("walkKnife",`${landed.kind}@${Number(landed.t||0).toFixed(2)}`);
       },KNIFE_STRIKE_MS);

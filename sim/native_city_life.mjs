@@ -93,10 +93,12 @@ export function nativeTraffic(){
   return out;
 }
 export function takeNativeCarBooms(){return carBooms.splice(0);}
+// Production arondight:world-kill (scored by the sandbox loop, heard by audio).
+function worldKill(kind,id,x,y){try{window.dispatchEvent(new CustomEvent("arondight:world-kill",{detail:{kind,id,position:[x,y,0]}}));}catch{}}
 function dropPerson(a,impulse,fatal){
   if(!a||a.down)return;
   a.down=true;a.knocked=true;a.v=0;
-  if(fatal)a.alive=false;
+  if(fatal){a.alive=false;worldKill("person",a.id,a.x,a.y);}
   spawnNativeRagdoll({
     position:[a.x,a.y,(Number(a.z)||0)+.05],yaw:(Number(a.yaw)||0)-Math.PI/2,
     impulse,seed:a.id,id:a.id,
@@ -200,7 +202,7 @@ export function tickNativeCityLife(game,now=performance.now()){
   for(const car of cars){
     if(!car.alive)continue;
     if(car.criticalAt&&now>=car.criticalAt){
-      car.alive=false;car.criticalAt=0;
+      car.alive=false;car.criticalAt=0;worldKill(car.bus?"bus":"car",car.id,car.x??0,car.y??0);
       const at=pointOn(car.route,car.s,laneOf(car));
       if(at){
         const yaw=at.yaw+(car.dir<0?Math.PI:0);
@@ -248,7 +250,7 @@ export function blastNativeCity(center,radius,falloff,exposure){
     if(!hits)continue;
     car.hits+=hits;
     if(car.hits>=car.structure){
-      car.alive=false;
+      car.alive=false;worldKill(car.bus?"bus":"car",car.id,at.x,at.y);
       const yaw=at.yaw+(car.dir<0?Math.PI:0);
       carsOut.push({id:car.id,x:at.x,y:at.y,z:car.bus?1.2:.45,yaw,vx:Math.cos(at.yaw)*car.speed*car.dir,vy:Math.sin(at.yaw)*car.speed*car.dir});
     }

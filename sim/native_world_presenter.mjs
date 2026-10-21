@@ -164,6 +164,9 @@ export class NativeWorldPresenter{
    // GPS live FOLLOW / MAP views (native_gps_live.mjs) replace the camera.
    const override=globalThis.__nativeCameraOverride?.(this.camera,selected.mode);
    if(override)this.camera=override;
+   // camera_collision_guard: never inside a wall or under the ground.
+   const guarded=globalThis.__nativeCameraGuard?.(this.camera,selected.mode);
+   if(guarded)this.camera=guarded;
    // Avoid drawing the quad body/rotors during on-foot, car, jet or spectator
    // modes. Keep one WebGL2 context and keep the actual physics ticking.
    if(this.airframe){
