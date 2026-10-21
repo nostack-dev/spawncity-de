@@ -106,6 +106,12 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
 #scExitAsk .row{display:flex;gap:10px;justify-content:center;margin-top:14px}
 #scExitAsk button{min-width:96px;height:42px;border-radius:10px;border:1px solid #ffffff33;background:#1d232b;color:#fff;font:800 13px system-ui,sans-serif;letter-spacing:.1em}
 #scExitAsk button[data-yes]{background:linear-gradient(180deg,#ffb02e,#ff7a1a);color:#16120c;border:0}
+/* Install-app button, as production */
+#installApp{position:fixed;z-index:100001;top:max(10px,env(safe-area-inset-top));left:max(10px,env(safe-area-inset-left));height:32px;display:flex;align-items:center;gap:7px;padding:0 11px;background:rgba(10,13,18,.56);border:1px solid rgba(255,255,255,.16);border-radius:6px;color:#fff;font:600 11px Inter,system-ui,sans-serif;letter-spacing:.12em;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.45)}
+#installApp svg{width:14px;height:14px}
+#installApp[hidden],#installHint[hidden]{display:none!important}
+#installHint{position:fixed;z-index:100002;top:calc(max(10px,env(safe-area-inset-top)) + 40px);left:max(10px,env(safe-area-inset-left));max-width:min(80vw,320px);padding:12px 14px;background:#12161cf5;border:1px solid rgba(255,255,255,.16);border-radius:14px;color:#fff;font:600 13px/1.4 system-ui,sans-serif}
+#installHint b{color:#f5b301;font-weight:700}
 /* Production keeps SETTINGS in the in-game top bar and the GPS hint in the start-place pill. */
 #gameMenu .phone-settings-button,#gameMenu #locationPermission{display:none!important}
 </style>
@@ -137,8 +143,185 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
 <button id="gameMenuStart" type="button" disabled>LOADING</button>
 <div id="gameMenuStatus" role="status">PREPARING</div>
 </div></div>
+<script>
+// Renamed RUSH -> SpawnCity: settings saved under the old keys move over once.
+(function(){try{var ls=window.localStorage,keys=[];for(var i=0;i<ls.length;i++){var k=ls.key(i);if(k&&k.indexOf("rush")===0)keys.push(k);}
+  keys.forEach(function(k){var n="spawnCity"+k.slice(4);if(ls.getItem(n)===null)ls.setItem(n,ls.getItem(k));ls.removeItem(k);});}catch(e){}})();
+</script>
+<script>
+// Background silence: when the app is closed / sent to the background (tab hidden, PWA switched
+// away, screen off) every Web Audio context is suspended and every <audio>/<video> paused —
+// music, engine, effects, voices. Nothing may resume while hidden (several modules call resume()
+// on their own). Coming back, every context that was running runs again: at once where the
+// browser allows it, otherwise on the very next touch / click / key (phones only let audio
+// start from a gesture) — never left suspended, so engines, ambience and explosions stay.
+(()=>{const ctxs=new Set(),media=new Set(),Base=window.AudioContext||window.webkitAudioContext;let hiddenNow=false;
+  const isHidden=()=>hiddenNow||document.visibilityState==="hidden";
+  if(Base&&!Base.__bgGuard){const resume=Base.prototype.resume;Base.__bgNativeResume=resume;
+    Base.prototype.resume=function(){ctxs.add(this);if(isHidden()){this.__bgWant=true;return Promise.resolve();}return resume.call(this);};
+    class Tracked extends Base{constructor(...a){super(...a);ctxs.add(this);try{this.addEventListener("statechange",()=>{if(this.state==="running")this.__bgWant=false;});}catch(e){}if(isHidden()){this.__bgWant=true;try{this.suspend();}catch(e){}}}}
+    Tracked.__bgGuard=true;window.AudioContext=Tracked;if(window.webkitAudioContext)window.webkitAudioContext=Tracked;}
+  const nativeResume=c=>{try{const r=(Base.__bgNativeResume||c.resume).call(c);if(r&&r.catch)r.catch(function(){});}catch(e){}};
+  const play=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){media.add(this);if(isHidden()){this.__bgWanted=true;return Promise.resolve();}this.__bgWanted=false;return play.apply(this,arguments);};
+  const pause=HTMLMediaElement.prototype.pause;HTMLMediaElement.prototype.pause=function(){if(!hiddenNow)this.__bgWanted=false;return pause.apply(this,arguments);};
+  function hide(){if(hiddenNow)return;hiddenNow=true;for(const c of ctxs){if(c.state==="running"||c.state==="interrupted"){c.__bgWant=true;try{c.suspend();}catch(e){}}}
+    for(const m of new Set([...media,...document.querySelectorAll("audio,video")])){if(!m.paused&&!(m.srcObject&&m.tagName==="VIDEO")){m.__bgWanted=true;try{pause.call(m);}catch(e){}}}document.documentElement.dataset.bgAudio="suspended";}
+  function wake(){if(isHidden())return;for(const c of ctxs){if(c.__bgWant&&c.state!=="running"&&c.state!=="closed")nativeResume(c);}
+    for(const m of media){if(m.__bgWanted){try{const r=play.call(m);if(r&&r.then)r.then(function(){m.__bgWanted=false;}).catch(function(){});else m.__bgWanted=false;}catch(e){}}}}
+  function show(){if(document.visibilityState==="hidden")return;hiddenNow=false;wake();document.documentElement.dataset.bgAudio="running";}
+  document.addEventListener("visibilitychange",()=>{document.visibilityState==="hidden"?hide():show();},{capture:true});
+  window.addEventListener("pagehide",e=>{if(document.visibilityState==="hidden"||e.persisted)hide();},{capture:true});document.addEventListener("freeze",hide,{capture:true});
+  window.addEventListener("pageshow",show,{capture:true});document.addEventListener("resume",show,{capture:true});
+  // the gesture that phones need to start audio again
+  for(const t of["pointerdown","touchend","keydown","click"])window.addEventListener(t,wake,{capture:true,passive:true});
+  window.__arondightBackgroundAudio={hide,show,wake,get hidden(){return hiddenNow;},contexts:()=>[...ctxs]};})();
+</script>
+
+<script>
+// Strict versioning for the installed app (home screen). The deployed page carries its build
+// SHA (first comment of the document); every deploy also publishes ./build.json with the same
+// SHA. We ask for build.json with no-store + a unique query (no CDN, no HTTP cache, no service
+// worker cache can answer) on start, on every return to the app (visibility, focus, pageshow,
+// back online) and every 30 s. A newer build:
+//  * before the first START (title screen, app launch / resume) → reload right away,
+//  * once a game has been started in this page, never on its own: a session in progress (also in
+//    the pause menu, after an app switch, in multiplayer) is never thrown out — an UPDATE pill
+//    (tap / U = update now) waits until the player chooses.
+// Before reloading, the service worker is told to update, every Cache Storage entry is dropped,
+// and the reload URL carries the new SHA so nothing on the way can serve the old page.
+(function(){
+  var first=document.firstChild,m=first&&first.nodeType===8&&/(?:BUILD_SHA|SPAWNCITY_NATIVE_CANDIDATE_SHA):([0-9a-f]{7,40})/.exec(first.nodeValue||""),mine=m&&m[1];
+  // bottom right: this build vs the online build, green when equal
+  var tag=document.createElement("div");tag.id="buildTag";tag.style.cssText="position:fixed;z-index:2147482000;right:max(6px,env(safe-area-inset-right));bottom:max(4px,env(safe-area-inset-bottom));padding:2px 6px;border-radius:4px;background:#000a;color:#9fb3c8;font:600 10px/1.3 ui-monospace,Menlo,monospace;pointer-events:none;letter-spacing:.02em";
+  function showTag(online){if(!tag.isConnected&&document.body)document.body.appendChild(tag);var a=mine?mine.slice(0,7):"dev",b=online?online.slice(0,7):"…";tag.textContent="v "+a+" · online "+b;tag.style.color=online&&mine&&online===mine?"#7ff0c5":online?"#ffcf6a":"#9fb3c8";}
+  if(document.body)showTag(null);else document.addEventListener("DOMContentLoaded",function(){showTag(null);});
+  if(!mine){fetch("./build.json?t="+Date.now(),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(j){showTag(j&&j.sha||null);}).catch(function(){});return;}
+  var pending=null,reloading=false,lastCheck=0,pill=null;
+  function menu(){return document.getElementById("gameMenu");}
+  function inMenu(){var el=menu();return !el||!el.hidden;}
+  var played=false;function playing(){if(!played&&document.body&&document.body.classList.contains("solo-flight"))played=true;return played;}setInterval(playing,1000);
+  function purge(){var jobs=[];/* the offline copy and map data stay (the worker serves the page network-first anyway); legacy caches go */try{if(window.caches&&caches.keys)jobs.push(caches.keys().then(function(k){return Promise.all(k.filter(function(n){return n.indexOf("spawncity-")!==0&&n!=="rush-tiles-v1"/* the worker moves the old map cache over */;}).map(function(n){return caches.delete(n);}));}));}catch(e){}
+    try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations)jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){return Promise.all(rs.map(function(r){return r.update().catch(function(){});}));}));}catch(e){}
+    return Promise.race([Promise.all(jobs),new Promise(function(r){setTimeout(r,1500);})]);}
+  function fresh(sha){if(reloading)return;
+    // loop guard: if the CDN still hands out the old page after two reloads for this SHA, wait for a tap
+    var key="spawnCityUpdateTries:"+sha,tries=0;try{tries=+sessionStorage.getItem(key)||0;sessionStorage.setItem(key,String(tries+1));}catch(e){}
+    if(tries>=2){showPill();return;}
+    reloading=true;purge().then(function(){var u=new URL(location.href);u.searchParams.set("v",sha.slice(0,12));location.replace(u.toString());});}
+  // in-game live notice: a new build is online → banner with a RELOAD button (tap / click / U key);
+  // the game keeps running until you choose, "LATER" hides it until the next check finds it again
+  function showPill(){if(pill&&pill.isConnected){if(Date.now()-(+pill.dataset.later||0)<600000)return;/* LATER = quiet for 10 min */pill.style.display="flex";return;}if(!document.body)return;pill=document.createElement("div");pill.id="appUpdatePill";pill.setAttribute("role","status");
+    pill.innerHTML='<span style="font:800 12px/1.2 system-ui,sans-serif;letter-spacing:.08em">⬆ UPDATE AVAILABLE</span><button type="button" data-u="go" style="padding:7px 12px;border-radius:14px;border:0;background:linear-gradient(180deg,#7ff0c5,#3fbf8a);color:#06261a;font:900 12px/1 system-ui,sans-serif;letter-spacing:.1em;cursor:pointer">RELOAD · U</button><button type="button" data-u="later" style="padding:7px 10px;border-radius:14px;border:1px solid #ffffff55;background:transparent;color:#cfe;font:700 11px/1 system-ui,sans-serif;cursor:pointer">LATER</button>';
+    pill.style.cssText="position:fixed;z-index:2147483000;left:50%;top:calc(max(8px,env(safe-area-inset-top)) + 56px);transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:8px 10px 8px 14px;border-radius:22px;border:2px solid #7ff0c5;background:#0d1118f0;color:#eafff7;box-shadow:0 8px 24px #000a;animation:appUpdIn .35s ease-out";
+    var st=document.createElement("style");st.textContent="@keyframes appUpdIn{from{opacity:0;transform:translate(-50%,-14px)}to{opacity:1;transform:translate(-50%,0)}}";document.head.appendChild(st);
+    pill.addEventListener("pointerdown",function(e){e.stopPropagation();},true);
+    pill.addEventListener("click",function(e){var b=e.target.closest&&e.target.closest("[data-u]");if(!b)return;e.preventDefault();e.stopPropagation();if(b.dataset.u==="later"){pill.style.display="none";pill.dataset.later=String(Date.now());return;}if(!pending)return;try{sessionStorage.removeItem("spawnCityUpdateTries:"+pending);}catch(_){}fresh(pending);});
+    window.addEventListener("keydown",function(e){if(e.code==="KeyU"&&pending&&pill&&pill.style.display!=="none"&&!e.repeat){try{sessionStorage.removeItem("spawnCityUpdateTries:"+pending);}catch(_){}fresh(pending);}});
+    document.body.appendChild(pill);}
+  function seen(sha,reason){if(sha)showTag(sha);if(!sha||sha===mine)return;pending=sha;if(!playing()&&(inMenu()||reason==="resume"||reason==="load"))fresh(sha);else showPill();}
+  function viaPage(reason){return fetch(location.pathname+"?vcheck="+Date.now(),{cache:"no-store",credentials:"same-origin"}).then(function(r){return r.ok?r.text():"";}).then(function(t){var n=/(?:BUILD_SHA|SPAWNCITY_NATIVE_CANDIDATE_SHA):([0-9a-f]{7,40})/.exec(t.slice(0,300));if(n)seen(n[1],reason);});}
+  function check(reason){var now=Date.now();if(reason!=="load"&&reason!=="resume"&&now-lastCheck<10000)return;lastCheck=now;
+    fetch("./build.json?t="+now,{cache:"no-store",credentials:"same-origin"}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){seen(String(j&&j.sha||""),reason);}).catch(function(){viaPage(reason).catch(function(){});});}
+  function resume(){if(pending&&!playing())fresh(pending);else check("resume");}
+  document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")resume();});
+  window.addEventListener("pageshow",function(e){if(e.persisted)resume();});
+  window.addEventListener("focus",function(){check("focus");});
+  window.addEventListener("online",function(){check("resume");});
+  setInterval(function(){if(pending&&inMenu()&&!playing())fresh(pending);else check("interval");},30000);
+  check("load");
+})();
+</script>
+<script>
+// Menu UI click: a short soft pulse blip in the soundtrack's key (B♭→E♭),
+// for START, HOME SCREEN and turning sound on. Respects the sound switch.
+(function(){
+  var ctx=null;
+  function soundOn(){try{return JSON.parse(localStorage.getItem("arondight45AudioSettingsV1")||"{}").soundEnabled!==false;}catch(e){return true;}}
+  function blip(strong){
+    if(!soundOn())return;var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+    try{ctx=ctx||new AC();if(ctx.state==="suspended")ctx.resume();var t=ctx.currentTime,out=ctx.createGain(),lp=ctx.createBiquadFilter();lp.type="lowpass";lp.frequency.setValueAtTime(3200,t);lp.frequency.exponentialRampToValueAtTime(900,t+.25);out.gain.value=strong?.22:.14;lp.connect(out).connect(ctx.destination);
+      [[932.33,0],[1244.51,.07]].slice(0,strong?2:1).forEach(function(n){var o=ctx.createOscillator(),g=ctx.createGain();o.type="square";o.frequency.value=n[0];g.gain.setValueAtTime(0,t+n[1]);g.gain.linearRampToValueAtTime(1,t+n[1]+.005);g.gain.exponentialRampToValueAtTime(.001,t+n[1]+.16);o.connect(g).connect(lp);o.start(t+n[1]);o.stop(t+n[1]+.2);});}catch(e){}
+  }
+  window.__oppUiBlip=blip;
+  document.addEventListener("click",function(e){var el=e.target&&e.target.closest&&e.target.closest("#gameMenuStart,#installApp,#soundSwitch,#musicSwitch,#gameExitButton");if(!el)return;
+    if(el.id==="soundSwitch"){setTimeout(function(){blip(false);},0);return;}blip(el.id==="gameMenuStart");},true);
+})();
+</script>
+<button id="installApp" type="button" hidden aria-label="Install on home screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>HOME SCREEN</button>
+<div id="installHint" hidden role="note"></div>
+<script>
+// Install as a home-screen app (top left of the menu).
+//  Android/Chrome: native install prompt (beforeinstallprompt).
+//  iOS Safari: no API exists — show the two taps (Share → Add to Home Screen).
+// Hidden when already running as an installed app.
+(function(){
+  var btn=document.getElementById("installApp"),hint=document.getElementById("installHint"),menu=document.getElementById("gameMenu"),deferred=null;
+  var standalone=window.matchMedia("(display-mode: standalone)").matches||window.matchMedia("(display-mode: fullscreen)").matches||navigator.standalone===true;
+  var ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(/macintosh/i.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
+  /* /native/ is isolated from the production PWA: no service worker here. */
+  function sync(){btn.hidden=standalone||!menu||menu.hidden||!(deferred||ios);if(btn.hidden)hint.hidden=true;setTimeout(sync,500);}
+  window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();deferred=e;});
+  window.addEventListener("appinstalled",function(){standalone=true;deferred=null;});
+  btn.addEventListener("pointerdown",function(e){e.stopPropagation();},true);
+  btn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();
+    if(deferred){deferred.prompt();deferred.userChoice.finally(function(){deferred=null;});return;}
+    if(ios){hint.innerHTML='Tippe unten in Safari auf <b>Teilen</b> &#x2191; und dann auf <b>Zum Home-Bildschirm</b>. SpawnCity startet danach im Vollbild wie eine App.';hint.hidden=!hint.hidden;}});
+  document.addEventListener("click",function(e){if(!hint.hidden&&e.target!==btn&&!btn.contains(e.target))hint.hidden=true;},true);
+  sync();
+})();
+</script>
 <button id="musicSwitch" type="button" aria-label="Music on/off" data-on="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="ms-x" d="M4 4l16 16"/></svg></button>
 <button id="soundSwitch" type="button" aria-label="Effects on/off" data-on="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="ss-wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="ss-x" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
+<script>
+// Two toggles, top right in the menu and (docked left of RESET) in game:
+// EFFECTS (soundEnabled — every effect, drone, shots, ambience) and MUSIC
+// (musicEnabled) — independent. Both write the shared audio settings, so
+// every audio module follows immediately.
+(function(){
+  var KEY="arondight45AudioSettingsV1",btn=document.getElementById("soundSwitch");
+  function read(){try{return JSON.parse(localStorage.getItem(KEY)||"{}");}catch(e){return{};}}
+  function on(){return read().soundEnabled!==false;}
+  function render(){btn.dataset.on=on()?"1":"0";btn.setAttribute("aria-pressed",on()?"true":"false");}
+  btn.addEventListener("pointerdown",function(e){e.stopPropagation();},true);
+  btn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();
+    var cfg=read();cfg.soundEnabled=!on();try{localStorage.setItem(KEY,JSON.stringify(cfg));}catch(err){}
+    window.dispatchEvent(new CustomEvent("arondight45-audio-settings-change",{detail:cfg}));render();});
+  var mbtn=document.getElementById("musicSwitch");function musicOn(){return read().musicEnabled!==false;}
+  function renderMusic(){mbtn.dataset.on=musicOn()?"1":"0";mbtn.setAttribute("aria-pressed",musicOn()?"true":"false");}
+  mbtn.addEventListener("pointerdown",function(e){e.stopPropagation();},true);
+  mbtn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();var cfg=read();cfg.musicEnabled=!musicOn();try{localStorage.setItem(KEY,JSON.stringify(cfg));}catch(err){}
+    var m=window.__oppMusicElement;if(m){if(cfg.musicEnabled===false)m.pause();else m.play().catch(function(){});}
+    window.dispatchEvent(new CustomEvent("arondight45-audio-settings-change",{detail:cfg}));renderMusic();});
+  window.addEventListener("arondight45-audio-settings-change",function(){renderMusic();});renderMusic();
+  window.addEventListener("arondight45-audio-settings-change",function(){render();});
+  // In game: sit just left of RESET (falls back to the menu's top-right spot).
+  function dock(){/* while playing on touch the edge HUD (sim/edge_hud_layout.mjs) owns these two: writing them here as well made them jump back and forth every few hundred ms */if(document.body.classList.contains("edge-hud")||btn.dataset.edgeAdopted){setTimeout(dock,400);return;}var reset=null,menu=document.getElementById("gameMenu");["mobileGameplayReset","soloReset"].forEach(function(id){var el=document.getElementById(id);if(!el||!el.offsetParent)return;var q=el.getBoundingClientRect();if(q.width<4||q.height<4)return;if(!reset||q.top<reset.getBoundingClientRect().top-2)reset=el;});var inGame=menu&&menu.hidden&&reset;
+    if(inGame){var r=reset.getBoundingClientRect(),right=window.innerWidth-r.left+6;btn.style.top=r.top+"px";btn.style.right=right+"px";btn.style.height=r.height+"px";mbtn.style.top=r.top+"px";mbtn.style.right=(right+btn.offsetWidth+6)+"px";mbtn.style.height=r.height+"px";}else{btn.style.top="";btn.style.right="";btn.style.height="";mbtn.style.top="";mbtn.style.right="";mbtn.style.height="";}
+    setTimeout(dock,400);}
+  render();dock();
+})();
+</script>
+<script>
+// Menu music starts right away: try autoplay on load, and if the browser
+// blocks it (iOS/Android do until the first touch), start on the very first
+// tap/key anywhere. The game's music module adopts this same element later,
+// so the track never restarts or doubles when START is pressed.
+(function(){
+  var cfg={};try{cfg=JSON.parse(localStorage.getItem("arondight45AudioSettingsV1")||"{}");}catch(e){}
+  if(cfg.musicEnabled===false)return;
+  var vol=Math.max(0,Math.min(1,(cfg.musicVolume==null?32:cfg.musicVolume)/100))*0.45;
+  var a=new Audio("/sim/audio/8_bits_only.m4a");a.loop=true;a.preload="auto";a.volume=vol;a.setAttribute("playsinline","");
+  window.__oppMusicElement=a;
+  // One audio session for the whole game: the Web Audio context for all
+  // effects is created on the same first tap that starts the music, so iOS
+  // never switches/interrupts the session later when the game is running.
+  function ctx(){try{if(!window.__sharedAudioContext){var AC=window.AudioContext||window.webkitAudioContext;if(AC)window.__sharedAudioContext=new AC({latencyHint:"interactive"});}var x=window.__sharedAudioContext;if(x&&x.state==="suspended")x.resume().catch(function(){});}catch(e){}}
+  function go(e){if(e&&e.isTrusted===false)return;if(e)ctx();if(!a.paused){off();return;}a.play().then(function(){document.documentElement.dataset.menuMusic="playing";off();}).catch(function(){document.documentElement.dataset.menuMusic="waiting-for-tap";});}
+  function off(){["pointerdown","touchend","keydown","click"].forEach(function(t){window.removeEventListener(t,go,true);});}
+  ["pointerdown","touchend","keydown","click"].forEach(function(t){window.addEventListener(t,go,true);});
+  go();
+})();
+</script>
 <script>
 (function(){
   if(/[?&]dev=1/.test(location.search))document.body.classList.add("dev-ui");
@@ -228,6 +411,7 @@ display:grid;place-items:center;font-size:11px;color:#daebff90;letter-spacing:.0
   new MutationObserver(hiddenState).observe(menu,{attributes:true,attributeFilter:["hidden"]});
 })();
 </script>
+
 <script type="module" src="./sim/native_game_bootstrap.mjs"></script>
 </body>
 </html>

@@ -412,11 +412,8 @@ async function startGame(){
   startButton.disabled=false;startButton.textContent="START";
  }finally{starting=false;}
 }
-const sound=$("soundSwitch"),music=$("musicSwitch");
-const paintAudio=()=>{const s=loadAudioSettings();if(sound)sound.dataset.on=s.soundEnabled?"1":"0";if(music)music.dataset.on=s.musicEnabled?"1":"0";};
-paintAudio();
-sound?.addEventListener("click",()=>{const s=loadAudioSettings();saveAudioSettings({...s,soundEnabled:!s.soundEnabled});paintAudio();});
-music?.addEventListener("click",()=>{const s=loadAudioSettings();saveAudioSettings({...s,musicEnabled:!s.musicEnabled});paintAudio();});
+// Music / effects toggles and their in-game dock are the production inline
+// script in native_game.html (same audio settings key and change event).
 startButton.addEventListener("click",()=>{if(startButton.textContent==="RETRY"){location.reload();return;}void startGame();});
 addEventListener("keydown",event=>{
   if(event.metaKey||event.ctrlKey||event.altKey)return;
