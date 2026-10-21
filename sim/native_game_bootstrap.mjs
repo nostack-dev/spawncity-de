@@ -81,14 +81,83 @@ function updateTelemetry(game,now){
  const arm=$("armButton");
  if(arm&&session?.input)arm.setAttribute("aria-pressed",String(session.input.arm));
 }
-async function preciseGeoLocation(){
- if(!navigator.geolocation)return null;
+let cachedFix=null,permissionState="unknown",asking=null;
+function platform(){
+ const ua=navigator.userAgent||"";
+ if(/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1))return "ios";
+ if(/Android/.test(ua))return "android";
+ return "desktop";
+}
+function deniedHint(){
+ const where={
+  ios:"Einstellungen → Datenschutz & Sicherheit → Ortungsdienste → Safari → Beim Verwenden der App",
+  android:"Schloss in der Adresszeile → Berechtigungen → Standort → Zulassen",
+  desktop:"Schloss links in der Adresszeile → Standort → Zulassen"
+ }[platform()];
+ return "Standort blockiert. "+where;
+}
+function gpsOnce(options){
  return new Promise(resolve=>{
-  navigator.geolocation.getCurrentPosition(
-   position=>resolve({lon:position.coords.longitude,lat:position.coords.latitude}),
-   ()=>resolve(null),{enableHighAccuracy:true,timeout:12000,maximumAge:0});
+  if(!navigator.geolocation){resolve({fix:null,error:Error("no geolocation")});return;}
+  try{navigator.geolocation.getCurrentPosition(
+   position=>resolve({fix:{lon:position.coords.longitude,lat:position.coords.latitude,accuracy:position.coords.accuracy},error:null}),
+   error=>resolve({fix:null,error}),options);}
+  catch(error){resolve({fix:null,error});}
  });
 }
+async function readPermission(){
+ try{
+  const status=await navigator.permissions?.query?.({name:"geolocation"});
+  if(!status)return permissionState;
+  permissionState=status.state;
+  status.onchange=()=>{permissionState=status.state;if(status.state==="granted"&&!cachedFix)void requestLocation({reason:"permission-granted"});paintPermission();};
+  return status.state;
+ }catch{return permissionState;}
+}
+function paintPermission(){
+ const button=document.getElementById("locationPermission");
+ if(!button)return;
+ const missing=permissionState!=="granted"&&!cachedFix&&!globalThis.__arondightStartPlace?.get?.();
+ button.hidden=!missing;
+ button.textContent=permissionState==="denied"?"STANDORT ERLAUBEN":"STANDORT ANFRAGEN";
+}
+function ensurePermissionButton(){
+ if(document.getElementById("locationPermission"))return;
+ const host=document.getElementById("welcome");if(!host)return;
+ const button=document.createElement("button");
+ button.id="locationPermission";button.type="button";button.hidden=true;
+ button.addEventListener("click",event=>{event.preventDefault();event.stopPropagation();void requestLocation({reason:"button",force:true});});
+ host.appendChild(button);
+ const style=document.createElement("style");
+ style.textContent="#locationPermission{display:block;margin:10px auto 0;min-width:min(64vw,300px);padding:10px 16px;border-radius:12px;border:1px solid #7fd3ff;background:#123049;color:#e7f4ff;font:800 12px/1 system-ui;letter-spacing:.08em;cursor:pointer}#locationPermission[hidden]{display:none}";
+ document.head.appendChild(style);
+}
+// Ask immediately when the page opens and again from a tap if the browser
+// (iOS) only shows the system dialog inside a user gesture.
+async function requestLocation({reason="initial",force=false}={}){
+ if(cachedFix&&!force)return cachedFix;
+ if(asking)return asking;
+ // Fire the system dialog before any await. iOS only shows it inside a gesture.
+ const pending=permissionState==="denied"&&!force?null:gpsOnce({enableHighAccuracy:true,timeout:12000,maximumAge:0});
+ asking=(async()=>{
+  await readPermission();
+  if(permissionState==="denied"&&!force){setMenuStatus(deniedHint());paintPermission();return null;}
+  setMenuStatus(reason==="initial"?"STANDORT WIRD ANGEFRAGT":"STANDORT ERLAUBEN");
+  const precise=pending?await pending:await gpsOnce({enableHighAccuracy:true,timeout:12000,maximumAge:0});
+  if(precise.fix){cachedFix=precise.fix;permissionState="granted";setMenuStatus("STANDORT GEFUNDEN");paintPermission();return cachedFix;}
+  if(precise.error?.code===1){permissionState="denied";setMenuStatus(deniedHint());paintPermission();return null;}
+  const coarse=await gpsOnce({enableHighAccuracy:false,timeout:8000,maximumAge:60000});
+  if(coarse.fix){cachedFix=coarse.fix;permissionState="granted";setMenuStatus("STANDORT GEFUNDEN");paintPermission();return cachedFix;}
+  if(coarse.error?.code===1)permissionState="denied";
+  setMenuStatus(permissionState==="denied"?deniedHint():"Kein GPS-Signal · START versucht es erneut");
+  paintPermission();
+  return null;
+ })();
+ try{return await asking;}finally{asking=null;}
+}
+ensurePermissionButton();
+void requestLocation({reason:"initial"});
+addEventListener("pointerdown",()=>{if(!cachedFix&&permissionState!=="denied")void requestLocation({reason:"gesture"});},{capture:true,once:true});
 async function resolveStartOrigin(){
  // Same contract as production: a place picked this session wins, otherwise
  // the player's GPS position. Konstanz is only the labelled fallback.
@@ -96,9 +165,9 @@ async function resolveStartOrigin(){
  if(chosen?.coords){
   return {origin:{lon:chosen.coords.longitude,lat:chosen.coords.latitude},label:globalThis.__arondightStartPlace.get()?.name||"chosen place",source:"place"};
  }
- const fix=await preciseGeoLocation();
+ const fix=cachedFix||await requestLocation({reason:"start",force:!cachedFix});
  if(fix)return {origin:fix,label:"your GPS location",source:"gps"};
- report("GPS denied · switching to real Konstanz demo");
+ report(permissionState==="denied"?deniedHint():"GPS unavailable · switching to real Konstanz demo");
  return {origin:NATIVE_DEMO_CITY.origin,label:NATIVE_DEMO_CITY.name,source:"demo"};
 }
 async function loadRealWorld(game){
