@@ -66,17 +66,29 @@ export function* nativeCityChunkSteps(footprints,{chunkSize=320,maxBuildings=260
      const a=ring[i],b=ring[(i+1)%ring.length],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
      if(len<.02)continue;
      const normal=[dy/len,-dx/len,0],a0=[a[0],a[1],base],b0=[b[0],b[1],base],a1=[a[0],a[1],top],b1=[b[0],b[1],top];
-     const shade=0.72+0.28*((Math.floor(len*1.7)+Math.floor((base+top)*.3))&1);
-     const pane=[wallColor[0]*shade*.45+.08,wallColor[1]*shade*.5+.12,wallColor[2]*shade*.55+.16];
      appendTriangle(batch,a0,b0,b1,normal,wallColor,[0,0],[len,0],[len,wallHeight]);
      appendTriangle(batch,a0,b1,a1,normal,wallColor,[0,0],[len,wallHeight],[0,wallHeight]);
-     // A second, slightly inset band so windows read even when the facade shader is far.
-     if(wallHeight>2.4&&len>1.6){
-      const z0=base+wallHeight*.28,z1=base+wallHeight*.62,push=.06;
-      const lift=(p,z)=>[p[0]+normal[0]*push,p[1]+normal[1]*push,z];
-      appendTriangle(batch,lift(a,z0),lift(b,z0),lift(b,z1),normal,pane,[0,0],[len,0],[len,1]);
-      appendTriangle(batch,lift(a,z0),lift(b,z1),lift(a,z1),normal,pane,[0,0],[len,1],[0,1]);
-      batch.triangles+=2;triangles+=2;
+     // Real window grid, not a shader hint. One dark pane per floor cell,
+     // slightly proud of the wall so it reads at the live camera distance.
+     if(wallHeight>2.6&&len>2.2){
+      const pitch=2.7,floorH=3.15,push=.045;
+      const nWin=Math.max(1,Math.floor((len-.6)/pitch));
+      const margin=(len-nWin*pitch)*.5;
+      const floors=Math.max(1,Math.floor((wallHeight-1.1)/floorH));
+      const glass=[.16,.2,.26];
+      const lift=(u,z)=>[a[0]+dx/len*u+normal[0]*push,a[1]+dy/len*u+normal[1]*push,z];
+      for(let f=0;f<floors;f++){
+       const z0=base+1.05+f*floorH,z1=Math.min(top-.25,z0+(f===0?1.7:1.35));
+       if(z1-z0<.5)continue;
+       for(let w=0;w<nWin;w++){
+        const u0=margin+w*pitch+.28,u1=u0+pitch-.56;
+        if(u1-u0<.4)continue;
+        const p0=lift(u0,z0),p1=lift(u1,z0),p2=lift(u1,z1),p3=lift(u0,z1);
+        appendTriangle(batch,p0,p1,p2,normal,glass,[0,0],[1,0],[1,1]);
+        appendTriangle(batch,p0,p2,p3,normal,glass,[0,0],[1,1],[0,1]);
+        batch.triangles+=2;triangles+=2;
+       }
+      }
      }
      batch.triangles+=2;triangles+=2;
     }

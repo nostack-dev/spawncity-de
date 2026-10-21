@@ -11,7 +11,8 @@ import {isCriticalDamage,criticalDetonationAt,accelerateCriticalDetonation} from
 import {installNativeRagdoll,spawnNativeRagdoll,tickNativeRagdoll} from "./native_ragdoll.mjs";
 import {installNativeCarDebris,tickNativeCarDebris} from "./native_car_debris.mjs";
 
-const PERSON_CAP=100,CAR_CAP=42,BUS_CAP=8,CAR_SPEED=8;
+const PERSON_CAP=100,CAR_CAP=48,BUS_CAP=6,CAR_SPEED=8;
+const PAINTS=[[.86,.86,.88],[.22,.24,.28],[.55,.16,.16],[.18,.32,.55],[.72,.7,.64],[.12,.14,.16],[.42,.46,.4],[.78,.62,.28]];
 let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawnCars=false,routes=[],carBooms=[],carSmokeAt=0;
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
 function playerPos(){
@@ -42,10 +43,23 @@ export function installNativeCityLife(game,snapshot){
     people.push(...seedRouteAgents(route,{spacingM:14,cap:30,salt:"native"}));
   }
   people=people.slice(0,PERSON_CAP);
-  cars=routes.slice(0,CAR_CAP).map((route,i)=>({
-    id:`traffic-${i}`,route,s:(i+.3)/CAR_CAP*route.length,dir:i%2?1:-1,speed:CAR_SPEED*(.7+.4*(i%5)/5),bus:i<BUS_CAP,alive:true,hits:0,structure:i<BUS_CAP?4:3,
-    hp:i<BUS_CAP?320:180,maxHp:i<BUS_CAP?320:180,criticalAt:0
-  }));
+  // Spread traffic along every street, including the one the player starts on.
+  cars=[];
+  const usable=routes.filter(route=>route.length>18).sort((a,b)=>b.length-a.length);
+  let n=0;
+  for(const route of usable){
+    if(cars.length>=CAR_CAP)break;
+    const gap=Math.max(28,route.length/4);
+    for(let s=8;s<route.length-6&&cars.length<CAR_CAP;s+=gap){
+      const bus=n<BUS_CAP&&route.length>40;
+      cars.push({
+        id:`traffic-${n}`,route,s,dir:n%2?1:-1,speed:CAR_SPEED*(.65+.5*(n%5)/5),
+        bus,alive:true,hits:0,structure:bus?4:3,hp:bus?320:180,maxHp:bus?320:180,
+        criticalAt:0,paint:n%PAINTS.length
+      });
+      n++;
+    }
+  }
   visuals=new NativePedestrianVisuals(game.world.renderer,{people:()=>people.filter(a=>a.alive&&!a.knocked).map(a=>({id:a.id,x:a.x,y:a.y,z:0,yaw:a.yaw}))},{maxPeople:PERSON_CAP});
   last=performance.now();
   globalThis.__streetLamps={lamps:()=>lamps?.points||[]};
@@ -175,7 +189,7 @@ export function tickNativeCityLife(game,now=performance.now()){
   if(Math.random()<.02){const x=p[0],y=p[1];for(const a of people)if(a.alive&&Math.hypot(a.x-x,a.y-y)<28)frighten(a,x,y,now,{strength:.4});}
   visuals?.update();
   const renderer=game?.world?.renderer;if(!renderer?.upsert)return;
-  const data=[];
+  const data=[],tints=[];
   for(const car of cars){
     if(!car.alive)continue;
     if(car.criticalAt&&now>=car.criticalAt){
@@ -191,12 +205,15 @@ export function tickNativeCityLife(game,now=performance.now()){
     if(car.s<0||car.s>car.route.length)car.dir*=-1;
     const at=pointOn(car.route,car.s);if(!at)continue;
     if(car.criticalAt&&now-carSmokeAt>180){carSmokeAt=now;game?.world?.effects?.emit?.({kind:"smoke",position:[at.x,at.y,1.1],velocity:[0,0,.8],lifeMs:700,size:.4});}
-    data.push(...fromTRS([at.x,at.y,.62],yawQuat(at.yaw),car.bus?[1.6,3.2,1.15]:[1.15,1.15,1.15]));
+    // Sedan origin is 0.37 m above the wheels. Road surface is ~0.11 m.
+    const z=.50,scale=car.bus?[1.35,1.55,1.25]:[1,1,1];
+    data.push(...fromTRS([at.x,at.y,z],yawQuat(at.yaw+(car.dir<0?Math.PI:0)),scale));
+    tints.push(...(PAINTS[car.paint]||PAINTS[0]),1);
   }
   if(!data.length){if(drawnCars){renderer.remove("traffic/cars");drawnCars=false;}return;}
-  const transforms=new Float32Array(data);
-  if(!drawnCars){renderer.upsert("traffic/cars",{...ORIGINAL_SEDAN,instances:{transforms},material:{doubleSided:true,castShadow:false}});drawnCars=true;}
-  else renderer.updateInstances("traffic/cars",{transforms});
+  const transforms=new Float32Array(data),tint=new Float32Array(tints);
+  if(!drawnCars){renderer.upsert("traffic/cars",{...ORIGINAL_SEDAN,instances:{transforms,tints:tint},material:{doubleSided:true,castShadow:false}});drawnCars=true;}
+  else renderer.updateInstances("traffic/cars",{transforms,tints:tint});
 }
 export function blastNativeCity(center,radius,falloff,exposure){
   const carsOut=[];
