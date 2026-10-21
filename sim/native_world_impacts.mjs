@@ -13,6 +13,7 @@
 // Far hits still read on screen (through the scope too): marks and debris grow
 // with distance / zoom so they never fall below a few pixels.
 import {nativeOsmProjector} from "./native_osm_projector.mjs";
+import {getSharedCombatAudioContext,playCombatAudio} from "./combat_audio_bank.mjs";
 export const NATIVE_WORLD_IMPACTS_VERSION="terrain-draped-decals+chips+tree-damage-v2-native";
 const DECALS=420,CHIPS=220,TREE_HP=12,SCORCHES=40,SG=10;
 const COLORS={building:[0xcfc6b4,0xa89f90],ground:[0x6b5a44,0x7a9a52],tree:[0x4f9a3a,0x6b4a32],vehicle:[0xffd27a,0xfff2c4],glass:[0xe4f0f6,0xa9c6d6],actor:[0x8a1a1a,0x5a1010],water:[0x9fd0ff,0xffffff]};
@@ -192,7 +193,7 @@ export function nativeBulletImpact(ray,hit,{maxDistance=180}={}){
   if(!point)return false;
   if(!surface){const n=normal||[0,0,1];surface=n[2]>.75&&point[2]-ground(point[0],point[1])<.6?"ground":"building";}
   normal??=d?d.map(x=>-x):[0,0,1];if(d&&normal[0]*d[0]+normal[1]*d[1]+normal[2]*d[2]>0)normal=normal.map(x=>-x);
-  if(surface==="actor"){chipBurst(point,normal,"actor",3,2);return true;}
+  if(surface==="actor"){chipBurst(point,normal,"actor",3,2);if(hit?.person!==false){spawnBlood(point);playPersonGroan();}return true;}
   if(surface==="building"){let u=hit?.wallU,v=hit?.wallV;if(!Number.isFinite(u)){const w=wallCoords(point);u=w?.u;v=w?.v;}
     if(onGlass(u,v)){addCrack(point,normal);chipBurst(point,normal,"glass",5,2.6);return true;}}
   addDecal(point,normal,{size:surface==="vehicle"?.06:.085,color:surface==="ground"?0x2e2a22:surface==="vehicle"?0x1c1c1c:0x34302a,ground:surface==="ground"});
@@ -213,6 +214,18 @@ function onExplosion(event){
   const reach=nuke?Math.min(600,r*1.4):r*.85;
   for(const t of trees){const dist=Math.hypot(t.x-x,t.y-y);if(dist<reach){if(nuke)setTimeout(()=>knockTree(t,x,y,1.4),dist/343*1000);else knockTree(t,x,y,1-dist/reach);}}
 }
+
+// ------------------------------------------------------------------ blood + groan (gameplay_polish_lite)
+const BLOOD=MOBILE?14:22,blood=Array.from({length:BLOOD},()=>({until:0,p:[0,0,0],v:[0,0,0],c:[.5,.01,.01]}));let bloodCursor=0,bloodShown=false;
+function fxSettings(){try{const raw=localStorage.getItem("arondight45AudioSettingsV1"),v=raw?JSON.parse(raw):{};return{enabled:v.soundEnabled!==false,volume:Math.max(0,Math.min(100,v.fxVolume??100))/100};}catch{return{enabled:true,volume:1};}}
+function playPersonGroan(){const st=fxSettings(),ctx=getSharedCombatAudioContext({resume:true});if(!st.enabled||st.volume<=0||!ctx)return false;return playCombatAudio(ctx,"scream",{gain:.30*st.volume,minIntervalMs:105});}
+export function spawnBlood(point){if(!point)return;const now=performance.now(),far=visibilityScale(point,4,.06);
+  for(let i=0;i<(far>1.5?12:6);i++){const b=blood[bloodCursor++%BLOOD],a=Math.random()*Math.PI*2,sp=.45+Math.random()*1.1;b.until=now+450+Math.random()*250;b.p=[point[0],point[1],point[2]+.05];b.v=[Math.cos(a)*sp,Math.sin(a)*sp,.3+Math.random()*.9];b.c=[.42+Math.random()*.18,.01,.01];b.s=.1*Math.min(6,far)*.6;}
+  const v=globalThis.document?.getElementById?.("viewport");if(v)v.dataset.worldBloodFx=String((Number(v.dataset.worldBloodFx)||0)+1);}
+function drawBlood(r,now,dt){const live=blood.filter(b=>b.until>now);if(!live.length){if(bloodShown){r.remove("impacts/blood");bloodShown=false;}return;}
+  const tr=new Float32Array(live.length*16),ti=new Float32Array(live.length*4);
+  live.forEach((b,i)=>{b.v[2]-=3.5*dt;for(let k=0;k<3;k++)b.p[k]+=b.v[k]*dt;b.p[2]=Math.max(ground(b.p[0],b.p[1])+.015,b.p[2]);const s=Math.max(.01,b.s);tr.set([s,0,0,0,0,s,0,0,0,0,s,0,...b.p,1],i*16);ti.set([...b.c,.86],i*4);});
+  r.upsert("impacts/blood",{...CUBE,instances:{transforms:tr,tints:ti},material:{unlit:true,castShadow:false,alphaMode:"blend",color:[1,1,1,1]}});bloodShown=true;}
 // ------------------------------------------------------------------ per frame
 const DISC=circleGeo(),CRACK=crackGeo(),CUBE=cubeGeo(),TRUNK=trunkGeo(),CROWN=crownGeo();
 let chipsShown=false,decalsShown=false,cracksShown=false;
@@ -229,7 +242,7 @@ export function tickNativeWorldImpacts(now=performance.now()){
     if(list.length){r.upsert("impacts/decals",{...DISC,instances:{transforms:tr,tints:ti},material:{unlit:true,doubleSided:true,castShadow:false,alphaMode:"blend",color:[1,1,1,1]}});decalsShown=true;}else if(decalsShown){r.remove("impacts/decals");decalsShown=false;}}
   if(cracksDirty){cracksDirty=false;const list=cracks.filter(Boolean),tr=new Float32Array(list.length*16);list.forEach((c,i)=>tr.set(c.m,i*16));
     if(list.length){r.upsert("impacts/cracks",{...CRACK,instances:{transforms:tr},material:{unlit:true,doubleSided:true,castShadow:false,alphaMode:"blend",color:[.9,.95,1,.85]}});cracksShown=true;}else if(cracksShown){r.remove("impacts/cracks");cracksShown=false;}}
-  drawScorches(r);stepTrees(dt);
+  drawScorches(r);drawBlood(r,now,dt);stepTrees(dt);
   if(trees.length&&treeState.prismKey!==String(prisms().length))positionTrees();
   drawTrees(r);
 }
@@ -237,6 +250,7 @@ export function installNativeWorldImpacts(runtime){
   game=runtime;if(installed||typeof window==="undefined")return;installed=true;
   window.addEventListener("arondight:world-explosion",onExplosion);
   window.addEventListener("arondight:world-reset",()=>{for(const t of trees){t.hp=TREE_HP;t.fall=null;t.sway=null;}treesDirty=true;decals.fill(null);decalsDirty=true;cracks.fill(null);cracksDirty=true;scorches.fill(null);scorchDirty=true;});
+  globalThis.__arondightBlood=p=>{try{spawnBlood(Array.isArray(p)?p:[p.x,p.y,p.z]);}catch{}};
   globalThis.__worldImpacts={bullet:nativeBulletImpact,decal:addDecal,scorch:addScorch,chips:chipBurst,knockTree,trees:()=>trees.map(t=>({x:t.x,y:t.y,sc:t.sc,hp:t.hp,fallen:Boolean(t.fall)})),version:NATIVE_WORLD_IMPACTS_VERSION};
   const v=document.getElementById("viewport");if(v)v.dataset.worldImpacts=NATIVE_WORLD_IMPACTS_VERSION;
 }

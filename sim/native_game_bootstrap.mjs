@@ -324,6 +324,7 @@ async function prepareEngine(){
   installNativeWorldImpacts(game);
   installNativeSceneLighting(game);
   globalThis.__nativeListener=()=>game.world?.camera?.eye||null;
+  globalThis.__nativeCamera=()=>game.world?.camera||null;
   installNativeCombat();
   try{installNativeModeOverlay();}catch(error){console.warn("overlay",error);}
   const weapons=installNativeWeapons(game,{armed:()=>input.arm});

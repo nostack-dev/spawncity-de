@@ -24,7 +24,7 @@ let installed=false,settings=loadAudioSettings(),ctx=null,bus=null,lastShout=-1e
 const lastBySource=new Map(),bubbles=[];
 
 const bridge=()=>globalThis.__arondightRealWorld||null;
-function camera(){const b=bridge();return b?.presentedCamera?.()||b?.threeCamera||null;}
+function camera(){const b=bridge();return b?.presentedCamera?.()||b?.threeCamera||globalThis.__nativeCamera?.()||null;}
 function hearing(){return settings.soundEnabled?Math.max(0,Math.min(1,(Number(settings.fxVolume)||0)/100)):0;}
 function distanceTo(p){const pose=worldCameraPose(camera());return pose?Math.hypot(p[0]-pose.position[0],p[1]-pose.position[1],(p[2]||0)-pose.position[2]):Infinity;}
 function hash(s){let h=2166136261;for(const ch of String(s))h=Math.imul(h^ch.charCodeAt(0),16777619);return(h>>>0)/4294967296;}

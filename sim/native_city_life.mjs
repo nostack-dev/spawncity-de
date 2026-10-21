@@ -10,6 +10,10 @@ import {NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
 import {isCriticalDamage,criticalDetonationAt,accelerateCriticalDetonation} from "./critical_damage_logic.mjs";
 import {installNativeRagdoll,spawnNativeRagdoll,tickNativeRagdoll} from "./native_ragdoll.mjs";
 import {installNativeCarDebris,tickNativeCarDebris} from "./native_car_debris.mjs";
+import {scream,shout} from "./street_voices.mjs";
+// world_procedural_population: people speak (bubble + voice) when bumped, angry or scared
+const moodFor=result=>result==="fight"?"angry":result==="flee"?"scared":"bump";
+function say(a,mood){if(!a?.alive||a.knocked)return false;try{return shout([a.x,a.y,Number(a.z)||0],{mood,seed:a.id});}catch{return false;}}
 
 const PERSON_CAP=100,CAR_CAP=48,BUS_CAP=6,CAR_SPEED=8;
 const PAINTS=[[.92,.92,.9],[.16,.17,.19],[.62,.12,.12],[.18,.34,.62],[.78,.76,.7],[.08,.09,.1],[.34,.4,.3],[.82,.58,.22]];
@@ -127,7 +131,7 @@ export function applyPersonDamage(id,{times=1,each=34,head=false,dir=[0,1,0],mel
     let result="hit";
     if(a.hp<=0){a.alive=false;a.knocked=true;result="dead";}
     else if(a.hp<=35){a.knocked=true;a.v=0;result="down";}
-    else{const step=Math.min(.6,.22*k);a.x+=dir[0]/hd*step;a.y+=dir[1]/hd*step;a.v=0;provoke(a,performance.now(),{punched:true});}
+    else{const step=Math.min(.6,.22*k);a.x+=dir[0]/hd*step;a.y+=dir[1]/hd*step;a.v=0;const r=provoke(a,performance.now(),{punched:true});if(r&&r!=="none")say(a,moodFor(r));}
     frightenAround(a.x,a.y,12,performance.now(),1);
     globalThis.__arondightWantedSystem?.reportCrime?.({id:`assault-${id}-${Math.round(performance.now())}`,kind:result==="dead"?"person":"person-hit",severity:1});
     if(result!=="hit"){
@@ -145,7 +149,7 @@ export function applyPersonDamage(id,{times=1,each=34,head=false,dir=[0,1,0],mel
   const fatal=!a.alive;
   if(!fatal){a.knocked=true;a.v=0;}
   dropPerson(a,shotImpulse(dir),fatal);
-  provoke(a,performance.now(),{shot:true,by:{x:a.x-(dir[0]||0),y:a.y-(dir[1]||0)}});
+  {const r=provoke(a,performance.now(),{shot:true,by:{x:a.x-(dir[0]||0),y:a.y-(dir[1]||0)}});if(r&&r!=="none")say(a,moodFor(r));}
   frightenAround(a.x,a.y,16,performance.now(),1.2);
   globalThis.__arondightWantedSystem?.reportCrime?.({id:`person-${id}-${Math.round(performance.now())}`,kind:"person-hit",severity:1});
   return {result:fatal?"dead":"down",hp:a.hp,applied};
@@ -196,6 +200,8 @@ export function tickNativeCityLife(game,now=performance.now()){
   const p=playerPos();
   for(const a of people)if(a.alive&&!a.knocked)stepAgent(a,dt,now,net);
   if(Math.random()<.02){const x=p[0],y=p[1];for(const a of people)if(a.alive&&Math.hypot(a.x-x,a.y-y)<28)frighten(a,x,y,now,{strength:.4});}
+  // arms flung up = a scream, at the same moment (production)
+  {const p=playerPos();for(const a of people){if(!a.alive||a.knocked||!(now<(a.handsUpUntil||0))||a.screamFor===a.handsUpUntil)continue;a.screamFor=a.handsUpUntil;if(Math.hypot(a.x-p[0],a.y-p[1])<70)try{scream([a.x,a.y,(Number(a.z)||0)+1.6],{seed:a.id});}catch{}}}
   visuals?.update();
   const renderer=game?.world?.renderer;if(!renderer?.upsert)return;
   const bins={car:[[],[]],bus:[[],[]]};
