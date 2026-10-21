@@ -70,6 +70,11 @@ export function tickNativePlaces(game,now=performance.now()){
   const p=player();
   const near=doors.filter(d=>Math.hypot(d.x-p[0],d.y-p[1])<DOORS_R).slice(0,24);
   paint(renderer,"places/doors",DOOR,near.flatMap(d=>[...fromTRS([d.x,d.y,0],yawQuat(d.yaw),[1,1,1])]));
+  if(inside){
+    const floor=fromTRS([inside.x,inside.y,0],[0,0,0,1],[8,.2,8]);
+    const walls=[fromTRS([inside.x,inside.y+4,1.5],[0,0,0,1],[8,3,.2]),fromTRS([inside.x,inside.y-4,1.5],[0,0,0,1],[8,3,.2])];
+    paint(renderer,"places/interior",DOOR,[...floor,...walls.flat()]);
+  }else renderer.remove("places/interior");
   if(race?.started){
     const car=game.rigids.pose("player-car");
     if(car?.position){

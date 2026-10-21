@@ -8,7 +8,7 @@ import {ORIGINAL_SEDAN} from "./native_original_vehicles.mjs";
 import {fromTRS} from "./native_render_math.mjs";
 import {NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
 
-const PERSON_CAP=100,CAR_CAP=36,CAR_SPEED=8;
+const PERSON_CAP=100,CAR_CAP=42,BUS_CAP=8,CAR_SPEED=8;
 let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawnCars=false,routes=[];
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
 function playerPos(){
@@ -34,11 +34,11 @@ export function installNativeCityLife(game,snapshot){
   people=[];
   for(const route of routes){
     if(people.length>=PERSON_CAP)break;
-    people.push(...seedRouteAgents(route,{spacingM:16,cap:8,salt:"native"}));
+    people.push(...seedRouteAgents(route,{spacingM:14,cap:30,salt:"native"}));
   }
   people=people.slice(0,PERSON_CAP);
   cars=routes.slice(0,CAR_CAP).map((route,i)=>({
-    id:`traffic-${i}`,route,s:(i+.3)/CAR_CAP*route.length,dir:i%2?1:-1,speed:CAR_SPEED*(.7+.4*(i%5)/5)
+    id:`traffic-${i}`,route,s:(i+.3)/CAR_CAP*route.length,dir:i%2?1:-1,speed:CAR_SPEED*(.7+.4*(i%5)/5),bus:i<BUS_CAP
   }));
   visuals=new NativePedestrianVisuals(game.world.renderer,{people:()=>people.filter(a=>a.alive&&!a.knocked).map(a=>({id:a.id,x:a.x,y:a.y,z:0,yaw:a.yaw}))},{maxPeople:PERSON_CAP});
   last=performance.now();
@@ -100,7 +100,7 @@ export function tickNativeCityLife(game,now=performance.now()){
     car.s+=car.dir*car.speed*dt;
     if(car.s<0||car.s>car.route.length)car.dir*=-1;
     const at=pointOn(car.route,car.s);if(!at)continue;
-    data.push(...fromTRS([at.x,at.y,.45],yawQuat(at.yaw),[1,1,1]));
+    data.push(...fromTRS([at.x,at.y,.45],yawQuat(at.yaw),car.bus?[1.6,3.2,1]:[1,1,1]));
   }
   if(!data.length){if(drawnCars){renderer.remove("traffic/cars");drawnCars=false;}return;}
   const transforms=new Float32Array(data);
