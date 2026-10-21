@@ -335,6 +335,7 @@ async function prepareEngine(){
   session={game,input,canvas,worldLoaded:false,placeKey:null,weapons};
   globalThis.__arondightApplyStartMode=()=>applyStartupPlayerMode(game);
   applyStartupPlayerMode(game);
+  if(navigator.webdriver)window.__spawncityNativeGame=game; // automation only: gameplay parity checks
   if(navigator.webdriver)window.__spawncityNativeProbe=()=>{
    const world=game.world,camera=world.camera;
    const car=game.rigids.pose("player-car");
