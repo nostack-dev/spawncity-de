@@ -4,7 +4,7 @@ import {buildTrafficRoute} from "./world_traffic_routes.mjs";
 import {createPedestrianNetwork,seedRouteAgents,stepAgent,frighten,provoke,projectOnRoute} from "./pedestrian_agents.mjs";
 import {NativePedestrianVisuals} from "./native_pedestrian_visuals.mjs";
 import {NativeStreetLamps} from "./native_street_lamps.mjs";
-import {ORIGINAL_SEDAN} from "./native_original_vehicles.mjs";
+import {ORIGINAL_SEDAN,ORIGINAL_BUS} from "./native_original_vehicles.mjs";
 import {fromTRS} from "./native_render_math.mjs";
 import {NATIVE_DEMO_CITY} from "./native_osm_source.mjs";
 import {isCriticalDamage,criticalDetonationAt,accelerateCriticalDetonation} from "./critical_damage_logic.mjs";
@@ -13,7 +13,7 @@ import {installNativeCarDebris,tickNativeCarDebris} from "./native_car_debris.mj
 
 const PERSON_CAP=100,CAR_CAP=48,BUS_CAP=6,CAR_SPEED=8;
 const PAINTS=[[.92,.92,.9],[.16,.17,.19],[.62,.12,.12],[.18,.34,.62],[.78,.76,.7],[.08,.09,.1],[.34,.4,.3],[.82,.58,.22]];
-let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawnCars=false,routes=[],carBooms=[],carSmokeAt=0;
+let net=null,people=[],cars=[],visuals=null,lamps=null,last=0,drawn={car:false,bus:false},routes=[],carBooms=[],carSmokeAt=0;
 const yawQuat=y=>[0,0,Math.sin(y*.5),Math.cos(y*.5)];
 function playerPos(){
   const w=globalThis.__arondightWalkMode,p=w?.position;
@@ -189,7 +189,7 @@ export function tickNativeCityLife(game,now=performance.now()){
   if(Math.random()<.02){const x=p[0],y=p[1];for(const a of people)if(a.alive&&Math.hypot(a.x-x,a.y-y)<28)frighten(a,x,y,now,{strength:.4});}
   visuals?.update();
   const renderer=game?.world?.renderer;if(!renderer?.upsert)return;
-  const data=[],tints=[];
+  const bins={car:[[],[]],bus:[[],[]]};
   for(const car of cars){
     if(!car.alive)continue;
     if(car.criticalAt&&now>=car.criticalAt){
@@ -205,15 +205,21 @@ export function tickNativeCityLife(game,now=performance.now()){
     if(car.s<0||car.s>car.route.length)car.dir*=-1;
     const at=pointOn(car.route,car.s);if(!at)continue;
     if(car.criticalAt&&now-carSmokeAt>180){carSmokeAt=now;game?.world?.effects?.emit?.({kind:"smoke",position:[at.x,at.y,1.1],velocity:[0,0,.8],lifeMs:700,size:.4});}
-    // Sedan origin is 0.37 m above the wheels. Road surface is ~0.11 m.
-    const z=.50,scale=car.bus?[1.35,1.55,1.25]:[1,1,1];
-    data.push(...fromTRS([at.x,at.y,z],yawQuat(at.yaw+(car.dir<0?Math.PI:0)),scale));
-    tints.push(...(PAINTS[car.paint]||PAINTS[0]),1);
+    // Original meshes are already in metres. Sedan wheels sit 0.37 m under
+    // the origin, bus wheels 1.36 m. Road surface is about 0.11 m.
+    const kind=car.bus?"bus":"car";
+    const z=car.bus?1.48:.49;
+    bins[kind][0].push(...fromTRS([at.x,at.y,z],yawQuat(at.yaw+(car.dir<0?Math.PI:0)),[1,1,1]));
+    bins[kind][1].push(...(PAINTS[car.paint]||PAINTS[0]),1);
   }
-  if(!data.length){if(drawnCars){renderer.remove("traffic/cars");drawnCars=false;}return;}
-  const transforms=new Float32Array(data),tint=new Float32Array(tints);
-  if(!drawnCars){renderer.upsert("traffic/cars",{...ORIGINAL_SEDAN,instances:{transforms,tints:tint},material:{doubleSided:true,castShadow:false,paint:true}});drawnCars=true;}
-  else renderer.updateInstances("traffic/cars",{transforms,tints:tint});
+  const geos={car:ORIGINAL_SEDAN,bus:ORIGINAL_BUS};
+  for(const kind of ["car","bus"]){
+    const [data,tint]=bins[kind],id=`traffic/${kind}`;
+    if(!data.length){if(drawn[kind]){renderer.remove(id);drawn[kind]=false;}continue;}
+    const instances={transforms:new Float32Array(data),tints:new Float32Array(tint)};
+    if(drawn[kind])renderer.updateInstances(id,instances);
+    else{renderer.upsert(id,{...geos[kind],instances,material:{doubleSided:true,castShadow:false,paint:true}});drawn[kind]=true;}
+  }
 }
 export function blastNativeCity(center,radius,falloff,exposure){
   const carsOut=[];
